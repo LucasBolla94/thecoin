@@ -20,6 +20,8 @@ use thecoin_storage::DbOptions;
 use tokio::sync::{mpsc, watch, Notify};
 use tracing::{debug, info, warn};
 
+const MEMPOOL_FILE_MAGIC: &[u8] = b"TheCoin mempool v1\n";
+
 pub struct BlockJob {
     pub block: Block,
     /// Peer that sent the block (None = local miner / API).
@@ -108,6 +110,7 @@ impl Node {
             config,
         });
 
+        node.load_mempool();
         spawn_block_processor(node.clone(), block_rx);
         if node.config.p2p.enabled {
             crate::net::start(node.clone()).await?;
@@ -133,6 +136,47 @@ impl Node {
         self.stopping.store(true, Ordering::SeqCst);
         let _ = self.shutdown.send(true);
         self.addrman.lock().save();
+        self.save_mempool();
+    }
+
+    /// Writes pending transactions to `mempool.dat` so a restart does not drop them.
+    pub fn save_mempool(&self) {
+        let txs: Vec<Vec<u8>> = self.mempool.lock().ordered_for_block(usize::MAX).iter().map(|t| t.to_bytes()).collect();
+        let path = self.config.mempool_path();
+        if txs.is_empty() {
+            let _ = std::fs::remove_file(&path);
+            return;
+        }
+        let mut data = MEMPOOL_FILE_MAGIC.to_vec();
+        data.extend(borsh::to_vec(&txs).expect("serialization cannot fail"));
+        let tmp = path.with_extension("dat.tmp");
+        match std::fs::write(&tmp, &data).and_then(|_| std::fs::rename(&tmp, &path)) {
+            Ok(()) => info!(txs = txs.len(), "saved pending transactions"),
+            Err(e) => warn!(error = %e, "could not save pending transactions"),
+        }
+    }
+
+    /// Re-validates the transactions saved by [`Node::save_mempool`].
+    fn load_mempool(&self) {
+        let path = self.config.mempool_path();
+        let Ok(data) = std::fs::read(&path) else { return };
+        let _ = std::fs::remove_file(&path);
+        let Some(body) = data.strip_prefix(MEMPOOL_FILE_MAGIC) else {
+            warn!("ignoring {}: unknown format", path.display());
+            return;
+        };
+        let Ok(txs) = borsh::from_slice::<Vec<Vec<u8>>>(body) else {
+            warn!("ignoring {}: corrupt file", path.display());
+            return;
+        };
+        let (mut kept, total) = (0usize, txs.len());
+        let mut pool = self.mempool.lock();
+        for bytes in txs {
+            if let Ok(tx) = Transaction::from_bytes(&bytes) {
+                kept += usize::from(pool.add(&self.chain, tx).is_ok());
+            }
+        }
+        info!(kept, dropped = total - kept, "restored pending transactions");
     }
 
     pub fn is_stopping(&self) -> bool {

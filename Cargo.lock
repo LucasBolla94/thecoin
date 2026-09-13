@@ -1519,7 +1519,7 @@ dependencies = [
 
 [[package]]
 name = "tccl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bech32",
  "blake3",
@@ -1549,7 +1549,7 @@ dependencies = [
 
 [[package]]
 name = "thecoin-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "argon2",
  "bech32",
@@ -1566,7 +1566,7 @@ dependencies = [
 
 [[package]]
 name = "thecoin-node"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1592,7 +1592,7 @@ dependencies = [
 
 [[package]]
 name = "thecoin-storage"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "borsh",
@@ -1604,7 +1604,7 @@ dependencies = [
 
 [[package]]
 name = "thecoin-wallet"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "argon2",

@@ -195,9 +195,9 @@ build_from_source() {
   export PATH="$HOME/.cargo/bin:$PATH"
   local ref="main"; [ "$VERSION" != latest ] && ref="v$VERSION"
   git clone --depth 1 --branch "$ref" "https://github.com/$GITHUB_REPO.git" "$TMP/src"
-  (cd "$TMP/src" && CARGO_BUILD_JOBS=$CPUS cargo build --release --locked -p thecoin-node -p thecoin-wallet)
+  (cd "$TMP/src" && CARGO_BUILD_JOBS=$CPUS cargo build --release --locked -p thecoin-node -p thecoin-wallet -p tccl)
   mkdir -p "$TMP/thecoin"
-  cp "$TMP/src/target/release/thecoind" "$TMP/src/target/release/thecoin-wallet" "$TMP/thecoin/"
+  cp "$TMP/src/target/release/thecoind" "$TMP/src/target/release/thecoin-wallet" "$TMP/src/target/release/tccl" "$TMP/thecoin/"
   cp "$TMP/src/installer/thecoin" "$TMP/src/installer/uninstall.sh" "$TMP/thecoin/" 2>/dev/null || true
 }
 
@@ -219,6 +219,8 @@ if systemctl is-active --quiet thecoind 2>/dev/null; then
 fi
 install -m 0755 "$SRC_DIR/thecoind" "$BIN_DIR/thecoind"
 install -m 0755 "$SRC_DIR/thecoin-wallet" "$BIN_DIR/thecoin-wallet"
+# TCCL developer tool (check, simulate and test smart contracts locally).
+if [ -f "$SRC_DIR/tccl" ]; then install -m 0755 "$SRC_DIR/tccl" "$BIN_DIR/tccl"; fi
 ok "installed $("$BIN_DIR/thecoind" --version) and $("$BIN_DIR/thecoin-wallet" --version)"
 
 # ------------------------------------------------ helper + uninstaller ----

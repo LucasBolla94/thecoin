@@ -225,6 +225,61 @@ cmd_uninstall() {
   fi
 }
 
+# ------------------------------------------------------------ governance ----
+current_signals() { # one proposal id per line from [mining] signal = [...]
+  [ -r "$CONF_FILE" ] || return 0
+  awk '/^\[/ { sec = $0 } sec == "[mining]" && /^signal *=/ { print; exit }' "$CONF_FILE" | grep -oE '[0-9a-f]{64}' || true
+}
+
+write_signals() { # write_signals id...  (rewrites the signal line, adding it if missing)
+  local list="" id
+  for id in "$@"; do list="${list:+$list, }\"$id\""; done
+  if awk '/^\[/ { sec = $0 } sec == "[mining]" && /^signal *=/ { found = 1 } END { exit !found }' "$CONF_FILE"; then
+    awk -v val="[$list]" '/^\[/ { sec = $0 } sec == "[mining]" && /^signal *=/ { print "signal = " val; next } { print }' \
+      "$CONF_FILE" > "$CONF_FILE.tmp"
+  else
+    awk -v val="[$list]" '{ print } /^\[mining\]/ { print "signal = " val }' "$CONF_FILE" > "$CONF_FILE.tmp"
+  fi
+  cat "$CONF_FILE.tmp" > "$CONF_FILE" && rm -f "$CONF_FILE.tmp"
+}
+
+cmd_signals() {
+  local ids id p
+  ids=$(current_signals)
+  if [ -z "$ids" ]; then
+    echo "Your mined blocks do not support any proposal."
+  else
+    echo "Your mined blocks support:"
+    for id in $ids; do
+      p=$(api "/governance/proposal/$id" || true)
+      printf '  %s  %s (%s)\n' "$id" "$(json_get title <<<"$p")" "$(json_get status <<<"$p")"
+    done
+  fi
+  echo
+  echo "Open proposals:"
+  wallet gov list 2>/dev/null || { api /governance/proposals && echo; } || echo "  (node API not answering)"
+}
+
+cmd_signal() { # cmd_signal add|remove <proposal id>
+  local mode="$1" id="${2:-}" ids new=() x
+  [[ "$id" =~ ^[0-9a-f]{64}$ ]] || die "usage: thecoin $([ "$mode" = add ] && echo signal || echo unsignal) <proposal id (64 hex characters)>"
+  need_root "${ORIG_ARGS[@]}"
+  [ -w "$CONF_FILE" ] || die "cannot write $CONF_FILE"
+  if [ "$mode" = add ] && ! api "/governance/proposal/$id" >/dev/null; then
+    warn "the node does not know proposal $id (yet); adding it anyway"
+  fi
+  ids=$(current_signals)
+  for x in $ids; do [ "$x" = "$id" ] || new+=("$x"); done
+  [ "$mode" = add ] && new+=("$id")
+  write_signals "${new[@]}"
+  systemctl restart thecoind 2>/dev/null || warn "restart the node to apply: systemctl restart thecoind"
+  if [ "$mode" = add ]; then
+    echo "Your mined blocks now signal support for $id (node restarted)."
+  else
+    echo "Stopped signalling support for $id (node restarted)."
+  fi
+}
+
 cmd_help() {
   cat <<EOF
 thecoin — manage your The Coin node ($NETWORK)
@@ -237,6 +292,9 @@ Usage: thecoin <command>
   balance             wallet balance
   mnemonic            show the wallet recovery phrase (keep it secret!)
   restart             restart the node service
+  signals             proposals your mined blocks support, and open proposals
+  signal <id>         support a governance proposal with your mined blocks
+  unsignal <id>       stop supporting a proposal
   update              upgrade to the latest release (keeps config and wallet)
   uninstall [--purge] remove the node (--purge also deletes chain data and config;
                       wallet files are never deleted)
@@ -259,6 +317,9 @@ case "$command" in
   mnemonic|recovery-phrase) cmd_mnemonic ;;
   restart) need_root "${ORIG_ARGS[@]}"; systemctl restart thecoind && echo "thecoind restarted" ;;
   update|upgrade) cmd_update "$@" ;;
+  signals|proposals) cmd_signals ;;
+  signal) cmd_signal add "$@" ;;
+  unsignal) cmd_signal remove "$@" ;;
   uninstall) cmd_uninstall "$@" ;;
   version|--version|-V) thecoind --version; thecoin-wallet --version ;;
   help|--help|-h) cmd_help ;;

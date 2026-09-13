@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/tccl", "crates/core", "crates/storage", "crates/node", "crates/wallet"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/LucasBolla94/thecoin"

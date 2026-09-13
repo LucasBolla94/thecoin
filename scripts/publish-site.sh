@@ -4,7 +4,9 @@
 #   <out>/                      website pages and assets
 #   <out>/install.sh            node installer
 #   <out>/uninstall.sh
-#   <out>/whitepaper/the-coin-whitepaper-v0.1.pdf
+#   <out>/thecoin               helper command (installed by install.sh)
+#   <out>/whitepaper/the-coin-whitepaper-v0.2.pdf (and earlier versions)
+#   <out>/tccl/tccl-cookbook.pdf and example contracts
 #   <out>/releases/latest/thecoin-<target>.tar.gz(.sha256)
 #   <out>/releases/v<version>/thecoin-<target>.tar.gz(.sha256)
 #   <out>/releases/latest/SHA256SUMS
@@ -19,11 +21,13 @@ OUT="${1:-dist/site}"
 VERSION=$(awk -F'"' '/^version *=/ {print $2; exit}' Cargo.toml)
 
 rm -rf "$OUT"
-mkdir -p "$OUT/whitepaper" "$OUT/releases/latest" "$OUT/releases/v$VERSION"
+mkdir -p "$OUT/whitepaper" "$OUT/tccl/examples" "$OUT/releases/latest" "$OUT/releases/v$VERSION"
 cp website/*.html "$OUT/"
 cp -r website/assets "$OUT/"
-install -m 0644 installer/install.sh installer/uninstall.sh "$OUT/"
-cp docs/whitepaper/the-coin-whitepaper-v0.1.pdf "$OUT/whitepaper/"
+install -m 0644 installer/install.sh installer/uninstall.sh installer/thecoin "$OUT/"
+cp docs/whitepaper/*.pdf "$OUT/whitepaper/"
+cp docs/tccl/tccl-cookbook.pdf "$OUT/tccl/"
+cp crates/tccl/examples/*.tccl "$OUT/tccl/examples/"
 
 shopt -s nullglob
 archives=(dist/thecoin-*.tar.gz)

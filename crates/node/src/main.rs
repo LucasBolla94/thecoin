@@ -34,6 +34,10 @@ struct Cli {
     #[arg(long)]
     no_mine: bool,
 
+    /// Governance proposal id (hex) your mined blocks support (repeatable).
+    #[arg(long = "signal")]
+    signal: Vec<String>,
+
     /// P2P listen address, e.g. 0.0.0.0:7333.
     #[arg(long)]
     listen: Option<String>,
@@ -111,6 +115,11 @@ fn build_config(cli: &Cli) -> Result<NodeConfig> {
     }
     if cli.no_mine {
         cfg.mining.enabled = false;
+    }
+    for id in &cli.signal {
+        if !cfg.mining.signal.contains(id) {
+            cfg.mining.signal.push(id.clone());
+        }
     }
     if let Some(l) = &cli.listen {
         cfg.p2p.listen = l.clone();

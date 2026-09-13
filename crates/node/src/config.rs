@@ -190,6 +190,10 @@ impl NodeConfig {
         self.data_dir.join("chain.redb")
     }
 
+    pub fn mempool_path(&self) -> PathBuf {
+        self.data_dir.join("mempool.dat")
+    }
+
     pub fn peers_path(&self) -> PathBuf {
         self.data_dir.join("peers.json")
     }

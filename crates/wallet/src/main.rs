@@ -542,7 +542,11 @@ impl Ctx {
             println!("Returns:  {r}");
         }
         for l in &sim.logs {
-            println!("Event:    {}({})", l.event, l.fields.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(", "));
+            println!(
+                "Preview:  {}({}) (simulated on the current state)",
+                l.event,
+                l.fields.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(", ")
+            );
         }
         Ok(make(fuel))
     }
@@ -1109,7 +1113,10 @@ fn privacy_cmd(ctx: &Ctx, p: PrivacyCmd) -> Result<()> {
                 Some(i) => {
                     let spent = matches!(ctx.view_value(&pool, "is_withdrawn", &[format!("0x{}", hex::encode(image))])?, Value::Bool(true));
                     let total = int_of(ctx.view_value(&pool, "deposits", &[])?)?;
-                    println!("Deposit #{i} of {total} in the pool — {}", if spent { "already withdrawn" } else { "available to withdraw" });
+                    println!(
+                        "Deposit at index {i} ({total} deposits in the pool) — {}",
+                        if spent { "already withdrawn" } else { "available to withdraw" }
+                    );
                 }
             }
         }

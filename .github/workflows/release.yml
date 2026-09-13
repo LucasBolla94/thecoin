@@ -32,17 +32,17 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --locked --target ${{ matrix.target }} -p thecoin-node -p thecoin-wallet
+            cross build --release --locked --target ${{ matrix.target }} -p thecoin-node -p thecoin-wallet -p tccl
           else
-            cargo build --release --locked --target ${{ matrix.target }} -p thecoin-node -p thecoin-wallet
+            cargo build --release --locked --target ${{ matrix.target }} -p thecoin-node -p thecoin-wallet -p tccl
           fi
       - name: Package
         shell: bash
         run: |
           mkdir -p stage/thecoin dist
           ext=""; [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
-          cp target/${{ matrix.target }}/release/thecoind$ext target/${{ matrix.target }}/release/thecoin-wallet$ext stage/thecoin/
-          cp README.md LICENSE-MIT LICENSE-APACHE installer/install.sh installer/uninstall.sh stage/thecoin/
+          cp target/${{ matrix.target }}/release/thecoind$ext target/${{ matrix.target }}/release/thecoin-wallet$ext target/${{ matrix.target }}/release/tccl$ext stage/thecoin/
+          cp README.md LICENSE-MIT LICENSE-APACHE installer/install.sh installer/uninstall.sh installer/thecoin stage/thecoin/
           name=thecoin-${{ matrix.target }}.tar.gz
           tar -C stage -czf dist/$name thecoin
           cd dist && (sha256sum $name 2>/dev/null || shasum -a 256 $name) > $name.sha256
@@ -69,5 +69,7 @@ jobs:
             dist/*
             installer/install.sh
             installer/uninstall.sh
-            docs/whitepaper/the-coin-whitepaper-v0.1.pdf
+            installer/thecoin
+            docs/whitepaper/the-coin-whitepaper-v0.2.pdf
+            docs/tccl/tccl-cookbook.pdf
           generate_release_notes: true

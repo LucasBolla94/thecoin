@@ -19,7 +19,7 @@ fi
 systemctl disable --now thecoind 2>/dev/null || true
 rm -f /etc/systemd/system/thecoind.service
 systemctl daemon-reload
-rm -f /usr/local/bin/thecoind /usr/local/bin/thecoin-wallet /usr/local/bin/thecoin
+rm -f /usr/local/bin/thecoind /usr/local/bin/thecoin-wallet /usr/local/bin/thecoin /usr/local/bin/tccl
 rm -rf /usr/local/lib/thecoin
 if [ "$PURGE" = 1 ]; then
   rm -rf /var/lib/thecoin /etc/thecoin

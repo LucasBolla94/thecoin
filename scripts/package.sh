@@ -8,18 +8,18 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 TARGET="${1:-}"
 if [ -n "$TARGET" ]; then
-  cargo build --release --locked --target "$TARGET" -p thecoin-node -p thecoin-wallet
+  cargo build --release --locked --target "$TARGET" -p thecoin-node -p thecoin-wallet -p tccl
   OUT="target/$TARGET/release"
 else
-  cargo build --release --locked -p thecoin-node -p thecoin-wallet
+  cargo build --release --locked -p thecoin-node -p thecoin-wallet -p tccl
   OUT="target/release"
   TARGET=$(rustc -vV | awk '/host:/ {print $2}')
 fi
 VERSION=$(awk -F'"' '/^version *=/ {print $2; exit}' Cargo.toml)
 STAGE="dist/stage/thecoin"
 rm -rf dist/stage && mkdir -p "$STAGE"
-cp "$OUT/thecoind" "$OUT/thecoin-wallet" "$STAGE/"
-cp README.md LICENSE-MIT LICENSE-APACHE installer/install.sh installer/uninstall.sh "$STAGE/" 2>/dev/null || true
+cp "$OUT/thecoind" "$OUT/thecoin-wallet" "$OUT/tccl" "$STAGE/"
+cp README.md LICENSE-MIT LICENSE-APACHE installer/install.sh installer/uninstall.sh installer/thecoin "$STAGE/" 2>/dev/null || true
 echo "$VERSION" > "$STAGE/VERSION"
 NAME="thecoin-$TARGET.tar.gz"
 tar -C dist/stage -czf "dist/$NAME" thecoin

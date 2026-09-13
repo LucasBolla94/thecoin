@@ -8,7 +8,7 @@ com pagamentos, contratos de pagamento e governança on-chain.**
 [![CI](https://github.com/LucasBolla94/thecoin/actions/workflows/ci.yml/badge.svg)](https://github.com/LucasBolla94/thecoin/actions/workflows/ci.yml)
 ![Rust](https://img.shields.io/badge/rust-1.88%2B-orange)
 ![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT%20%2F%20Apache--2.0-blue)
-![Versão](https://img.shields.io/badge/vers%C3%A3o-0.1.0-green)
+![Versão](https://img.shields.io/badge/vers%C3%A3o-0.2.0-green)
 
 [Site](https://the-coin.cloud) ·
 [Whitepaper (PDF)](docs/whitepaper/the-coin-whitepaper-v0.1.pdf) ·
@@ -492,7 +492,7 @@ cargo test -p thecoin-core --release -- --ignored bench_pow --nocapture
 compila Linux (x86_64/aarch64 musl), macOS e Windows, gera `.sha256` e `SHA256SUMS` e publica no GitHub Releases.
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 **Site:** monte o pacote com páginas, instalador, whitepaper e binários no layout esperado pelo instalador:
