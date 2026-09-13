@@ -28,7 +28,7 @@ for c in curl sha256sum awk; do command -v "$c" >/dev/null || die "missing comma
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-info "assembling the site bundle (version $VERSION, commit $(git rev-parse --short HEAD 2>/dev/null || echo unknown))"
+info "assembling the site bundle (version $VERSION, commit $(git -c safe.directory="$PWD" rev-parse --short HEAD 2>/dev/null || echo unknown))"
 scripts/publish-site.sh "$TMP/site" >/dev/null 2>"$TMP/publish.log" || { cat "$TMP/publish.log" >&2; die "bundle failed"; }
 
 # Release binaries from GitHub (published by .github/workflows/release.yml on tag v$VERSION).

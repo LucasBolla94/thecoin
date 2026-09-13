@@ -66,5 +66,5 @@ EOF
 fi
 
 echo
-info "explore.the-coin.cloud published (commit $(git rev-parse --short HEAD 2>/dev/null || echo unknown))"
+info "explore.the-coin.cloud published (commit $(git -c safe.directory="$PWD" rev-parse --short HEAD 2>/dev/null || echo unknown))"
 echo "Open: https://$DOMAIN/"
