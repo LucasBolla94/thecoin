@@ -1,489 +1,1354 @@
 <!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TCCL — Contratos inteligentes — The Coin</title>
-  <meta name="description" content="TCCL, a linguagem de contratos inteligentes da The Coin: tipos estritos, execução determinística, combustível, código-fonte on-chain, taxas, depósito de armazenamento e pools de privacidade.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="assets/style.css">
-</head>
-<body>
-<header class="site-header">
-  <div class="wrap">
-    <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
-    <nav class="nav" aria-label="Principal">
-      <a href="index.html">Início</a>
-      <a href="validator.html">Validador</a>
-      <a href="download.html">Instalar</a>
-      <a href="explorer.html">Explorer</a>
-      <a href="governance.html">Governança</a>
-      <a href="tccl.html">TCCL</a>
-      <a href="docs.html">Desenvolvedores</a>
-    </nav>
-  </div>
-</header>
-
-<main class="wrap">
-  <h1>TCCL — Contratos inteligentes</h1>
-  <p class="lead muted prose" style="font-size:1.15rem">A <strong>TCCL</strong> (<em>The Coin Cloud Language</em>) é a linguagem dos contratos inteligentes da The Coin. Parece Python — blocos por indentação, poucas palavras-chave — mas cada valor tem um tipo declarado, cada passo custa combustível e o mesmo código dá exatamente o mesmo resultado em todos os nós.</p>
-  <p class="actions" style="display:flex;gap:12px;flex-wrap:wrap;margin:18px 0">
-    <a class="btn btn-primary" href="#primeiro-contrato">Criar meu primeiro contrato</a>
-    <a class="btn" href="/tccl/tccl-cookbook.pdf">TCCL Cookbook (PDF, inglês)</a>
-    <a class="btn" href="/tccl/examples/">Exemplos</a>
-  </p>
-  <ul class="toc" aria-label="Nesta página">
-    <li><a href="#principios">Princípios</a></li>
-    <li><a href="#instalar">Instalar</a></li>
-    <li><a href="#primeiro-contrato">Primeiro contrato</a></li>
-    <li><a href="#linguagem">Guia da linguagem</a></li>
-    <li><a href="#taxas">Taxas, combustível e depósito</a></li>
-    <li><a href="#privacidade">Privacidade</a></li>
-    <li><a href="#recursos">Recursos</a></li>
-  </ul>
-
-  <h2 id="principios">Princípios</h2>
-  <div class="grid grid-2">
-    <div class="card feature">
-      <div class="icon" aria-hidden="true">🧱</div>
-      <h3>Tipos estritos</h3>
-      <p class="muted" style="margin:0">Toda constante, variável de estado, parâmetro e variável local declara o tipo. Não há conversões automáticas: somar <code>int</code> com <code>text</code> é erro de compilação. Uma <code>view</code> não pode alterar o estado, e só funções <code>payable</code> recebem TCN. O que é ambíguo é recusado antes de chegar à rede.</p>
-    </div>
-    <div class="card feature">
-      <div class="icon" aria-hidden="true">🎯</div>
-      <h3>Determinístico</h3>
-      <p class="muted" style="margin:0">Não existem números de ponto flutuante, relógio, aleatoriedade nem acesso à internet. Os inteiros têm 128 bits e todo estouro (<em>overflow</em>) ou divisão por zero interrompe a execução. O único “tempo” é a altura do bloco (<code>height</code>). Por isso todos os nós chegam ao mesmo resultado.</p>
-    </div>
-    <div class="card feature">
-      <div class="icon" aria-hidden="true">⛽</div>
-      <h3>Combustível</h3>
-      <p class="muted" style="margin:0">Cada instrução, leitura, gravação, hash ou envio consome <em>combustível</em>. A transação reserva um limite (<code>max_fuel</code>); se acabar, ou se um <code>require</code> falhar, <strong>tudo é revertido</strong> — o valor enviado volta, nada é gravado — e só a taxa é cobrada. Laços infinitos são impossíveis. Consultas (<code>view</code>) são grátis.</p>
-    </div>
-    <div class="card feature">
-      <div class="icon" aria-hidden="true">📜</div>
-      <h3>Código-fonte on-chain</h3>
-      <p class="muted" style="margin:0">A transação de publicação carrega o <strong>código-fonte</strong>, não um binário: cada nó compila o mesmo texto com o mesmo compilador. O contrato guarda o hash do código, e qualquer pessoa lê exatamente o que vai executar — no <a href="explorer.html">Explorer</a>, em cada endereço de contrato.</p>
-    </div>
-  </div>
-
-  <h2 id="instalar">Instalar as ferramentas</h2>
-  <div class="grid grid-2">
-    <div class="card">
-      <h3>Junto com o nó</h3>
-      <p class="muted">O instalador de uma linha já instala o nó, a carteira <code>thecoin-wallet</code> e a ferramenta de desenvolvimento <code>tccl</code>:</p>
-      <div class="codeblock">
-        <button class="btn btn-small" data-copy="curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes">copiar</button>
-        <pre><code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes</code></pre>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TCCL smart contracts — The Coin</title>
+    <meta
+      name="description"
+      content="TCCL, The Coin Cloud Language: strictly typed smart contracts with deterministic execution, fuel limits, on-chain source code, clear fees, refundable storage deposits, and privacy pools."
+    />
+    <meta name="theme-color" content="#f7f7f2" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/style.css?v=5" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="index.html" aria-label="The Coin home"
+          ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+          >the coin<span class="brand-period">.</span></a
+        ><button
+          class="menu-toggle"
+          aria-controls="navigation"
+          aria-expanded="false"
+          type="button"
+        >
+          Menu <span aria-hidden="true">☰</span>
+        </button>
+        <nav class="nav" id="navigation" aria-label="Main navigation">
+          <a href="index.html">Overview</a><a href="explorer.html">Explorer</a
+          ><a href="governance.html">Governance</a
+          ><a href="docs.html" aria-current="true">Developers</a
+          ><a class="nav-cta" href="download.html"
+            >Run a node <span aria-hidden="true">↗</span></a
+          >
+        </nav>
       </div>
-      <p class="faint" style="margin:0">Só quer escrever e testar contratos? Use <code>--no-mine</code> ou apenas os binários abaixo — o simulador <code>tccl run</code> não precisa de nó.</p>
-    </div>
-    <div class="card">
-      <h3>Só os binários</h3>
-      <p class="muted">O pacote de <a href="/releases/">the-coin.cloud/releases</a> traz <code>thecoind</code>, <code>thecoin-wallet</code> e <code>tccl</code>. Ou compile:</p>
-      <pre><code>git clone https://github.com/LucasBolla94/thecoin
+    </header>
+    <main id="main" class="doc">
+      <section class="wrap page-intro">
+        <div class="eyebrow">THE COIN CLOUD LANGUAGE · VERSION 1</div>
+        <h1>Smart contracts you can read.</h1>
+        <p class="lead">
+          <strong>TCCL</strong> is the smart-contract language of The Coin. It
+          looks like Python — indentation-based blocks, few keywords — but every
+          value has a declared type, every step costs fuel, and the same code
+          gives exactly the same result on every node.
+        </p>
+        <div class="actions">
+          <a class="btn btn-primary" href="#first-contract"
+            >Write your first contract ↓</a
+          ><a class="btn" href="/tccl/tccl-cookbook.pdf">TCCL Cookbook (PDF) ↗</a
+          ><a class="text-link" href="#examples">Example contracts ↓</a>
+        </div>
+        <nav aria-label="On this page">
+          <ul class="toc">
+            <li><a href="#principles">Principles</a></li>
+            <li><a href="#install">Install</a></li>
+            <li><a href="#first-contract">First contract</a></li>
+            <li><a href="#language">Language guide</a></li>
+            <li><a href="#limits">Limits and fuel</a></li>
+            <li><a href="#fees">Fees and deposits</a></li>
+            <li><a href="#privacy">Privacy</a></li>
+            <li><a href="#resources">Resources</a></li>
+          </ul>
+        </nav>
+      </section>
+
+      <section class="wrap section" id="principles">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">01 — PRINCIPLES</div>
+            <h2>Strict by design.</h2>
+          </div>
+          <p>
+            Anything ambiguous is rejected before it reaches the network. What
+            runs on-chain is exactly what anyone can read.
+          </p>
+        </div>
+        <div class="grid grid-2">
+          <div class="card">
+            <span class="small-label">TYPES</span>
+            <h3>Strictly typed</h3>
+            <p>
+              Every constant, state variable, parameter, and local variable
+              declares its type. There are no implicit conversions: adding an
+              <code>int</code> to a <code>text</code> is a compile error. A
+              <code>view</code> cannot change state, and only
+              <code>payable</code> functions accept TCN.
+            </p>
+          </div>
+          <div class="card">
+            <span class="small-label">EXECUTION</span>
+            <h3>Deterministic</h3>
+            <p>
+              No floating-point numbers, no clock, no randomness, no network
+              access. Integers are 128-bit, and any overflow or division by zero
+              stops execution. The only notion of time is the block height
+              (<code>height</code>), so every node reaches the same result.
+            </p>
+          </div>
+          <div class="card">
+            <span class="small-label">METERING</span>
+            <h3>Fuel-limited</h3>
+            <p>
+              Every statement, storage read or write, hash, and payment consumes
+              fuel. A transaction reserves a limit (<code>max_fuel</code>). If
+              the fuel runs out or a <code>require</code> fails,
+              <strong>everything is reverted</strong> — the value sent is
+              returned, nothing is stored — and only the fee is charged.
+              Infinite loops are impossible. Read-only <code>view</code> queries
+              are free.
+            </p>
+          </div>
+          <div class="card">
+            <span class="small-label">TRANSPARENCY</span>
+            <h3>Source code on-chain</h3>
+            <p>
+              A deployment transaction carries the <strong>source code</strong>,
+              not a binary: every node compiles the same text with the same
+              compiler. The contract stores the hash of its source, and anyone
+              can read exactly what will run — in the
+              <a href="explorer.html">Explorer</a>, on every contract address.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="wrap section" id="install">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">02 — INSTALL</div>
+            <h2>Get the tools.</h2>
+          </div>
+          <p>
+            You need <code>tccl</code> to check and simulate contracts, and
+            <code>thecoin-wallet</code> to deploy and call them.
+          </p>
+        </div>
+        <div class="grid grid-2">
+          <div class="card">
+            <span class="small-label">WITH A NODE</span>
+            <h3>One-line installer</h3>
+            <p>
+              The node installer also installs the
+              <code>thecoin-wallet</code> wallet and the <code>tccl</code>
+              developer tool:
+            </p>
+            <div class="command">
+              <code
+                >curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s --
+                --yes</code
+              ><button
+                type="button"
+                class="btn btn-small"
+                data-copy="curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes"
+              >
+                Copy
+              </button>
+            </div>
+            <p>
+              Only want to write and test contracts? Add
+              <code>--no-mine</code>, or use just the binaries: the
+              <code>tccl run</code> simulator does not need a node. See the
+              <a href="validator.html">validator guide</a> for everything the
+              installer does.
+            </p>
+          </div>
+          <div class="card">
+            <span class="small-label">WITHOUT A NODE</span>
+            <h3>Binaries or source</h3>
+            <p>
+              The release packages in
+              <a href="/releases/">the-coin.cloud/releases</a> contain
+              <code>thecoind</code>, <code>thecoin-wallet</code>, and
+              <code>tccl</code>. Or build them with Rust:
+            </p>
+            <pre><code>git clone https://github.com/LucasBolla94/thecoin
 cd thecoin
 cargo build --release -p tccl -p thecoin-wallet
 ./target/release/tccl --version</code></pre>
-    </div>
-  </div>
+          </div>
+        </div>
+      </section>
 
-  <h2 id="primeiro-contrato">Seu primeiro contrato, passo a passo</h2>
-  <ol class="steps">
-    <li>
-      <strong>Escreva o contrato.</strong> Salve como <code>contador.tccl</code>. Um contador que qualquer pessoa pode aumentar, com um evento e duas consultas:
-      <pre style="margin-top:10px"><code class="tccl"># Meu primeiro contrato: um contador que qualquer pessoa pode aumentar.
-contract Contador
+      <section class="wrap section guide" id="first-contract">
+        <div class="eyebrow">03 — YOUR FIRST CONTRACT</div>
+        <h2>From an idea to the network, step by step.</h2>
+        <p class="section-copy">
+          The outputs below are real runs of version 0.2 with the
+          <a href="/tccl/examples/counter.tccl">counter.tccl</a> example.
+        </p>
+        <div class="guide-step doc-gap">
+          <span class="step-number">01</span>
+          <div>
+            <h3>Write the contract.</h3>
+            <p>
+              Save it as <code>counter.tccl</code>: a counter anyone can
+              increase, with an event and two queries.
+            </p>
+            <pre><code class="language-tccl"># The smallest useful contract: a counter anyone can increase.
+contract Counter
 
-state total: int
-state ultimo: address
+state count: int
+state last_caller: address
 
-event Aumentou(quem: address, quanto: int, total: int)
+event Increased(by: address, amount: int, total: int)
 
-action incrementar(quanto: int):
-    require quanto &gt; 0, "o valor deve ser positivo"
-    require quanto &lt;= 100, "no máximo 100 por chamada"
-    total += quanto
-    ultimo = caller
-    emit Aumentou(caller, quanto, total)
+action increment(amount: int):
+    require amount &gt; 0, "amount must be positive"
+    require amount &lt;= 100, "at most 100 per call"
+    count += amount
+    last_caller = caller
+    emit Increased(caller, amount, count)
 
-view valor() -&gt; int:
-    return total
+view get() -&gt; int:
+    return count
 
-view quem_foi() -&gt; address:
-    return ultimo</code></pre>
-      <p class="muted">A primeira linha útil dá o nome do contrato. <code>state</code> são dados guardados na blockchain (começam em zero, texto vazio ou endereço zero); <code>event</code> descreve um registro que aparece no explorer; <code>action</code> muda o estado e é chamada por transação; <code>view</code> só lê e é grátis. <code>caller</code> é quem chamou.</p>
-    </li>
-    <li>
-      <strong>Confira com <code>tccl check</code>.</strong> O compilador verifica tipos, caminhos de retorno e regras de <code>view</code>, e mostra a interface:
-      <pre style="margin-top:10px"><code>$ tccl check contador.tccl
-✔ Contador compiles (495 bytes of source, 336 bytes compiled)
-  state: total: int, ultimo: address
-  action incrementar(quanto: int)
-  view valor() -> int
-  view quem_foi() -> address</code></pre>
-    </li>
-    <li>
-      <strong>Simule com <code>tccl run</code>.</strong> Um blockchain de mentira no seu computador, com contas de teste (<code>alice</code>, <code>bob</code>…) que começam com 1.000.000 TCN. O estado fica em <code>tccl-state.json</code>:
-      <pre style="margin-top:10px"><code>$ tccl run contador.tccl deploy
-deployed Contador at daa436158c1dcdc0242085b6dd9451e33496cbee
+view last() -&gt; address:
+    return last_caller</code></pre>
+            <p>
+              The first line of code names the contract.
+              <code>state</code> is data stored on the blockchain (it starts as
+              zero, empty text, or the zero address); <code>event</code>
+              describes a record that appears in the transaction receipt and the
+              explorer; an <code>action</code> changes state and is called by a
+              transaction; a <code>view</code> only reads and is free.
+              <code>caller</code> is whoever signed the call.
+            </p>
+          </div>
+        </div>
+        <div class="guide-step">
+          <span class="step-number">02</span>
+          <div>
+            <h3>Check it with <code>tccl check</code>.</h3>
+            <p>
+              The compiler checks types, return paths, and view rules exactly
+              like the network, and prints the interface:
+            </p>
+            <pre><code>$ tccl check counter.tccl
+✔ Counter compiles (484 bytes of source, 323 bytes compiled)
+  state: count: int, last_caller: address
+  action increment(amount: int)
+  view get() -&gt; int
+  view last() -&gt; address</code></pre>
+          </div>
+        </div>
+        <div class="guide-step">
+          <span class="step-number">03</span>
+          <div>
+            <h3>Simulate it with <code>tccl run</code>.</h3>
+            <p>
+              A local blockchain on your computer, with test accounts
+              (<code>alice</code>, <code>bob</code>, …) that start with
+              1,000,000 TCN. State is kept in <code>tccl-state.json</code>.
+            </p>
+            <pre><code>$ tccl run counter.tccl deploy
+deployed Counter at daa436158c1dcdc0242085b6dd9451e33496cbee
+ok · fuel used: 2420 · height: 2 · alice balance: 100000000000000 motes
 
-$ tccl run contador.tccl call incrementar 5
-event Aumentou(quem: tcr1zqygp3t5ugluq2uqf7gq60mc9z9t09lpkg42sa, quanto: 5, total: 5)
+$ tccl run counter.tccl call increment 5
+event Increased(by: tcr1zqygp3t5ugluq2uqf7gq60mc9z9t09lpkg42sa, amount: 5, total: 5)
 ok · fuel used: 1674 · height: 3 · alice balance: 100000000000000 motes
 
-$ tccl run contador.tccl --from bob call incrementar 500
-FAILED: requirement failed: no máximo 100 por chamada · fuel used: 33 (all changes reverted)
+$ tccl run counter.tccl --from bob call increment 7
+event Increased(by: tcr14vqs008pe0yx022r6pneffl2mnn0x2lkzh7452, amount: 7, total: 12)
+ok · fuel used: 1674 · height: 4 · bob balance: 100000000000000 motes
 
-$ tccl run contador.tccl view valor
-result: 5</code></pre>
-      <p class="muted">Opções úteis: <code>--from &lt;conta&gt;</code>, <code>--value 2.5tcn</code> (para funções <code>payable</code>), <code>--height &lt;n&gt;</code> e <code>@alice</code> como argumento de endereço. Apague <code>tccl-state.json</code> para recomeçar.</p>
-    </li>
-    <li>
-      <strong>Publique com a carteira.</strong> A carteira compila, simula no nó para medir o combustível, reserva uma folga, mostra a taxa e pede confirmação:
-      <pre style="margin-top:10px"><code>$ thecoin-wallet contract deploy contador.tccl
-Fuel:     2475 measured, limit 8217
-Action:   deploy contract Contador (495 bytes of TCCL)
-Fee:      0.00019697 TCN (654 bytes, priority Normal)
-…
-Contract address: tc1…</code></pre>
-      <p class="muted">Opções: <code>--max-deposit</code> (quanto você aceita travar como depósito de armazenamento; padrão 1 TCN), <code>--max-fuel</code>, <code>--value</code> e <code>--priority</code>. Argumentos de <code>init</code> vão depois do arquivo.</p>
-    </li>
-    <li>
-      <strong>Chame uma ação.</strong> Também é simulada antes: se fosse falhar, a carteira avisa e não envia nada.
-      <pre style="margin-top:10px"><code>$ thecoin-wallet contract invoke tc1… incrementar 5
+$ tccl run counter.tccl view get
+result: 12
+ok · fuel used: 273 · height: 4 · alice balance: 100000000000000 motes
+
+$ tccl run counter.tccl --from bob call increment 500
+FAILED: requirement failed: at most 100 per call · fuel used: 33 (all changes reverted)
+error: call failed</code></pre>
+            <p>
+              Useful options: <code>--from &lt;account&gt;</code>,
+              <code>--value 2.5tcn</code> (for <code>payable</code> functions),
+              <code>--height &lt;n&gt;</code>, <code>--state &lt;file&gt;</code>,
+              and <code>@alice</code> as an address argument. Delete
+              <code>tccl-state.json</code> to start over.
+            </p>
+          </div>
+        </div>
+        <div class="guide-step">
+          <span class="step-number">04</span>
+          <div>
+            <h3>Deploy it with the wallet.</h3>
+            <p>
+              The wallet compiles the contract, simulates it on the node to
+              measure the fuel, reserves a margin, shows the fee, and asks for
+              confirmation (<code>-y</code> skips the prompt). Add
+              <code>--network testnet</code> while learning. This output was
+              recorded on a private regtest network (addresses
+              <code>tcr1…</code>), whose default fees are ten times lower than
+              mainnet’s:
+            </p>
+            <pre><code>$ thecoin-wallet -y contract deploy counter.tccl
+Fuel:     2420 measured, limit 8146
+From:     tcr1a9edrkqqhylclwfdaf8sk78zgfkkc0ctvk4awq
+Action:   deploy contract Counter (484 bytes of TCCL)
+Fee:      0.00001948 TCN (643 bytes, priority Normal)
+Broadcast OK. txid: 28e99a814f77e26f776274cef2e2e80db1703f15b360690b26d3aef0a03fdd60
+Contract address: tcr17kp5hrqhpdkwmukkrsfp6xft6y9l8j02rhxmvz</code></pre>
+            <p>
+              Options: <code>--max-deposit</code> (the most you accept to lock
+              as a storage deposit; default 1 TCN), <code>--max-fuel</code>,
+              <code>--value</code>, and <code>--priority</code>. Arguments for
+              <code>init</code> go after the file name.
+            </p>
+          </div>
+        </div>
+        <div class="guide-step">
+          <span class="step-number">05</span>
+          <div>
+            <h3>Call an action.</h3>
+            <p>
+              Calls are simulated first, too: if a call would fail, the wallet
+              tells you and sends nothing.
+            </p>
+            <pre><code>$ thecoin-wallet -y contract invoke tcr17kp5hrqhpdkwmukkrsfp6xft6y9l8j02rhxmvz increment 5
 Fuel:     1777 measured, limit 7310
-Preview:  Aumentou(quem: tc1…, quanto: 5, total: 5) (simulated on the current state)
-Fee:      0.00012975 TCN (207 bytes, priority Normal)</code></pre>
-    </li>
-    <li>
-      <strong>Consulte.</strong> Views não criam transação e não custam nada:
-      <pre style="margin-top:10px"><code>$ thecoin-wallet contract view tc1… valor
+Preview:  Increased(by: tcr1a9edrkqqhylclwfdaf8sk78zgfkkc0ctvk4awq, amount: 5, total: 5) (simulated on the current state)
+From:     tcr1a9edrkqqhylclwfdaf8sk78zgfkkc0ctvk4awq
+Action:   increment(5) on tcr17kp5hrqhpdkwmukkrsfp6xft6y9l8j02rhxmvz
+Fee:      0.00001295 TCN (205 bytes, priority Normal)
+Broadcast OK. txid: 04a24a2dd4268cc4fa0ff1d3c54aba9f953f03abc8aad56a9e451a84da4c7e5b</code></pre>
+          </div>
+        </div>
+        <div class="guide-step">
+          <span class="step-number">06</span>
+          <div>
+            <h3>Query it.</h3>
+            <p>Views create no transaction and cost nothing:</p>
+            <pre><code>$ thecoin-wallet contract view tcr17kp5hrqhpdkwmukkrsfp6xft6y9l8j02rhxmvz get
 5
-$ thecoin-wallet contract program tc1…     # saldo, armazenamento, depósito e funções</code></pre>
-      <p class="muted" style="margin:0">No <a href="explorer.html">Explorer</a>, busque o endereço do contrato: aparecem as funções, o código-fonte, o depósito, os eventos de cada chamada e formulários para chamar as views pelo navegador.</p>
-    </li>
-  </ol>
+$ thecoin-wallet contract program tcr17kp5hrqhpdkwmukkrsfp6xft6y9l8j02rhxmvz   # balance, storage, deposit, interface
+$ thecoin-wallet tx &lt;txid&gt;   # receipt: success, error, fuel_used, events, return_value</code></pre>
+            <p>
+              In the <a href="explorer.html">Explorer</a>, search for the
+              contract address to see its functions, source code, deposit, the
+              events of each call, and forms to call its views from your
+              browser.
+            </p>
+          </div>
+        </div>
+      </section>
 
-  <h2 id="linguagem">Guia rápido da linguagem</h2>
-  <h3>Estrutura de um contrato</h3>
-  <pre><code class="tccl"># Estrutura de um contrato: constantes, estado, eventos e funções.
-contract Cofrinho
+      <section class="wrap section" id="language">
+        <div class="eyebrow">04 — LANGUAGE GUIDE</div>
+        <h2>The language in one page.</h2>
+        <p class="section-copy">
+          The full reference, including operators, error messages, and a
+          security checklist, is in
+          <a
+            href="https://github.com/LucasBolla94/thecoin/blob/main/docs/tccl/TCCL.md"
+            >TCCL.md ↗</a
+          >
+          and the <a href="/tccl/tccl-cookbook.pdf">cookbook</a>.
+        </p>
 
-const MINIMO: int = 1 * TCN
-state dono: address
-state nome: text = "Cofrinho"
-state depositos: map[address, int]
-state valores: list[int]
+        <h3 class="doc-sub" id="layout">Contract layout</h3>
+        <pre><code class="language-tccl"># Contract layout: constants, state, events and functions.
+contract PiggyBank
 
-event Depositou(quem: address, quanto: int)
+const MINIMUM: int = 1 * TCN
+state owner: address
+state label: text = "Piggy bank"
+state deposits: map[address, int]
+state amounts: list[int]
+
+event Deposited(who: address, amount: int)
 
 init():
-    dono = caller
+    owner = caller
 
-action depositar() payable:
-    require value &gt;= MINIMO, "depósito mínimo de 1 TCN"
-    depositos[caller] += value
-    valores.push(value)
-    emit Depositou(caller, value)
+action deposit() payable:
+    require value &gt;= MINIMUM, "minimum deposit is 1 TCN"
+    deposits[caller] += value
+    amounts.push(value)
+    emit Deposited(caller, value)
 
-action sacar(quanto: int):
-    require quanto &gt; 0 and depositos[caller] &gt;= quanto, "saldo insuficiente"
-    depositos[caller] -= quanto
-    send(caller, quanto)
+action withdraw(amount: int):
+    require amount &gt; 0 and deposits[caller] &gt;= amount, "insufficient balance"
+    deposits[caller] -= amount
+    send(caller, amount)
 
-view saldo_de(quem: address) -&gt; int:
-    return depositos[quem]
+view balance_of(who: address) -&gt; int:
+    return deposits[who]
 
-view total_em_caixa() -&gt; int:
+view total_held() -&gt; int:
     return balance
 
-fn metade(x: int) -&gt; int:
+fn half(x: int) -&gt; int:
     return x / 2</code></pre>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Declaração</th><th>Para quê</th></tr></thead>
-      <tbody>
-        <tr><td class="mono">contract Nome</td><td>primeira declaração; o nome aparece no explorer</td></tr>
-        <tr><td class="mono">const NOME: tipo = valor</td><td>constante calculada na compilação (literais, outras constantes, aritmética, <code>address("tc1…")</code>)</td></tr>
-        <tr><td class="mono">state nome: tipo [= valor]</td><td>dado guardado na blockchain; só tipos simples aceitam valor inicial; mapas só existem aqui</td></tr>
-        <tr><td class="mono">event Nome(campo: tipo, …)</td><td>registro emitido com <code>emit</code>; aparece no recibo da transação</td></tr>
-        <tr><td class="mono">init(…) [payable]:</td><td>roda uma vez, na publicação (opcional)</td></tr>
-        <tr><td class="mono">action nome(…) [-&gt; tipo] [payable]:</td><td>ponto de entrada chamado por transação; pode mudar o estado e enviar TCN</td></tr>
-        <tr><td class="mono">view nome(…) -&gt; tipo:</td><td>consulta somente leitura, grátis; precisa retornar um valor</td></tr>
-        <tr><td class="mono">fn nome(…) [-&gt; tipo]:</td><td>função auxiliar interna; só ela pode ser chamada pelo código</td></tr>
-      </tbody>
-    </table>
-  </div>
+        <div class="table-wrap">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th scope="col">Declaration</th>
+                <th scope="col">Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">contract Name</td>
+                <td>
+                  The first line of code; one file is one contract. The name
+                  appears in the explorer.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">const NAME: type = value</td>
+                <td>
+                  Constant computed at compile time from literals, earlier
+                  constants, operators, and <code>address("tc1…")</code>.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">state name: type [= value]</td>
+                <td>
+                  Data stored on the blockchain. Only scalar types accept an
+                  initial value; maps exist only as state.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">event Name(field: type, …)</td>
+                <td>
+                  Record emitted with <code>emit</code>; it appears in the
+                  transaction receipt.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">init(…) [payable]:</td>
+                <td>Optional; runs once, at deployment.</td>
+              </tr>
+              <tr>
+                <td class="mono">action name(…) [-&gt; type] [payable]:</td>
+                <td>
+                  Entry point called by a transaction; can change state and send
+                  TCN. The return type comes before <code>payable</code>.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">view name(…) -&gt; type:</td>
+                <td>Free, read-only query; must return a value.</td>
+              </tr>
+              <tr>
+                <td class="mono">fn name(…) [-&gt; type]:</td>
+                <td>
+                  Private helper. Helpers are the only functions code can call;
+                  entry points cannot be called from code.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-  <h3 style="margin-top:24px">Tipos</h3>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Tipo</th><th>Exemplo</th><th>Observações</th></tr></thead>
-      <tbody>
-        <tr><td class="mono">int</td><td class="mono">42, -7, 1_000_000, 5 * TCN</td><td>inteiro de 128 bits com verificação de estouro; <code>/</code> descarta a parte fracionária. <code>TCN</code> = 100.000.000 (valores em motes)</td></tr>
-        <tr><td class="mono">bool</td><td class="mono">true, false</td><td>resultado de comparações; <code>and</code>, <code>or</code>, <code>not</code></td></tr>
-        <tr><td class="mono">text</td><td class="mono">"olá"</td><td>UTF-8; escapes <code>\n \t \" \\</code>; junta com <code>+</code></td></tr>
-        <tr><td class="mono">bytes</td><td class="mono">0xdeadbeef</td><td>junta com <code>+</code>; <code>b[i]</code> devolve um <code>int</code></td></tr>
-        <tr><td class="mono">address</td><td class="mono">caller, address("tc1…")</td><td>conta ou contrato; <code>zero_address()</code> é o endereço vazio</td></tr>
-        <tr><td class="mono">list[T]</td><td class="mono">[1, 2, 3]</td><td>até 4.096 itens; <code>xs[i]</code>, <code>len(xs)</code>, <code>xs.push(x)</code>; <code>pop()</code> em listas de estado</td></tr>
-        <tr><td class="mono">map[K, V]</td><td class="mono">saldos[caller] += 1</td><td>só como <code>state</code>; chave <code>int</code>, <code>bool</code>, <code>text</code>, <code>bytes</code> ou <code>address</code>; chave ausente lê o valor zero do tipo; <code>m.has(k)</code>, <code>m.remove(k)</code></td></tr>
-      </tbody>
-    </table>
-  </div>
+        <h3 class="doc-sub" id="types">Types</h3>
+        <div class="table-wrap">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th scope="col">Type</th>
+                <th scope="col">Example</th>
+                <th scope="col">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">int</td>
+                <td class="mono">42, -7, 1_000_000, 5 * TCN</td>
+                <td>
+                  Signed 128-bit integer with overflow checks; <code>/</code>
+                  truncates toward zero. Amounts are in motes:
+                  <code>TCN</code> = 100,000,000.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">bool</td>
+                <td class="mono">true, false</td>
+                <td>
+                  Result of comparisons; <code>and</code>, <code>or</code>,
+                  <code>not</code>. Conditions must be <code>bool</code>.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">text</td>
+                <td class="mono">"hello"</td>
+                <td>
+                  UTF-8; escapes <code>\n \t \" \\</code>; join with
+                  <code>+</code>.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">bytes</td>
+                <td class="mono">0xdeadbeef</td>
+                <td>
+                  Join with <code>+</code>; <code>b[i]</code> returns an
+                  <code>int</code>.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">address</td>
+                <td class="mono">caller, address("tc1…")</td>
+                <td>
+                  An account or contract; <code>zero_address()</code> is the
+                  empty address.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">list[T]</td>
+                <td class="mono">[1, 2, 3]</td>
+                <td>
+                  Up to 4,096 items in a local list; <code>xs[i]</code>,
+                  <code>len(xs)</code>, <code>xs.push(x)</code>;
+                  <code>xs.pop()</code> on state lists.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">map[K, V]</td>
+                <td class="mono">balances[caller] += 1</td>
+                <td>
+                  State only; key <code>int</code>, <code>bool</code>,
+                  <code>text</code>, <code>bytes</code>, or
+                  <code>address</code>. A missing key reads as the type’s zero
+                  value; <code>m.has(k)</code>, <code>m.remove(k)</code>. Maps
+                  cannot be iterated.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="faint doc-gap">
+          Default values are never stored: assigning <code>0</code>,
+          <code>false</code>, <code>""</code>, empty bytes or list, or the zero
+          address deletes the storage entry. <code>5tcn</code> is accepted only
+          in command-line arguments — in source code write
+          <code>5 * TCN</code>.
+        </p>
 
-  <h3 style="margin-top:24px">Instruções, contexto e funções embutidas</h3>
-  <pre><code class="tccl"># Controle de fluxo, listas, mapas e funções embutidas.
-contract Exemplos
+        <h3 class="doc-sub" id="statements">
+          Statements, context, and built-in functions
+        </h3>
+        <pre><code class="language-tccl"># Control flow, lists, maps and built-in functions.
+contract Examples
 
-state vistos: map[bytes, bool]
-state alturas: list[int]
+state seen: map[bytes, bool]
+state heights: list[int]
 
-view soma_pares(n: int) -&gt; int:
-    let soma: int = 0
+view sum_even(n: int) -&gt; int:
+    let total: int = 0
     for i in range(0, n):
         if i % 2 == 0:
-            soma += i
+            total += i
         elif i &gt; 1000:
             break
         else:
             continue
-    return soma
+    return total
 
-view maior(xs: list[int]) -&gt; int:
-    require len(xs) &gt; 0, "lista vazia"
+view largest(xs: list[int]) -&gt; int:
+    require len(xs) &gt; 0, "empty list"
     let m: int = xs[0]
     for x in xs:
         m = max(m, x)
     return m
 
-view resumo(t: text) -&gt; bytes:
+view digest(t: text) -&gt; bytes:
     return slice(sha256(t), 0, 4) + blake3(to_bytes(len(t)))
 
-view rotulo(n: int) -&gt; text:
-    return "valor: " + to_text(abs(n))
+view label(n: int) -&gt; text:
+    return "value: " + to_text(abs(n))
 
-view assinatura_ok(chave: bytes, msg: bytes, sig: bytes) -&gt; bool:
-    return verify_ed25519(chave, msg, sig)
+view signature_ok(key: bytes, msg: bytes, sig: bytes) -&gt; bool:
+    return verify_ed25519(key, msg, sig)
 
-view endereco_da_chave(chave: bytes) -&gt; address:
-    return address_of(chave)
+view address_for_key(key: bytes) -&gt; address:
+    return address_of(key)
 
-action marcar(chave: bytes):
-    require not vistos.has(chave), "já marcado"
-    vistos[chave] = true
-    alturas.push(height)
+action mark(key: bytes):
+    require not seen.has(key), "already marked"
+    seen[key] = true
+    heights.push(height)
 
-action desmarcar(chave: bytes):
-    vistos.remove(chave)
+action unmark(key: bytes):
+    seen.remove(key)
     let n: int = 0
-    while n &lt; 3 and len(alturas) &gt; 0:
-        alturas.pop()
+    while n &lt; 3 and len(heights) &gt; 0:
+        heights.pop()
         n += 1</code></pre>
-  <div class="grid grid-2">
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Instrução</th><th>Efeito</th></tr></thead>
-        <tbody>
-          <tr><td class="mono">let x: tipo = valor</td><td>variável local (tipo obrigatório)</td></tr>
-          <tr><td class="mono">x = v · x += v · x -= v · x *= v</td><td>atribuição; <code>+=</code> também junta text/bytes</td></tr>
-          <tr><td class="mono">if / elif / else</td><td>condição (sempre <code>bool</code>)</td></tr>
-          <tr><td class="mono">while cond:</td><td>repetição (limitada pelo combustível)</td></tr>
-          <tr><td class="mono">for i in range(a, b):</td><td>de <code>a</code> até <code>b − 1</code></td></tr>
-          <tr><td class="mono">for x in lista:</td><td>percorre lista local ou de estado</td></tr>
-          <tr><td class="mono">break · continue · pass</td><td>controle de laço / bloco vazio</td></tr>
-          <tr><td class="mono">return valor</td><td>obrigatório em todo caminho se a função declara <code>-&gt; tipo</code></td></tr>
-          <tr><td class="mono">require cond, "mensagem"</td><td>se falso, falha e reverte tudo</td></tr>
-          <tr><td class="mono">send(endereço, valor)</td><td>envia TCN do saldo do contrato</td></tr>
-          <tr><td class="mono">emit Evento(…)</td><td>registra um evento</td></tr>
-          <tr><td class="mono">destroy(endereço)</td><td>apaga o contrato (só em <code>action</code>, com mapas e listas vazios) e envia saldo + depósito</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Nome</th><th>Tipo / efeito</th></tr></thead>
-        <tbody>
-          <tr><td class="mono">caller</td><td><code>address</code> de quem chamou</td></tr>
-          <tr><td class="mono">value</td><td><code>int</code>: TCN enviado com a chamada (não existe em view)</td></tr>
-          <tr><td class="mono">balance</td><td><code>int</code>: saldo do contrato (inclui <code>value</code>)</td></tr>
-          <tr><td class="mono">height</td><td><code>int</code>: altura do bloco</td></tr>
-          <tr><td class="mono">self</td><td><code>address</code> do próprio contrato</td></tr>
-          <tr><td class="mono">len(x)</td><td>tamanho de list, text ou bytes</td></tr>
-          <tr><td class="mono">sha256(x) · blake3(x)</td><td>hash de bytes ou text → <code>bytes</code></td></tr>
-          <tr><td class="mono">to_bytes(x)</td><td>int, bool, text ou address → <code>bytes</code></td></tr>
-          <tr><td class="mono">to_text(n) · to_int(b)</td><td>int → text · bytes (até 15) → int</td></tr>
-          <tr><td class="mono">min(a, b) · max(a, b) · abs(n)</td><td>aritmética em <code>int</code></td></tr>
-          <tr><td class="mono">slice(b, início, fim)</td><td>pedaço de <code>bytes</code></td></tr>
-          <tr><td class="mono">verify_ed25519(chave, msg, assinatura)</td><td><code>bool</code></td></tr>
-          <tr><td class="mono">ring_verify(anel, msg, assinatura, key_image)</td><td><code>bool</code>: assinatura em anel (até 64 chaves)</td></tr>
-          <tr><td class="mono">address_of(chave)</td><td>endereço The Coin de uma chave pública de 32 bytes</td></tr>
-          <tr><td class="mono">zero_address()</td><td>endereço vazio</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+        <div class="table-wrap">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th scope="col">Statement</th>
+                <th scope="col">Effect</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">let x: type = value</td>
+                <td>Local variable; the type and value are mandatory.</td>
+              </tr>
+              <tr>
+                <td class="mono">x = v · x += v · x -= v · x *= v</td>
+                <td>Assignment; <code>+=</code> also joins text and bytes.</td>
+              </tr>
+              <tr>
+                <td class="mono">if / elif / else</td>
+                <td>Condition (always <code>bool</code>).</td>
+              </tr>
+              <tr>
+                <td class="mono">while cond:</td>
+                <td>Loop, bounded by the fuel limit.</td>
+              </tr>
+              <tr>
+                <td class="mono">for i in range(a, b):</td>
+                <td>From <code>a</code> to <code>b − 1</code>.</td>
+              </tr>
+              <tr>
+                <td class="mono">for x in xs:</td>
+                <td>Iterates over a local or state list.</td>
+              </tr>
+              <tr>
+                <td class="mono">break · continue · pass</td>
+                <td>Loop control / empty block.</td>
+              </tr>
+              <tr>
+                <td class="mono">return value</td>
+                <td>
+                  Required on every path when the function declares
+                  <code>-&gt; type</code>.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">require cond, "message"</td>
+                <td>If false, the call fails and every effect is reverted.</td>
+              </tr>
+              <tr>
+                <td class="mono">send(address, amount)</td>
+                <td>
+                  Sends motes from the contract balance. It never runs code at
+                  the receiver: contracts cannot call contracts, so there is no
+                  re-entrancy.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">emit Event(…)</td>
+                <td>Records an event in the receipt.</td>
+              </tr>
+              <tr>
+                <td class="mono">destroy(address)</td>
+                <td>
+                  Actions only: deletes the contract once its lists and maps are
+                  empty, and pays its balance and storage deposit to the address.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-wrap doc-gap">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Type / effect</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">caller</td>
+                <td>
+                  <code>address</code> that signed the call (the zero address
+                  inside views).
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">value</td>
+                <td>
+                  <code>int</code>: motes sent with the call (not available in
+                  views).
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">balance</td>
+                <td>
+                  <code>int</code>: the contract balance, including
+                  <code>value</code>.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">height</td>
+                <td><code>int</code>: block height (about one block a minute).</td>
+              </tr>
+              <tr>
+                <td class="mono">self</td>
+                <td>The contract’s own <code>address</code>.</td>
+              </tr>
+              <tr>
+                <td class="mono">len(x)</td>
+                <td>Length of a list, text (in bytes), or bytes.</td>
+              </tr>
+              <tr>
+                <td class="mono">sha256(x) · blake3(x)</td>
+                <td>Hash of bytes or text → 32 <code>bytes</code>.</td>
+              </tr>
+              <tr>
+                <td class="mono">to_bytes(x)</td>
+                <td>int, bool, text, address, or bytes → <code>bytes</code>.</td>
+              </tr>
+              <tr>
+                <td class="mono">to_text(n) · to_int(b)</td>
+                <td>
+                  int → decimal text · up to 15 bytes → unsigned
+                  <code>int</code>.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">min(a, b) · max(a, b) · abs(n)</td>
+                <td>Arithmetic on <code>int</code>.</td>
+              </tr>
+              <tr>
+                <td class="mono">slice(b, start, end)</td>
+                <td>Part of a <code>bytes</code> value.</td>
+              </tr>
+              <tr>
+                <td class="mono">verify_ed25519(key, msg, signature)</td>
+                <td>
+                  <code>bool</code>; <code>false</code> for malformed input.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">ring_verify(ring, msg, signature, key_image)</td>
+                <td>
+                  <code>bool</code>: linkable ring signature (bLSAG over
+                  Ristretto255), up to 64 keys.
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">address_of(key)</td>
+                <td>The Coin address of a 32-byte public key.</td>
+              </tr>
+              <tr>
+                <td class="mono">zero_address()</td>
+                <td>The empty address.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-  <h3 style="margin-top:24px">Encerrar um contrato</h3>
-  <pre><code class="tccl"># destroy(): apaga o contrato e devolve saldo + depósito de armazenamento.
-contract Temporario
+        <h3 class="doc-sub" id="destroy">Closing a contract</h3>
+        <pre><code class="language-tccl"># destroy(): deletes the contract and returns its balance and storage deposit.
+contract Temporary
 
-state dono: address
-state notas: map[int, text]
+state owner: address
+state notes: map[int, text]
 
 init():
-    dono = caller
+    owner = caller
 
-action anotar(n: int, texto: text):
-    require caller == dono, "só o dono"
-    notas[n] = texto
+action write(n: int, note: text):
+    require caller == owner, "only the owner"
+    notes[n] = note
 
-action apagar(n: int):
-    require caller == dono, "só o dono"
-    notas.remove(n)
+action erase(n: int):
+    require caller == owner, "only the owner"
+    notes.remove(n)
 
-action encerrar():
-    require caller == dono, "só o dono"
-    destroy(dono)</code></pre>
-  <p class="muted"><code>destroy</code> só funciona depois de esvaziar mapas e listas (variáveis simples são limpas sozinhas). O saldo e todo o depósito de armazenamento vão para o endereço indicado.</p>
+action close():
+    require caller == owner, "only the owner"
+    destroy(owner)</code></pre>
+        <p class="section-copy">
+          <code>destroy</code> only works after every map entry and list item
+          has been removed (scalar variables are cleared automatically). The
+          balance and the whole storage deposit go to the given address.
+        </p>
+      </section>
 
-  <h3 style="margin-top:24px">Limites e custos de combustível</h3>
-  <div class="grid grid-2">
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Limite</th><th class="num">Valor</th></tr></thead>
-        <tbody>
-          <tr><td>Código-fonte</td><td class="num">48.000 bytes</td></tr>
-          <tr><td>Transação de publicação</td><td class="num">64.000 bytes</td></tr>
-          <tr><td>Programa compilado</td><td class="num">262.144 bytes</td></tr>
-          <tr><td>Funções · variáveis de estado</td><td class="num">256 · 256</td></tr>
-          <tr><td>Profundidade de chamadas</td><td class="num">16</td></tr>
-          <tr><td>Operadores encadeados · profundidade de expressão</td><td class="num">64 · 128</td></tr>
-          <tr><td>Argumentos por chamada</td><td class="num">32</td></tr>
-          <tr><td>Eventos por chamada</td><td class="num">64</td></tr>
-          <tr><td>Valor (text/bytes/lista)</td><td class="num">65.536 bytes · 4.096 itens</td></tr>
-          <tr><td>Combustível por transação</td><td class="num">10.000.000</td></tr>
-          <tr><td>Combustível por consulta na API</td><td class="num">2.000.000</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Operação</th><th class="num">Combustível</th></tr></thead>
-        <tbody>
-          <tr><td>Instrução · expressão</td><td class="num">2 · 1</td></tr>
-          <tr><td>Chamada de função</td><td class="num">20</td></tr>
-          <tr><td>Leitura de estado</td><td class="num">250</td></tr>
-          <tr><td>Gravação de estado</td><td class="num">400 + 4 por byte</td></tr>
-          <tr><td>Hash</td><td class="num">60 + 20 por 64 bytes</td></tr>
-          <tr><td>Enviar TCN · emitir evento</td><td class="num">300 · 100</td></tr>
-          <tr><td>verify_ed25519</td><td class="num">3.500 (+ 1 por 64 bytes de mensagem)</td></tr>
-          <tr><td>ring_verify</td><td class="num">5.000 + 10.000 por chave</td></tr>
-          <tr><td>destroy</td><td class="num">1.000</td></tr>
-          <tr><td>Compilar na publicação</td><td class="num">5 por byte de código</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+      <section class="wrap section" id="limits">
+        <div class="eyebrow">05 — LIMITS AND FUEL</div>
+        <h2>Bounded, and priced by work.</h2>
+        <p class="section-copy">
+          Fuel prices are calibrated to roughly 20 ns of CPU per unit on a
+          2-vCPU server, so a completely full block executes in about a second
+          in the worst case.
+        </p>
+        <div class="grid grid-2">
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">
+                Limits
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Limit</th>
+                  <th scope="col" class="num">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Source code</td>
+                  <td class="num">48,000 bytes</td>
+                </tr>
+                <tr>
+                  <td>Deploy transaction · other transactions</td>
+                  <td class="num">64,000 · 16,384 bytes</td>
+                </tr>
+                <tr>
+                  <td>Compiled program</td>
+                  <td class="num">262,144 bytes</td>
+                </tr>
+                <tr>
+                  <td>Functions · state variables · locals per function</td>
+                  <td class="num">256 · 256 · 1,024</td>
+                </tr>
+                <tr>
+                  <td>Call depth</td>
+                  <td class="num">16</td>
+                </tr>
+                <tr>
+                  <td>Nesting of blocks, parentheses, types</td>
+                  <td class="num">32</td>
+                </tr>
+                <tr>
+                  <td>Operators per precedence level · expression depth</td>
+                  <td class="num">64 · 128</td>
+                </tr>
+                <tr>
+                  <td>Arguments per call · events per call</td>
+                  <td class="num">32 · 64</td>
+                </tr>
+                <tr>
+                  <td>Text, bytes, or list value · local list items</td>
+                  <td class="num">65,536 bytes · 4,096</td>
+                </tr>
+                <tr>
+                  <td>Fuel per transaction</td>
+                  <td class="num">10,000,000</td>
+                </tr>
+                <tr>
+                  <td>Fuel per block (mainnet default)</td>
+                  <td class="num">50,000,000</td>
+                </tr>
+                <tr>
+                  <td>Fuel per view via the API · in the simulator</td>
+                  <td class="num">2,000,000 · 5,000,000</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">
+                Fuel costs
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Operation</th>
+                  <th scope="col" class="num">Fuel</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Statement · expression</td>
+                  <td class="num">2 · 1</td>
+                </tr>
+                <tr>
+                  <td>Values read or combined</td>
+                  <td class="num">1 per 32 bytes</td>
+                </tr>
+                <tr>
+                  <td>Function call</td>
+                  <td class="num">20</td>
+                </tr>
+                <tr>
+                  <td>Storage read</td>
+                  <td class="num">250</td>
+                </tr>
+                <tr>
+                  <td>Storage write or delete</td>
+                  <td class="num">400 + 4 per byte</td>
+                </tr>
+                <tr>
+                  <td>sha256 · blake3</td>
+                  <td class="num">60 + 20 per 64 bytes</td>
+                </tr>
+                <tr>
+                  <td>send · emit</td>
+                  <td class="num">300 · 100 + 1 per byte</td>
+                </tr>
+                <tr>
+                  <td>verify_ed25519</td>
+                  <td class="num">3,500 + 1 per 64 bytes</td>
+                </tr>
+                <tr>
+                  <td>ring_verify</td>
+                  <td class="num">5,000 + 10,000 per key</td>
+                </tr>
+                <tr>
+                  <td>destroy</td>
+                  <td class="num">1,000</td>
+                </tr>
+                <tr>
+                  <td>Deploy: compile</td>
+                  <td class="num">5 per source byte</td>
+                </tr>
+                <tr>
+                  <td>Invoke: load the contract</td>
+                  <td class="num">100 + 1 per 100 bytes of code</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
-  <h2 id="taxas">Taxas, combustível e depósito — sem mistério</h2>
-  <div class="grid grid-3">
-    <div class="card"><h3>1. Taxa</h3><p class="muted" style="margin:0">Paga ao publicar ou chamar, como em qualquer transação: um valor fixo, mais o tamanho em bytes, mais o <strong>combustível reservado</strong> (<code>max_fuel</code>). É cobrada mesmo se o contrato falhar — o trabalho de executar foi feito.</p></div>
-    <div class="card"><h3>2. Combustível</h3><p class="muted" style="margin:0">Mede o trabalho. Você paga pelo limite que reservou, não pelo que sobrou; por isso a carteira mede com uma simulação e reserva só uma folga (+30% + 5.000). Consultas <code>view</code> não pagam nada.</p></div>
-    <div class="card"><h3>3. Depósito de armazenamento</h3><p class="muted" style="margin:0">Dados na blockchain ocupam disco de todos os nós. Por isso quem faz o contrato crescer <strong>trava</strong> um depósito por kB. Não é gasto: volta proporcionalmente quando o espaço é liberado, e inteiro no <code>destroy</code>.</p></div>
-  </div>
-  <p class="muted" style="margin-top:16px">A fórmula exata (arredondando para cima):</p>
-  <div class="formula">taxa mínima = (taxa base + bytes × taxa por kB ÷ 1.000 + max_fuel × taxa por mil de combustível ÷ 1.000) × congestionamento<br>depósito = ⌈bytes do contrato ÷ 1.000⌉ × depósito por kB</div>
+      <section class="wrap section" id="fees">
+        <div class="eyebrow">06 — FEES, FUEL, AND DEPOSITS</div>
+        <h2>No surprises in the price.</h2>
+        <div class="grid grid-3 doc-gap">
+          <div class="card">
+            <span class="small-label">01</span>
+            <h3>Fee</h3>
+            <p>
+              Paid when you deploy or call, like any transaction: a base amount,
+              plus the size in bytes, plus the <strong>reserved fuel</strong>
+              (<code>max_fuel</code>). It is charged even if the contract fails
+              after being mined — the work of running it was done.
+            </p>
+          </div>
+          <div class="card">
+            <span class="small-label">02</span>
+            <h3>Fuel</h3>
+            <p>
+              Measures the work. You pay for the limit you reserve, not for what
+              you used, so the wallet measures the call with a simulation and
+              reserves only a margin (measured × 1.3 + 5,000). View queries
+              cost nothing.
+            </p>
+          </div>
+          <div class="card">
+            <span class="small-label">03</span>
+            <h3>Storage deposit</h3>
+            <p>
+              Data on the blockchain uses disk space on every node, so whoever
+              makes a contract grow <strong>locks</strong> a deposit per started
+              kB. It is not spent: it is returned proportionally when space is
+              freed, and in full on <code>destroy</code>.
+            </p>
+          </div>
+        </div>
+        <p class="section-copy doc-gap">
+          The exact formulas (each division rounds up):
+        </p>
+        <div class="formula">
+          minimum fee = (base_fee + size × fee_per_kb ÷ 1,000 + max_fuel ×
+          fee_per_kfuel ÷ 1,000) × congestion<br />deposit = ⌈contract bytes ÷
+          1,000⌉ × storage_deposit_per_kb
+        </div>
 
-  <h3>Exemplo real: o contador desta página na mainnet</h3>
-  <p class="muted">Valores padrão da mainnet: taxa base <strong>1.000 motes</strong>, <strong>10.000 motes por kB</strong>, <strong>1.000 motes por 1.000 de combustível</strong> e depósito de <strong>100.000 motes por kB</strong> (1 TCN = 100.000.000 motes). Tamanhos e combustível medidos publicando o contrato numa rede de teste com a versão 0.2; sem congestionamento (1×).</p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Operação</th><th>Conta</th><th class="num">Mínimo</th><th class="num">Prioridade normal (+25%)</th></tr></thead>
-      <tbody>
-        <tr><td>Publicar (654 bytes, reserva 8.217 de combustível)</td><td class="mono">1.000 + 6.540 + 8.217</td><td class="num">15.757 motes<br><span class="faint">0,00015757 TCN</span></td><td class="num">19.697 motes<br><span class="faint">0,00019697 TCN</span></td></tr>
-        <tr><td>Depósito (contrato com 336 bytes → 1 kB)</td><td class="mono">1 × 100.000</td><td class="num">100.000 motes<br><span class="faint">0,001 TCN · reembolsável</span></td><td class="num">—</td></tr>
-        <tr><td><code>incrementar 5</code> (207 bytes, reserva 7.310, usa 1.777)</td><td class="mono">1.000 + 2.070 + 7.310</td><td class="num">10.380 motes<br><span class="faint">0,0001038 TCN</span></td><td class="num">12.975 motes<br><span class="faint">0,00012975 TCN</span></td></tr>
-        <tr><td><code>view valor</code></td><td>—</td><td class="num">grátis</td><td class="num">grátis</td></tr>
-        <tr><td>Comparação: transferência de 160 bytes</td><td class="mono">1.000 + 1.600</td><td class="num">2.600 motes<br><span class="faint">0,000026 TCN</span></td><td class="num">3.250 motes</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <p class="muted" style="margin-top:12px">Depois da primeira chamada o contador passa a ocupar 380 bytes — ainda 1 kB, então não trava depósito extra. Se os blocos ficarem cheios, o <strong>congestionamento</strong> multiplica a taxa mínima (por exemplo 2× faz a publicação custar 31.514 motes) e <strong>a parte extra é queimada</strong>, não vai para o minerador. Os parâmetros podem mudar por <a href="governance.html">governança</a>; valores atuais em <a href="explorer.html">Explorer → Taxas agora</a>.</p>
+        <h3 class="doc-sub">Worked example: the counter on mainnet</h3>
+        <p class="section-copy">
+          Mainnet defaults: <code>base_fee</code> 1,000 motes,
+          <code>fee_per_kb</code> 10,000 motes, <code>fee_per_kfuel</code>
+          1,000 motes, and a <code>storage_deposit_per_kb</code> of 100,000
+          motes (1 TCN = 100,000,000 motes). Sizes and fuel come from the
+          deployment above; no congestion (1×). The wallet’s normal priority
+          pays 25% over the minimum.
+        </p>
+        <div class="table-wrap">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th scope="col">Operation</th>
+                <th scope="col">Calculation</th>
+                <th scope="col" class="num">Minimum</th>
+                <th scope="col" class="num">Normal priority (+25%)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Deploy (643 bytes, reserves 8,146 fuel)</td>
+                <td class="mono">1,000 + 6,430 + 8,146</td>
+                <td class="num">
+                  15,576 motes<br /><span class="faint">0.00015576 TCN</span>
+                </td>
+                <td class="num">
+                  19,470 motes<br /><span class="faint">0.0001947 TCN</span>
+                </td>
+              </tr>
+              <tr>
+                <td>Deposit (323-byte contract → 1 kB)</td>
+                <td class="mono">1 × 100,000</td>
+                <td class="num">
+                  100,000 motes<br /><span class="faint"
+                    >0.001 TCN · refundable</span
+                  >
+                </td>
+                <td class="num">—</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>increment 5</code> (205 bytes, reserves 7,310, uses
+                  1,777)
+                </td>
+                <td class="mono">1,000 + 2,050 + 7,310</td>
+                <td class="num">
+                  10,360 motes<br /><span class="faint">0.0001036 TCN</span>
+                </td>
+                <td class="num">
+                  12,950 motes<br /><span class="faint">0.0001295 TCN</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>view get</code></td>
+                <td>—</td>
+                <td class="num">free</td>
+                <td class="num">free</td>
+              </tr>
+              <tr>
+                <td>For comparison: a simple 159-byte transfer</td>
+                <td class="mono">1,000 + 1,590</td>
+                <td class="num">
+                  2,590 motes<br /><span class="faint">0.0000259 TCN</span>
+                </td>
+                <td class="num">
+                  3,238 motes<br /><span class="faint">0.00003238 TCN</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="section-copy doc-gap">
+          After the first call the counter uses 367 bytes — still within 1 kB,
+          so no extra deposit is locked. When blocks fill up, the
+          <strong>congestion</strong> multiplier raises the minimum fee (at 2×,
+          the deployment costs at least 31,152 motes) and
+          <strong>the surcharge is burned</strong> rather than paid to the
+          miner. These parameters can change through
+          <a href="governance.html">governance</a>; see the live values in
+          <a href="explorer.html">Explorer → Current fees</a>.
+        </p>
+      </section>
 
-  <h2 id="privacidade">Privacidade com pools de contratos</h2>
-  <div class="grid grid-2">
-    <div class="card">
-      <h3>Como funciona</h3>
-      <p class="muted">A The Coin é transparente: saldos e transferências são públicos. Privacidade existe <strong>apenas dentro de contratos TCCL escritos por usuários</strong>, usando <code>ring_verify</code> — assinaturas em anel ligáveis (bLSAG sobre Ristretto255).</p>
-      <ol class="muted">
-        <li><strong>Depósito</strong>: você envia o valor fixo do pool (no exemplo, 10 TCN) junto com uma chave pública de anel nova.</li>
-        <li><strong>Espera</strong>: outras pessoas depositam o mesmo valor.</li>
-        <li><strong>Saque</strong>: você assina com um anel formado por vários depósitos. O contrato só aprende que <em>um</em> deles assinou, nunca qual, e paga para um endereço novo. A <em>key image</em> impede sacar o mesmo depósito duas vezes.</li>
-        <li><strong>Relayer</strong> (opcional): outra conta envia a transação de saque e recebe uma pequena taxa, então o endereço de destino não precisa ter TCN antes.</li>
-      </ol>
-      <p class="muted" style="margin:0">Exemplo completo: <a href="/tccl/examples/private_pool.tccl">private_pool.tccl</a>.</p>
-    </div>
-    <div class="card">
-      <h3>Na carteira</h3>
-      <p class="muted">As chaves de anel derivam das suas 24 palavras. A carteira conversa com qualquer pool que siga a interface padrão:</p>
-      <pre><code>thecoin-wallet privacy keygen --key 0
+      <section class="wrap section" id="privacy">
+        <div class="eyebrow">07 — PRIVACY</div>
+        <h2>Private payments with contract pools.</h2>
+        <div class="grid grid-2 doc-gap">
+          <div class="card">
+            <h3>How it works</h3>
+            <p>
+              The Coin is transparent: balances and transfers are public.
+              Privacy exists <strong>only inside user-written TCCL
+              contracts</strong> that use <code>ring_verify</code> — linkable
+              ring signatures (bLSAG over Ristretto255).
+            </p>
+            <ol class="doc-list">
+              <li>
+                <strong>Deposit:</strong> send the pool’s fixed amount (10 TCN in
+                the example) together with a fresh ring public key.
+              </li>
+              <li>
+                <strong>Wait:</strong> other people deposit the same amount.
+              </li>
+              <li>
+                <strong>Withdraw:</strong> sign with a ring made of several
+                deposits. The contract learns only that <em>one</em> of them
+                signed, never which, and pays a new address. The
+                <em>key image</em> prevents the same deposit from being withdrawn
+                twice.
+              </li>
+              <li>
+                <strong>Relayer</strong> (optional): another account submits the
+                withdrawal and earns a small fee, so the destination address does
+                not need TCN beforehand.
+              </li>
+            </ol>
+            <p>
+              Full example:
+              <a href="/tccl/examples/private_pool.tccl">private_pool.tccl</a>.
+            </p>
+          </div>
+          <div class="card">
+            <h3>In the wallet</h3>
+            <p>
+              Ring keys are derived from your wallet’s recovery phrase. The
+              wallet works with any pool that follows the standard interface:
+            </p>
+            <pre><code>thecoin-wallet privacy keygen --key 0
 thecoin-wallet privacy deposit tc1…pool --key 0
 thecoin-wallet privacy status tc1…pool --key 0
 thecoin-wallet privacy withdraw tc1…pool --key 0 \
-    --to tc1…novo --ring-size 16</code></pre>
-      <h3 style="margin-top:16px">Interface TCCL-PRIV-1</h3>
-      <div class="table-wrap">
-        <table>
-          <tbody>
-            <tr><td class="mono">denomination() -&gt; int</td><td>valor fixo do depósito</td></tr>
-            <tr><td class="mono">deposits() -&gt; int</td><td>quantidade de depósitos</td></tr>
-            <tr><td class="mono">key_at(index: int) -&gt; bytes</td><td>chave pública de um depósito</td></tr>
-            <tr><td class="mono">is_withdrawn(key_image: bytes) -&gt; bool</td><td>se já foi sacado</td></tr>
-            <tr><td class="mono">message_for(to, relayer, fee) -&gt; bytes</td><td>mensagem a assinar</td></tr>
-            <tr><td class="mono">deposit(public_key: bytes) payable</td><td>ação de depósito</td></tr>
-            <tr><td class="mono">withdraw(to, relayer, fee, members, signature, key_image)</td><td>ação de saque</td></tr>
-          </tbody>
-        </table>
+    --to tc1…new --ring-size 16</code></pre>
+            <p>
+              Optional withdrawal flags: <code>--relayer &lt;address&gt;</code>
+              and <code>--fee &lt;TCN&gt;</code>.
+            </p>
+            <h4 class="small-label">TCCL-PRIV-1 INTERFACE</h4>
+            <div class="table-wrap">
+              <table>
+                <caption class="sr-only">
+                  TCCL-PRIV-1 interface
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Function</th>
+                    <th scope="col">Purpose</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="mono">denomination() -&gt; int</td>
+                    <td>fixed deposit amount</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">deposits() -&gt; int</td>
+                    <td>number of deposits</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">key_at(index: int) -&gt; bytes</td>
+                    <td>public key of a deposit</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">is_withdrawn(key_image: bytes) -&gt; bool</td>
+                    <td>already withdrawn?</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">message_for(to, relayer, fee) -&gt; bytes</td>
+                    <td>message to sign</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">deposit(public_key: bytes) payable</td>
+                    <td>deposit action</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">
+                      withdraw(to, relayer, fee, members, signature, key_image)
+                    </td>
+                    <td>withdrawal action</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="notice doc-gap">
+          <strong>Use pools carefully.</strong>
+          <p>
+            Privacy is only as good as the number of deposits in the ring: wait
+            for other people to deposit before withdrawing, withdraw to an
+            address that has never been used, and, if you can, submit the
+            withdrawal from another account or through a relayer (withdrawing
+            from the address that deposited reveals the link — the wallet warns
+            you). Pools are user contracts, not part of the protocol: read the
+            pool’s source code in the explorer before depositing.
+          </p>
+        </div>
+      </section>
+
+      <section class="wrap section" id="resources">
+        <div class="eyebrow">08 — RESOURCES</div>
+        <h2>Keep building.</h2>
+        <div class="grid grid-3 doc-gap">
+          <a class="resource-card" href="/tccl/tccl-cookbook.pdf"
+            ><span class="resource-arrow" aria-hidden="true">↗</span>
+            <h3>TCCL Cookbook</h3>
+            <p>
+              Complete, commented recipes, a security checklist, and the full
+              reference.
+            </p>
+            <small>PDF</small></a
+          ><a
+            class="resource-card"
+            href="https://github.com/LucasBolla94/thecoin/blob/main/docs/tccl/TCCL.md"
+            ><span class="resource-arrow" aria-hidden="true">↗</span>
+            <h3>Language reference</h3>
+            <p>
+              The quick start and complete language reference on GitHub.
+            </p>
+            <small>TCCL.md</small></a
+          ><a
+            class="resource-card"
+            href="https://github.com/LucasBolla94/thecoin/blob/main/docs/API.md"
+            ><span class="resource-arrow" aria-hidden="true">↗</span>
+            <h3>Contract API</h3>
+            <p>
+              <code>GET /api/v1/program/{address}</code>,
+              <code>POST /api/v1/program/{address}/view</code>, and
+              <code>POST /api/v1/tx/simulate</code> for wallets and apps.
+            </p>
+            <small>API.md</small></a
+          >
+        </div>
+
+        <h3 class="doc-sub" id="examples">Ready-made examples</h3>
+        <div class="table-wrap">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th scope="col">File</th>
+                <th scope="col">What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/counter.tccl"
+                    >counter.tccl</a
+                  >
+                </td>
+                <td>The smallest useful contract: a counter with an event.</td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/shop.tccl">shop.tccl</a>
+                </td>
+                <td>
+                  A shop with per-item prices, commented part by part — a good
+                  way to learn every kind of declaration.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/tip_jar.tccl"
+                    >tip_jar.tccl</a
+                  >
+                </td>
+                <td>
+                  A tip jar: anyone sends TCN with a message; only the owner
+                  withdraws.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/token.tccl">token.tccl</a>
+                </td>
+                <td>
+                  A token with a fixed maximum supply, transfers, and allowances.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/crowdfund.tccl"
+                    >crowdfund.tccl</a
+                  >
+                </td>
+                <td>
+                  Crowdfunding with a goal and a deadline in blocks; backers are
+                  refunded if the goal is missed.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/escrow.tccl"
+                    >escrow.tccl</a
+                  >
+                </td>
+                <td>Escrow payment with an arbiter and a deadline.</td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/savings.tccl"
+                    >savings.tccl</a
+                  >
+                </td>
+                <td>Savings locked until a block height you choose.</td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/poll.tccl">poll.tccl</a>
+                </td>
+                <td>A poll with fixed options and registered voters.</td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/names.tccl">names.tccl</a>
+                </td>
+                <td>
+                  A name service: human-readable names that point to addresses,
+                  rented by the year.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/treasury.tccl"
+                    >treasury.tccl</a
+                  >
+                </td>
+                <td>A treasury with several owners (M-of-N approvals).</td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/private_pool.tccl"
+                    >private_pool.tccl</a
+                  >
+                </td>
+                <td>A private payments pool (TCCL-PRIV-1).</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="faint doc-gap">
+          Every example compiles with <code>tccl check</code> and is exercised by
+          the test suite (<code>cargo test -p tccl</code>).
+        </p>
+      </section>
+
+      <section class="wrap bottom-callout">
+        <div>
+          <h2>Want a node to deploy from?</h2>
+          <p>
+            One command installs the node, the wallet, and the
+            <code>tccl</code> tool on a Linux server.
+          </p>
+        </div>
+        <div class="actions">
+          <a class="btn" href="validator.html">Validator guide ↗</a
+          ><a class="text-link" href="docs.html">Developer resources ↗</a>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap footer-top">
+        <div>
+          <a class="brand" href="index.html"
+            ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+            >the coin.</a
+          >
+          <p>A small footprint. A shared future.</p>
+        </div>
+        <div class="footer-links">
+          <a href="download.html">Get started</a
+          ><a href="whitepaper.html">Whitepaper</a
+          ><a href="https://github.com/LucasBolla94/thecoin">GitHub ↗</a
+          ><a href="docs.html">Documentation</a>
+          <a href="tccl.html">TCCL</a>
+          <a href="validator.html">Validator guide</a>
+        </div>
       </div>
-    </div>
-  </div>
-  <div class="notice accent" style="margin-top:16px"><strong>Cuidados.</strong> A privacidade é tão boa quanto o número de depósitos no anel: espere outras pessoas depositarem antes de sacar, saque para um endereço que nunca foi usado e, se puder, envie o saque de outra conta ou por um relayer (sacar do mesmo endereço que depositou revela a ligação — a carteira avisa). Pools são contratos de usuários, não parte do protocolo: leia o código-fonte do pool no explorer antes de depositar.</div>
-
-  <h2 id="recursos">Recursos</h2>
-  <div class="grid grid-3">
-    <a class="card" href="/tccl/tccl-cookbook.pdf"><h3>TCCL Cookbook (PDF)</h3><p class="muted" style="margin:0">Receitas completas e comentadas, em inglês, para adaptar aos seus contratos.</p></a>
-    <a class="card" href="https://github.com/LucasBolla94/thecoin/blob/main/docs/tccl/TCCL.md"><h3>Referência TCCL.md</h3><p class="muted" style="margin:0">Documentação completa da linguagem no GitHub.</p></a>
-    <a class="card" href="docs.html#tccl"><h3>API para contratos</h3><p class="muted" style="margin:0"><code>/program/{endereço}</code>, <code>/program/{endereço}/view</code> e <code>/tx/simulate</code> para carteiras e aplicativos.</p></a>
-  </div>
-  <h3 style="margin-top:24px">Exemplos prontos</h3>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Arquivo</th><th>O que faz</th></tr></thead>
-      <tbody>
-        <tr><td><a class="mono" href="/tccl/examples/counter.tccl">counter.tccl</a></td><td>o menor contrato útil: um contador com evento</td></tr>
-        <tr><td><a class="mono" href="/tccl/examples/shop.tccl">shop.tccl</a></td><td>loja com preços por item, comentada parte por parte — boa para aprender a estrutura</td></tr>
-        <tr><td><a class="mono" href="/tccl/examples/tip_jar.tccl">tip_jar.tccl</a></td><td>pote de gorjetas com mensagem; só o dono saca</td></tr>
-        <tr><td><a class="mono" href="/tccl/examples/token.tccl">token.tccl</a></td><td>token com oferta máxima, transferências e autorizações</td></tr>
-        <tr><td><a class="mono" href="/tccl/examples/crowdfund.tccl">crowdfund.tccl</a></td><td>vaquinha com meta e prazo em blocos; reembolso se não atingir</td></tr>
-        <tr><td><a class="mono" href="/tccl/examples/escrow.tccl">escrow.tccl</a></td><td>pagamento em garantia com árbitro</td></tr>
-        <tr><td><a class="mono" href="/tccl/examples/savings.tccl">savings.tccl</a></td><td>poupança travada até uma altura de bloco escolhida</td></tr>
-        <tr><td><a class="mono" href="/tccl/examples/poll.tccl">poll.tccl</a></td><td>votação com opções fixas e eleitores registrados</td></tr>
-        <tr><td><a class="mono" href="/tccl/examples/names.tccl">names.tccl</a></td><td>serviço de nomes: nomes legíveis que apontam para endereços, alugados por ano</td></tr>
-        <tr><td><a class="mono" href="/tccl/examples/treasury.tccl">treasury.tccl</a></td><td>tesouraria com vários donos (M-de-N)</td></tr>
-        <tr><td><a class="mono" href="/tccl/examples/private_pool.tccl">private_pool.tccl</a></td><td>pool de pagamentos privados (TCCL-PRIV-1)</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <p class="faint" style="margin-top:10px">Lista completa em <a href="/tccl/examples/">/tccl/examples/</a>. Todos passam em <code>tccl check</code>.</p>
-</main>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <span>The Coin v0.2 · TCCL linguagem versão 1</span>
-    <span><a href="https://github.com/LucasBolla94/thecoin/blob/main/docs/tccl/TCCL.md">TCCL.md</a> · <a href="/tccl/tccl-cookbook.pdf">Cookbook</a> · <a href="explorer.html">Explorer</a></span>
-  </div>
-</footer>
-<script src="assets/config.js"></script>
-<script src="assets/api.js"></script>
-</body>
+      <div class="wrap footer-bottom">
+        <span>Open source · MIT / Apache-2.0</span
+        ><span
+          >Built in Rust. Open to everyone.
+          <span class="version">v0.2</span></span
+        >
+      </div>
+    </footer>
+    <script src="assets/config.js?v=5"></script>
+    <script src="assets/api.js?v=5"></script>
+    <script src="assets/site.js?v=5"></script>
+  </body>
 </html>

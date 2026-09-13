@@ -1805,3 +1805,52 @@ main.wrap > h2 {
     gap: 14px;
   }
 }
+
+/* ---------- guide pages (tccl.html, validator.html: <main class="doc">) ---------- */
+.doc .page-intro .toc {
+  margin-top: 36px;
+}
+.doc .doc-sub {
+  margin-top: 56px;
+}
+.doc .doc-gap {
+  margin-top: 22px;
+}
+.doc .doc-table td {
+  white-space: normal;
+  min-width: 200px;
+  vertical-align: top;
+}
+.doc .doc-table td:first-child,
+.doc .doc-table td.num {
+  white-space: nowrap;
+  min-width: 0;
+}
+.doc .doc-list {
+  color: var(--muted);
+  font-size: 13px;
+  padding-left: 1.25em;
+  margin: 0 0 20px;
+}
+.doc .doc-list li {
+  margin-bottom: 8px;
+}
+.doc .doc-list li::marker {
+  color: #ad4317;
+}
+.doc .card pre {
+  margin: 0 0 20px;
+  padding: 18px;
+}
+.doc .card pre:last-child,
+.doc .card .doc-list:last-child {
+  margin-bottom: 0;
+}
+.doc .guide-step pre {
+  margin: 20px 0;
+}
+@media (max-width: 760px) {
+  .doc .doc-table td {
+    min-width: 160px;
+  }
+}
