@@ -14,6 +14,7 @@
     <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
     <nav class="nav" aria-label="Principal">
       <a href="index.html">Início</a>
+      <a href="validator.html">Validador</a>
       <a href="download.html">Instalar</a>
       <a href="explorer.html">Explorer</a>
       <a href="governance.html">Governança</a>
@@ -34,29 +35,47 @@
   </div>
 
   <h2>1. Instalação em um comando</h2>
+  <p class="muted">Sem nenhuma pergunta — instala, cria a carteira de recompensas e já começa a validar e minerar:</p>
   <div class="codeblock">
-    <button class="btn btn-small" data-copy="curl -fsSL https://the-coin.cloud/install.sh | sudo bash">copiar</button>
-    <pre><code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash</code></pre>
+    <button class="btn btn-small" data-copy="curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes">copiar</button>
+    <pre><code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes</code></pre>
   </div>
+  <p class="muted">Prefere escolher a senha da carteira ou usar um endereço que já tem? Rode sem <code>--yes</code> e responda ao menu:</p>
+  <pre><code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash</code></pre>
   <div class="card">
     <h3>O que o instalador faz</h3>
     <ul class="muted">
-      <li>Detecta a arquitetura e baixa os binários <code>thecoind</code> e <code>thecoin-wallet</code> da versão mais recente.</li>
-      <li>Confere o checksum SHA-256 antes de instalar em <code>/usr/local/bin</code>.</li>
-      <li>Cria o usuário de sistema <code>thecoin</code>, o diretório de dados e o arquivo de configuração <code>thecoind.toml</code>.</li>
-      <li>Pede o seu endereço de mineração (ou cria uma carteira nova e mostra as 24 palavras de recuperação).</li>
-      <li>Registra o serviço systemd <code>thecoind</code> com prioridade baixa e limites de memória, abre a porta 7333 no firewall (se o <code>ufw</code> estiver ativo) e inicia o nó.</li>
+      <li>Verifica o sistema: Linux x86_64/aarch64 com systemd, memória, disco e se o relógio está sincronizado.</li>
+      <li>Baixa os binários <code>thecoind</code> e <code>thecoin-wallet</code> e confere o checksum SHA-256 antes de instalar.</li>
+      <li>Cria o usuário de sistema <code>thecoin</code>, o diretório de dados e <code>/etc/thecoin/thecoind.toml</code>.</li>
+      <li>Cria a carteira que recebe as recompensas e mostra as <strong>24 palavras de recuperação</strong> no final (anote no papel!).</li>
+      <li>Registra o serviço <code>thecoind</code> (isolado, prioridade baixa), abre a porta P2P no <code>ufw</code> se estiver ativo e inicia o nó.</li>
+      <li>Instala o comando <code>thecoin</code> para acompanhar e administrar o nó.</li>
     </ul>
-    <p class="faint" style="margin:0">Prefere ler antes de executar? <code>curl -fsSLO https://the-coin.cloud/install.sh &amp;&amp; less install.sh &amp;&amp; sudo bash install.sh</code></p>
+    <p class="faint" style="margin:0">Prefere ler antes de executar? <code>curl -fsSLO https://the-coin.cloud/install.sh &amp;&amp; less install.sh &amp;&amp; sudo bash install.sh --yes</code></p>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <h3>Opções do instalador</h3>
+    <pre><code>--yes                     não pergunta nada (cria a carteira automaticamente)
+--miner-address tc1...    minerar para um endereço que você já tem
+--no-mine                 só validar e repassar blocos, sem minerar
+--network testnet         instalar na testnet
+--threads N               threads de mineração (0 = núcleos − 1)
+--public-api              expor a API em 0.0.0.0 (só para nós que servem o site)
+--version X.Y.Z           instalar uma versão específica
+--from-source             compilar a partir do código-fonte</code></pre>
+    <p class="faint" style="margin:0">Exemplo: <code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network testnet</code></p>
   </div>
 
   <h2>2. Acompanhar o nó</h2>
-  <pre><code>sudo systemctl status thecoind          # estado do serviço
-sudo journalctl -u thecoind -f          # logs em tempo real
-curl -s http://127.0.0.1:7334/api/v1/status   # altura, peers, hashrate
-curl -s http://127.0.0.1:7334/api/v1/mining   # hashrate local e blocos encontrados
-sudo systemctl restart thecoind         # reiniciar após mudar a configuração</code></pre>
-  <p class="muted">A API do nó escuta apenas em <code>127.0.0.1</code> por padrão. A configuração completa (threads de mineração, modo pruned, peers, sinalização de governança) está em <code>thecoind.toml</code>; veja <a data-repo-link="/blob/main/docs/OPERATIONS.md" href="#">OPERATIONS.md</a>.</p>
+  <pre><code>thecoin status        # serviço, altura, peers, mineração e saldo
+thecoin logs          # logs em tempo real (Ctrl+C para sair)
+thecoin balance       # saldo da carteira de recompensas
+thecoin address       # seu endereço de mineração
+sudo thecoin mnemonic # mostrar de novo as palavras de recuperação
+sudo thecoin restart  # reiniciar após mudar a configuração
+sudo thecoin update   # atualizar para a versão mais recente</code></pre>
+  <p class="muted">A API do nó escuta apenas em <code>127.0.0.1</code> por padrão. A configuração completa (threads de mineração, modo pruned, peers, sinalização de governança) está em <code>/etc/thecoin/thecoind.toml</code>; veja <a data-repo-link="/blob/main/docs/OPERATIONS.md" href="#">OPERATIONS.md</a> e o guia <a href="validator.html">Seja um validador</a>.</p>
 
   <h2>3. Carteira — início rápido</h2>
   <pre><code># criar carteira (anote as 24 palavras em papel, offline!)
@@ -87,11 +106,12 @@ thecoin-wallet history</code></pre>
     <div class="card">
       <h3>Binários prontos</h3>
       <p class="muted">Baixe o pacote da sua arquitetura em <a data-repo-link="/releases" href="#">GitHub Releases</a> ou em <a href="/releases/">the-coin.cloud/releases</a>, confira o SHA-256 e extraia:</p>
-      <pre><code>sha256sum -c SHA256SUMS
-tar xzf thecoin-*-linux-x86_64.tar.gz
-sudo install -m 0755 thecoind thecoin-wallet /usr/local/bin/
-thecoind init --miner-address tc1q...
-thecoind</code></pre>
+      <pre><code>sha256sum -c thecoin-x86_64-unknown-linux-musl.tar.gz.sha256
+tar xzf thecoin-x86_64-unknown-linux-musl.tar.gz
+sudo install -m 0755 thecoin/thecoind thecoin/thecoin-wallet /usr/local/bin/
+thecoin-wallet create
+thecoind --miner-address "$(thecoin-wallet address)"</code></pre>
+      <p class="faint" style="margin:0">Para ARM64 use <code>thecoin-aarch64-unknown-linux-musl.tar.gz</code>.</p>
     </div>
     <div class="card">
       <h3>Compilar do código-fonte</h3>
@@ -109,10 +129,11 @@ cargo build --release
   <p class="muted">Use a <strong>testnet</strong> (<code>--network testnet</code>, endereços <code>tct1…</code>, portas 17333/17334) ou uma rede local <strong>regtest</strong> (<code>--network regtest</code>, PoW trivial, ideal para desenvolvimento).</p>
 
   <h2>Desinstalar</h2>
-  <pre><code>curl -fsSL https://the-coin.cloud/uninstall.sh | sudo bash
-# ou manualmente:
-sudo systemctl disable --now thecoind
-sudo rm /etc/systemd/system/thecoind.service /usr/local/bin/thecoind /usr/local/bin/thecoin-wallet</code></pre>
+  <pre><code>sudo thecoin uninstall            # remove o nó (mantém dados da blockchain e configuração)
+sudo thecoin uninstall --purge    # remove também os dados e a configuração
+# sem o comando thecoin:
+curl -fsSL https://the-coin.cloud/uninstall.sh | sudo bash</code></pre>
+  <p class="muted">Os arquivos da carteira (<code>~/.thecoin/wallet-*.json</code> e a senha gerada pelo instalador) <strong>nunca</strong> são apagados pelo desinstalador.</p>
   <div class="notice accent">Antes de apagar dados, faça backup das palavras de recuperação da carteira. O diretório de dados do nó pode ser apagado com segurança — o histórico é baixado de novo da rede.</div>
 </main>
 

@@ -3,6 +3,49 @@
 Guia para quem roda `thecoind`: participantes que mineram numa VPS, operadores
 dos nós seed (`seed1`/`seed2.the-coin.cloud`) e quem hospeda o site.
 
+## Seja um validador em 1 minuto
+
+Em qualquer VPS Linux com systemd (x86_64 ou ARM64), conectado por SSH:
+
+```bash
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes
+```
+
+Não há nenhuma pergunta. Ao final:
+
+- o nó `thecoind` está rodando como serviço, sincronizando e **minerando**;
+- existe uma carteira de recompensas em `~/.thecoin/wallet-mainnet.json`, protegida por uma senha
+  aleatória forte guardada em `~/.thecoin/wallet-mainnet.password` (dono `root`, permissão `0600`);
+- as **24 palavras de recuperação** aparecem num quadro amarelo — anote-as no papel.
+  Para vê-las de novo: `sudo thecoin mnemonic`;
+- o comando `thecoin` está instalado:
+
+| Comando | O que faz |
+|---|---|
+| `thecoin status` | serviço, versão, altura, sincronização, peers, mempool, hashrate, mineração e saldo do endereço de mineração |
+| `thecoin logs` | segue os logs do serviço (`journalctl -u thecoind -f`) |
+| `thecoin balance` | saldo da carteira (sem sudo, usa a API do nó; com sudo, usa a carteira) |
+| `thecoin address` | endereço de mineração/carteira |
+| `sudo thecoin mnemonic` | mostra as palavras de recuperação |
+| `sudo thecoin restart` | reinicia o nó |
+| `sudo thecoin update` | reinstala a versão mais recente mantendo carteira e configuração |
+| `sudo thecoin uninstall [--purge]` | remove o nó (a carteira nunca é apagada) |
+| `thecoin help` | ajuda |
+
+Comandos que precisam de root se reexecutam sozinhos com `sudo`.
+
+Checklist rápido depois de instalar:
+
+1. **Porta P2P** (7333/TCP; 17333 na testnet) liberada no firewall do servidor **e** no painel do
+   provedor (AWS/GCP/Azure/Oracle/OVH/Hetzner: *security group* ou firewall de nuvem). Com `ufw`
+   ativo o instalador libera sozinho; com `ufw` inativo, rode `sudo ufw allow 7333/tcp` antes de ativá-lo.
+2. **Relógio sincronizado**: `timedatectl show -p NTPSynchronized` deve dizer `yes`
+   (senão: `sudo timedatectl set-ntp true`). Blocos com horário muito adiantado são rejeitados.
+3. **Backup das 24 palavras** feito em papel.
+4. `thecoin status` mostra `Service: active` e `Mining: on`.
+
+Guia ilustrado para novos usuários: <https://the-coin.cloud/validator.html>.
+
 ## 1. Requisitos
 
 | Recurso | Mínimo | Recomendado |
@@ -34,42 +77,74 @@ Cada thread de mineração usa 16 MiB para o CoinHash.
 ### 2.1 Instalador (recomendado)
 
 ```bash
-curl -fsSL https://the-coin.cloud/install.sh | sudo bash
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes   # sem perguntas
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash               # interativo
 ```
 
 O instalador (`installer/install.sh`):
 
-1. detecta a arquitetura e baixa `thecoind` + `thecoin-wallet`, verificando o SHA-256 (ou compila do código-fonte se não houver binário);
-2. oferece criar 1 GB de swap em máquinas com menos de 2 GB de RAM sem swap;
-3. cria o usuário de sistema `thecoin` e `/var/lib/thecoin`;
-4. cria uma carteira nova (ou usa um endereço informado) para receber as recompensas;
-5. grava `/etc/thecoin/thecoind.toml` e o serviço systemd `thecoind` (com *hardening*, `Nice=5`, `MemoryHigh` = 70 % da RAM);
-6. abre a porta P2P no `ufw` (se ativo) e inicia o nó.
+1. **pré-verificações**: Linux + systemd, arquitetura, `curl`/`tar`/`sha256sum`, RAM, disco,
+   sincronização do relógio (NTP) e situação do firewall;
+2. oferece criar 1 GB de swap em máquinas com menos de 2 GB de RAM sem swap (aceito automaticamente com `--yes`);
+3. baixa `thecoind` + `thecoin-wallet` de `https://the-coin.cloud/releases/` (ou do GitHub Releases),
+   verificando o SHA-256 — ou compila do código-fonte se não houver binário;
+4. cria o usuário de sistema `thecoin` e `/var/lib/thecoin`;
+5. define o endereço de recompensa:
+   - `--miner-address` informado → usa esse endereço;
+   - reinstalação/atualização → mantém o endereço e o estado de mineração do `thecoind.toml` existente;
+   - carteira do instalador já existente → lê o endereço (usando o arquivo de senha, se houver);
+   - **modo não interativo** (`--yes` ou sem terminal) → cria a carteira automaticamente para o
+     usuário que chamou o `sudo` (ou root), com senha aleatória de 32 bytes guardada em
+     `~/.thecoin/wallet-<rede>.password` (dono `root`, `0600`), e mostra as palavras de recuperação no final;
+   - **modo interativo** → menu: criar carteira com senha escolhida (padrão), criar automaticamente,
+     informar um endereço ou não minerar;
+6. grava `/etc/thecoin/thecoind.toml`, `/etc/thecoin/install.env` (onde está a carteira; sem segredos)
+   e o serviço systemd `thecoind` (com *hardening*, `Nice=5`, `MemoryHigh` = 70 % da RAM);
+7. instala o comando `thecoin` e o desinstalador em `/usr/local/lib/thecoin/uninstall.sh`;
+8. abre a porta P2P no `ufw` (se ativo) e inicia (ou reinicia, numa atualização) o nó.
+
+Rodar o instalador de novo **atualiza** os binários e mantém carteira, senha e configuração
+(é o que `sudo thecoin update` faz).
 
 Opções (também por variável de ambiente):
 
 | Opção | Variável | Descrição |
 |---|---|---|
+| `--yes`, `-y` | `THECOIN_YES=1` | não interativo: nunca pergunta |
 | `--network mainnet\|testnet` | `THECOIN_NETWORK` | rede (padrão mainnet) |
-| `--miner-address tc1…` | `THECOIN_MINER_ADDRESS` | endereço de recompensa (sem perguntar) |
-| `--no-mine` | `THECOIN_NO_MINE=1` | só valida e retransmite |
+| `--miner-address tc1…` | `THECOIN_MINER_ADDRESS` | endereço de recompensa (também reativa a mineração numa reinstalação) |
+| `--no-mine` | `THECOIN_NO_MINE=1` | só valida e retransmite (fica gravado na configuração) |
 | `--threads N` | `THECOIN_THREADS` | threads de mineração (0 = núcleos − 1) |
 | `--version x.y.z` | `THECOIN_VERSION` | versão específica |
 | `--from-source` | `THECOIN_FROM_SOURCE=1` | compila localmente |
 | `--public-api` | `THECOIN_PUBLIC_API=1` | API em `0.0.0.0` (só para seeds/explorador) |
-| `--yes` | — | não interativo |
+| — | `THECOIN_RELEASES_URL` | outra origem dos binários (espelho/testes) |
+| — | `THECOIN_SITE_URL` | outra origem do comando `thecoin` e do desinstalador |
 
-Exemplo não interativo:
+Exemplos:
 
 ```bash
+# minerar para um endereço existente
 curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --miner-address tc1seuendereco...
+# nó seed que serve a API ao site
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --no-mine --public-api
+# sem acesso ao site
+curl -fsSL https://raw.githubusercontent.com/LucasBolla94/thecoin/main/installer/install.sh | sudo bash -s -- --yes
 ```
 
-Desinstalar (mantém dados e carteiras; `--purge` apaga dados e configuração):
+Desinstalar (mantém dados; `--purge` apaga dados, configuração e o usuário `thecoin`;
+os arquivos da carteira **nunca** são apagados):
 
 ```bash
-curl -fsSL https://the-coin.cloud/uninstall.sh | sudo bash
+sudo thecoin uninstall [--purge]
+curl -fsSL https://the-coin.cloud/uninstall.sh | sudo bash      # alternativa
 ```
+
+> **Segurança da senha automática:** no modo `--yes` a carteira fica cifrada com uma senha que está
+> no próprio servidor (legível só pelo root). Isso protege contra acesso de outros usuários, mas não
+> contra quem tem root na máquina. Para valores altos, anote as palavras e transfira as recompensas
+> periodicamente para uma carteira que só você controla — ou instale no modo interativo escolhendo a
+> senha.
 
 ### 2.2 Manual (código-fonte)
 

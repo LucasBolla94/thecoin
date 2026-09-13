@@ -1,0 +1,266 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  thecoin — helper command for The Coin nodes installed with install.sh
+#  https://the-coin.cloud/validator.html
+# =============================================================================
+set -euo pipefail
+
+CONF_FILE=/etc/thecoin/thecoind.toml
+INSTALL_ENV=/etc/thecoin/install.env
+LIB_DIR=/usr/local/lib/thecoin
+SITE_URL="${THECOIN_SITE_URL:-https://the-coin.cloud}"
+RAW_GITHUB="https://raw.githubusercontent.com/${THECOIN_GITHUB_REPO:-LucasBolla94/thecoin}/main"
+SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
+
+bold() { printf '\033[1m%s\033[0m\n' "$*"; }
+warn() { printf '\033[33mWARN:\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# ---------------------------------------------------------------- config ----
+env_value() { # env_value KEY -> value from install.env (no sourcing)
+  [ -r "$INSTALL_ENV" ] || return 0
+  sed -n "s/^$1=//p" "$INSTALL_ENV" | tail -1
+}
+
+NETWORK=$(env_value THECOIN_NETWORK)
+if [ -z "$NETWORK" ] && [ -r "$CONF_FILE" ]; then
+  NETWORK=$(sed -n 's/^network *= *"\(.*\)".*/\1/p' "$CONF_FILE" | head -1)
+fi
+NETWORK="${NETWORK:-mainnet}"
+case "$NETWORK" in
+  testnet) DEFAULT_API_PORT=17334 ;;
+  regtest) DEFAULT_API_PORT=27334 ;;
+  *) DEFAULT_API_PORT=7334 ;;
+esac
+
+API_PORT=""
+if [ -r "$CONF_FILE" ]; then
+  API_PORT=$(awk '/^\[/ { sec = $0 } sec == "[rpc]" && /^listen *=/ { gsub(/"/, ""); n = split($3, p, ":"); print p[n]; exit }' "$CONF_FILE")
+fi
+API_PORT="${API_PORT:-$(env_value THECOIN_API_PORT)}"
+API_PORT="${API_PORT:-$DEFAULT_API_PORT}"
+API="http://127.0.0.1:$API_PORT/api/v1"
+
+WALLET_OWNER=$(env_value THECOIN_WALLET_OWNER)
+WALLET_FILE=$(env_value THECOIN_WALLET_FILE)
+PASSWORD_FILE=$(env_value THECOIN_PASSWORD_FILE)
+
+mining_address() {
+  [ -r "$CONF_FILE" ] || return 0
+  awk -F'"' '/^\[/ { sec = $0 } sec == "[mining]" && /^address *=/ { print $2; exit }' "$CONF_FILE"
+}
+
+need_root() { # re-run this command with sudo when not root
+  if [ "$(id -u)" != 0 ]; then
+    command -v sudo >/dev/null || die "this command needs root privileges"
+    exec sudo "$SELF" "$@"
+  fi
+}
+
+# ------------------------------------------------------------------ JSON ----
+# json_get PATH < json   (PATH like "supply.emitted"); python3 if present, sed fallback.
+json_get() {
+  if command -v python3 >/dev/null; then
+    python3 -c '
+import json, sys
+try:
+    v = json.load(sys.stdin)
+    for k in sys.argv[1].split("."):
+        v = v[k]
+    print(str(v).lower() if isinstance(v, bool) else ("" if v is None else v))
+except Exception:
+    print("")
+' "$1"
+  else
+    local key="${1##*.}"
+    sed -n "s/.*\"$key\":\"\{0,1\}\([^\",}]*\)\"\{0,1\}.*/\1/p" | head -1 | sed 's/^null$//'
+  fi
+}
+
+tcn() { # motes -> "12.5 TCN"
+  awk -v m="${1:-0}" 'BEGIN {
+    if (m == "") m = 0
+    i = int(m / 100000000); f = m - i * 100000000
+    s = sprintf("%d.%08d", i, f); sub(/0+$/, "", s); sub(/\.$/, "", s)
+    print s " TCN"
+  }'
+}
+
+api() { curl -fsS --max-time 5 "$API$1" 2>/dev/null; }
+
+# ---------------------------------------------------------------- wallet ----
+has_wallet() { # true if the installer's wallet exists (re-runs with sudo if it is not visible)
+  [ -n "$WALLET_FILE" ] || return 1
+  [ -f "$WALLET_FILE" ] && return 0
+  if [ "$(id -u)" != 0 ] && ! [ -x "$(dirname "$WALLET_FILE")" ]; then
+    need_root "${ORIG_ARGS[@]}"
+  fi
+  return 1
+}
+
+wallet() { # wallet <thecoin-wallet args...>
+  has_wallet || return 2
+  local pw=""
+  if [ -f "$PASSWORD_FILE" ]; then
+    if [ -r "$PASSWORD_FILE" ]; then
+      pw=$(cat "$PASSWORD_FILE")
+    else
+      need_root "${ORIG_ARGS[@]}"
+    fi
+  elif [ ! -r "$WALLET_FILE" ]; then
+    need_root "${ORIG_ARGS[@]}"
+  fi
+  if [ -n "$pw" ]; then
+    THECOIN_WALLET_PASSWORD="$pw" thecoin-wallet --network "$NETWORK" -w "$WALLET_FILE" "$@"
+  else
+    thecoin-wallet --network "$NETWORK" -w "$WALLET_FILE" "$@"
+  fi
+}
+
+# -------------------------------------------------------------- commands ----
+cmd_status() {
+  local state status mining addr
+  state=$(systemctl is-active thecoind 2>/dev/null || true)
+  bold "The Coin node — $NETWORK"
+  printf '  %-18s %s\n' "Service:" "${state:-not installed}"
+  if ! status=$(api /status); then
+    printf '  %-18s %s\n' "API:" "not answering on 127.0.0.1:$API_PORT (see: thecoin logs)"
+    return 1
+  fi
+  printf '  %-18s %s\n' "Version:" "$(json_get version <<<"$status")"
+  printf '  %-18s %s\n' "Height:" "$(json_get height <<<"$status")"
+  printf '  %-18s %s\n' "Syncing:" "$(json_get syncing <<<"$status")"
+  printf '  %-18s %s\n' "Peers:" "$(json_get peers <<<"$status")"
+  printf '  %-18s %s\n' "Mempool:" "$(json_get mempool_txs <<<"$status") transactions"
+  printf '  %-18s %s H/s\n' "Network hashrate:" "$(json_get hashrate_estimate <<<"$status" | awk '{printf "%.1f", $1}')"
+  local upgrade
+  upgrade=$(json_get software_upgrade_required <<<"$status")
+  if [ -n "$upgrade" ]; then
+    warn "the network approved version $upgrade — run: thecoin update"
+  fi
+  if mining=$(api /mining); then
+    if [ "$(json_get enabled <<<"$mining")" = true ]; then
+      printf '  %-18s %s\n' "Mining:" "on, $(json_get threads <<<"$mining") thread(s), $(json_get hashrate <<<"$mining" | awk '{printf "%.1f", $1}') H/s, $(json_get blocks_found <<<"$mining") block(s) found since start"
+    else
+      printf '  %-18s %s\n' "Mining:" "off (validating and relaying only)"
+    fi
+  fi
+  addr=$(mining_address)
+  if [ -n "$addr" ]; then
+    printf '  %-18s %s\n' "Mining address:" "$addr"
+    local acc
+    if acc=$(api "/address/$addr"); then
+      printf '  %-18s %s (spendable %s, maturing %s)\n' "Balance:" \
+        "$(tcn "$(json_get balance <<<"$acc")")" "$(tcn "$(json_get spendable <<<"$acc")")" "$(tcn "$(json_get immature <<<"$acc")")"
+    fi
+  fi
+}
+
+cmd_logs() {
+  if journalctl -u thecoind -n 1 >/dev/null 2>&1 && [ -n "$(journalctl -u thecoind -n 1 --no-pager -q 2>/dev/null)" ]; then
+    exec journalctl -u thecoind -n 50 -f
+  fi
+  need_root "${ORIG_ARGS[@]}"
+  exec journalctl -u thecoind -n 50 -f
+}
+
+cmd_address() {
+  if [ -n "$WALLET_FILE" ] && [ -f "$WALLET_FILE" ]; then
+    wallet address
+  else
+    local addr
+    addr=$(mining_address)
+    [ -n "$addr" ] || die "no wallet or mining address configured (create one with: thecoin-wallet --network $NETWORK create)"
+    echo "$addr"
+  fi
+}
+
+cmd_balance() {
+  if [ -n "$WALLET_FILE" ] && [ -f "$WALLET_FILE" ]; then
+    wallet balance
+  else
+    local addr acc
+    addr=$(mining_address)
+    [ -n "$addr" ] || die "no wallet or mining address configured"
+    acc=$(api "/address/$addr") || die "node API not answering on 127.0.0.1:$API_PORT"
+    echo "Address:   $addr"
+    echo "Balance:   $(tcn "$(json_get balance <<<"$acc")")"
+    echo "Spendable: $(tcn "$(json_get spendable <<<"$acc")")"
+    echo "Maturing:  $(tcn "$(json_get immature <<<"$acc")")"
+  fi
+}
+
+cmd_mnemonic() {
+  has_wallet || die "no wallet was created by the installer on this machine"
+  echo "Keep these words secret and offline. Anyone with them controls your coins." >&2
+  wallet show-mnemonic
+}
+
+download_script() { # download_script <name> <dest>
+  local u
+  for u in "$SITE_URL/$1" "$RAW_GITHUB/installer/$1"; do
+    if curl -fsSL --retry 2 -o "$2" "$u" 2>/dev/null && head -1 "$2" | grep -q '^#!'; then return 0; fi
+  done
+  return 1
+}
+
+cmd_update() {
+  need_root "${ORIG_ARGS[@]}"
+  UPDATE_TMP=$(mktemp)
+  trap 'rm -f "$UPDATE_TMP"' EXIT
+  download_script install.sh "$UPDATE_TMP" || die "could not download the installer"
+  bash "$UPDATE_TMP" --yes --network "$NETWORK" "$@"
+}
+
+cmd_uninstall() {
+  need_root "${ORIG_ARGS[@]}"
+  if [ -f "$LIB_DIR/uninstall.sh" ]; then
+    bash "$LIB_DIR/uninstall.sh" "$@"
+  else
+    local tmp
+    tmp=$(mktemp)
+    download_script uninstall.sh "$tmp" || die "could not download the uninstaller"
+    bash "$tmp" "$@"
+    rm -f "$tmp"
+  fi
+}
+
+cmd_help() {
+  cat <<EOF
+thecoin — manage your The Coin node ($NETWORK)
+
+Usage: thecoin <command>
+
+  status              node state, sync, peers, mining and balance
+  logs                follow the node logs (Ctrl+C to exit)
+  address             your mining/wallet address
+  balance             wallet balance
+  mnemonic            show the wallet recovery phrase (keep it secret!)
+  restart             restart the node service
+  update              upgrade to the latest release (keeps config and wallet)
+  uninstall [--purge] remove the node (--purge also deletes chain data and config;
+                      wallet files are never deleted)
+  version             installed versions
+  help                this help
+
+Wallet operations (send, contracts, governance): thecoin-wallet --network $NETWORK --help
+Guide: $SITE_URL/validator.html
+EOF
+}
+
+ORIG_ARGS=("$@")
+command="${1:-help}"
+[ $# -gt 0 ] && shift
+case "$command" in
+  status) cmd_status ;;
+  logs|log) cmd_logs ;;
+  address|addr) cmd_address ;;
+  balance|bal) cmd_balance ;;
+  mnemonic|recovery-phrase) cmd_mnemonic ;;
+  restart) need_root "${ORIG_ARGS[@]}"; systemctl restart thecoind && echo "thecoind restarted" ;;
+  update|upgrade) cmd_update "$@" ;;
+  uninstall) cmd_uninstall "$@" ;;
+  version|--version|-V) thecoind --version; thecoin-wallet --version ;;
+  help|--help|-h) cmd_help ;;
+  *) cmd_help; exit 1 ;;
+esac
