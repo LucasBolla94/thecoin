@@ -148,49 +148,64 @@ Detalhes em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## 5. Entrar na rede (instalador)
 
-Em qualquer Linux com systemd (x86_64 ou ARM64):
+**Seja um validador em 1 minuto** — em qualquer Linux com systemd (x86_64 ou ARM64), um único comando,
+sem nenhuma pergunta:
 
 ```bash
-curl -fsSL https://the-coin.cloud/install.sh | sudo bash
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes
 ```
 
 O instalador:
 
-1. detecta a arquitetura e baixa os binários estáticos, **verificando o SHA-256** (se não houver binário, compila do código);
-2. oferece criar swap em máquinas sem swap;
-3. cria o usuário de sistema `thecoin` e o diretório `/var/lib/thecoin`;
-4. cria uma carteira para receber as recompensas (a frase de recuperação aparece **uma única vez** — anote-a);
-5. gera `/etc/thecoin/thecoind.toml` e um serviço systemd isolado (`ProtectSystem=strict`, `NoNewPrivileges`, sem capabilities);
-6. abre a porta P2P no `ufw` (se ativo) e inicia o nó, que começa a sincronizar e minerar.
+1. faz pré-verificações (sistema, arquitetura, memória, disco, relógio sincronizado, firewall);
+2. baixa os binários estáticos **verificando o SHA-256** (se não houver binário, compila do código);
+3. oferece criar swap em máquinas sem swap;
+4. cria o usuário de sistema `thecoin` e o diretório `/var/lib/thecoin`;
+5. cria a carteira de recompensas com uma senha aleatória forte (guardada em `~/.thecoin/wallet-mainnet.password`,
+   só root lê) e mostra as **24 palavras de recuperação** num quadro no final — anote-as no papel;
+6. gera `/etc/thecoin/thecoind.toml` e um serviço systemd isolado (`ProtectSystem=strict`, `NoNewPrivileges`, sem capabilities);
+7. instala o comando `thecoin`, abre a porta P2P no `ufw` (se ativo) e inicia o nó, que começa a sincronizar e minerar.
+
+Rodar de novo (ou `sudo thecoin update`) **atualiza** mantendo carteira e configuração.
+Sem `--yes`, um menu permite escolher a senha da carteira ou informar um endereço existente.
 
 Opções úteis:
 
 ```bash
-# testnet, sem perguntas, com endereço já existente
-curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --network testnet --miner-address tct1... --yes
+# testnet
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network testnet
+
+# minerar para um endereço que você já tem
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --miner-address tc1...
 
 # nó que não minera, apenas valida e retransmite
-curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --no-mine
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --no-mine
 
 # nó seed que serve a API ao site (proteja a porta 7334 no firewall!)
-curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --public-api
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --no-mine --public-api
 ```
 
-Todas as opções: `--network`, `--miner-address`, `--no-mine`, `--threads`, `--version`, `--from-source`,
-`--public-api`, `--yes`. Sem acesso ao site, use o script direto do repositório:
-`curl -fsSL https://raw.githubusercontent.com/LucasBolla94/thecoin/main/installer/install.sh | sudo bash`.
+Todas as opções: `--yes`, `--network`, `--miner-address`, `--no-mine`, `--threads`, `--version`, `--from-source`,
+`--public-api`. Sem acesso ao site, use o script direto do repositório:
+`curl -fsSL https://raw.githubusercontent.com/LucasBolla94/thecoin/main/installer/install.sh | sudo bash -s -- --yes`.
 
-Gerenciar o serviço:
+Acompanhar e administrar com o comando `thecoin`:
 
 ```bash
-systemctl status thecoind
-journalctl -u thecoind -f
-curl -s http://127.0.0.1:7334/api/v1/status
-sudo bash installer/uninstall.sh            # remove (mantém dados e carteiras)
-sudo bash installer/uninstall.sh --purge    # remove também dados e configuração
+thecoin status                   # serviço, altura, sincronização, peers, mineração e saldo
+thecoin logs                     # logs em tempo real
+thecoin balance                  # saldo da carteira de recompensas
+thecoin address                  # endereço de mineração
+sudo thecoin mnemonic            # mostra de novo as palavras de recuperação
+sudo thecoin restart             # reinicia o nó
+sudo thecoin update              # atualiza para a versão mais recente
+sudo thecoin uninstall [--purge] # remove (a carteira nunca é apagada; --purge apaga dados e configuração)
 ```
 
-**Requisitos mínimos:** 1 vCPU, 1 GB de RAM (com swap), 5 GB de disco, porta 7333/tcp acessível.
+**Requisitos mínimos:** 1 vCPU, 1 GB de RAM (com swap), 5 GB de disco, porta 7333/tcp acessível
+(libere também no firewall/*security group* do provedor de nuvem) e relógio sincronizado (NTP).
+Guia completo: [the-coin.cloud/validator.html](https://the-coin.cloud/validator.html) e
+[docs/OPERATIONS.md](docs/OPERATIONS.md#seja-um-validador-em-1-minuto).
 
 ## 6. Compilar a partir do código-fonte
 

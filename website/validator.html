@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Seja um validador em 1 minuto — The Coin</title>
+  <meta name="description" content="Transforme qualquer VPS Linux em um nó validador e minerador da The Coin com um único comando.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
+    <nav class="nav" aria-label="Principal">
+      <a href="index.html">Início</a>
+      <a href="validator.html">Validador</a>
+      <a href="download.html">Instalar</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="governance.html">Governança</a>
+      <a href="docs.html">Desenvolvedores</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Seja um validador em 1 minuto</h1>
+  <p class="muted" style="max-width:760px">Um validador é um computador que confere cada bloco e cada transação da rede, guarda o histórico, repassa novidades para os outros nós e minera — concorrendo às recompensas. Qualquer VPS Linux simples serve. Quanto mais validadores independentes, mais segura e democrática fica a The Coin.</p>
+
+  <h2>Do que você precisa</h2>
+  <div class="grid grid-4" style="margin:16px 0 24px">
+    <div class="card stat"><span class="label">Sistema</span><span class="value">Linux</span><span class="sub">x86_64 ou ARM64, com systemd (Ubuntu, Debian, Fedora…)</span></div>
+    <div class="card stat"><span class="label">CPU</span><span class="value">1 vCPU</span><span class="sub">2 ou mais para minerar melhor</span></div>
+    <div class="card stat"><span class="label">Memória</span><span class="value">1 GB</span><span class="sub">o instalador oferece criar swap se faltar</span></div>
+    <div class="card stat"><span class="label">Disco / rede</span><span class="value">5 GB</span><span class="sub">porta TCP 7333 aberta para a internet</span></div>
+  </div>
+
+  <h2>O comando</h2>
+  <p class="muted">Entre no servidor por SSH e cole:</p>
+  <div class="codeblock">
+    <button class="btn btn-small" data-copy="curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes">copiar</button>
+    <pre><code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes</code></pre>
+  </div>
+  <p class="muted">Pronto. Não há perguntas: em cerca de um minuto o nó está rodando e minerando para uma carteira criada só para você.</p>
+  <div class="notice accent">No final da instalação aparecem <strong>24 palavras de recuperação</strong> num quadro amarelo. <strong>Anote no papel e guarde longe do computador.</strong> Quem tem essas palavras controla as suas moedas — e ninguém consegue recuperá-las por você.</div>
+
+  <h2>O que acontece, passo a passo</h2>
+  <ol class="steps">
+    <li><strong>Checagem do servidor</strong> — sistema, arquitetura, memória, disco e se o relógio está sincronizado (os horários dos blocos são validados pela rede).</li>
+    <li><strong>Download seguro</strong> — baixa os programas <code>thecoind</code> (o nó) e <code>thecoin-wallet</code> (a carteira) e confere o checksum SHA-256. Se algo não bater, a instalação para.</li>
+    <li><strong>Carteira de recompensas</strong> — cria uma carteira com uma senha forte e aleatória, guardada num arquivo que só o administrador (root) lê, ao lado da carteira em <code>~/.thecoin/</code>.</li>
+    <li><strong>Configuração e serviço</strong> — cria <code>/etc/thecoin/thecoind.toml</code> e o serviço <code>thecoind</code>, que roda com um usuário sem privilégios, isolado do resto do sistema e com prioridade baixa para não travar o servidor.</li>
+    <li><strong>Rede</strong> — abre a porta P2P no <code>ufw</code> (se estiver ativo) e inicia o nó, que sincroniza com a rede e começa a minerar.</li>
+    <li><strong>Comando <code>thecoin</code></strong> — instala um atalho para você acompanhar tudo sem decorar nada.</li>
+  </ol>
+
+  <h2>Acompanhar o seu validador</h2>
+  <pre><code>thecoin status        # serviço, altura, sincronização, peers, mineração e saldo
+thecoin logs          # logs em tempo real (Ctrl+C para sair)
+thecoin balance       # saldo da carteira de recompensas
+thecoin address       # seu endereço de mineração
+sudo thecoin mnemonic # mostrar de novo as 24 palavras
+thecoin help          # todos os comandos</code></pre>
+  <p class="muted">Você também pode procurar o seu endereço no <a href="explorer.html">Explorer</a> para ver os blocos minerados e o saldo.</p>
+
+  <h2>Como funcionam as recompensas</h2>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Quem ganha</h3>
+      <p class="muted">Cada bloco novo gera uma recompensa em TCN para o validador que o encontrou, mais as taxas das transações do bloco. A chance de encontrar um bloco é proporcional ao trabalho da sua máquina: mais núcleos, mais chances.</p>
+    </div>
+    <div class="card">
+      <h3>Quando fica disponível</h3>
+      <p class="muted">Por segurança, <strong>as recompensas ficam disponíveis após um período de segurança</strong>. Enquanto isso, aparecem como “maturando” no <code>thecoin status</code> e no <code>thecoin balance</code>. Isso impede que moedas de um bloco que a rede acabou descartando sejam gastas.</p>
+    </div>
+  </div>
+
+  <h2>Guarde a sua carteira</h2>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>O mais importante: as 24 palavras</h3>
+      <ul class="muted">
+        <li>Escreva as palavras no papel, na ordem, e guarde em local seguro.</li>
+        <li>Não tire foto, não mande por mensagem, não salve na nuvem.</li>
+        <li>Perdeu o servidor? Com as palavras você recria a carteira em qualquer máquina: <code>thecoin-wallet restore</code>.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Arquivos no servidor</h3>
+      <ul class="muted">
+        <li>Carteira cifrada: <code>~/.thecoin/wallet-mainnet.json</code></li>
+        <li>Senha gerada pelo instalador: <code>~/.thecoin/wallet-mainnet.password</code> (só root lê)</li>
+        <li>Quer mais segurança? Depois de anotar as palavras, mova as moedas para uma carteira que só você controla, ou reinstale sem <code>--yes</code> escolhendo a sua própria senha.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Firewall e provedores de nuvem</h2>
+  <div class="card">
+    <p class="muted">Os outros nós precisam alcançar a <strong>porta TCP 7333</strong> do seu servidor (17333 na testnet). Sem ela o nó funciona e minera, mas recebe menos conexões.</p>
+    <ul class="muted">
+      <li><strong>ufw ativo:</strong> o instalador libera a porta sozinho.</li>
+      <li><strong>ufw instalado mas desligado:</strong> antes de ligá-lo, rode <code>sudo ufw allow 7333/tcp</code> (e mantenha a porta do SSH liberada).</li>
+      <li><strong>AWS, Google Cloud, Azure, Oracle, OVH, Hetzner, DigitalOcean…:</strong> libere também a porta 7333/TCP no firewall ou <em>security group</em> do painel do provedor.</li>
+      <li>A API do nó (porta 7334) fica fechada, só em <code>127.0.0.1</code>. Não exponha sem necessidade.</li>
+    </ul>
+  </div>
+
+  <h2>Atualizar e desinstalar</h2>
+  <pre><code>sudo thecoin update               # baixa a versão mais recente e mantém carteira e configuração
+sudo thecoin uninstall            # remove o nó (mantém os dados da blockchain)
+sudo thecoin uninstall --purge    # remove também dados e configuração</code></pre>
+  <p class="muted">Os arquivos da carteira nunca são apagados pelo desinstalador.</p>
+
+  <h2>Outras formas de instalar</h2>
+  <pre><code># escolher a senha da carteira ou usar um endereço existente (menu interativo)
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash
+
+# minerar para um endereço que você já tem
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --miner-address tc1...
+
+# só validar, sem minerar
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --no-mine
+
+# testar na testnet
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network testnet</code></pre>
+  <p class="muted">Mais opções e a instalação manual estão em <a href="download.html">Instalar</a>.</p>
+
+  <h2>Perguntas frequentes</h2>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>O servidor vai ficar lento?</h3>
+      <p class="muted">Não. A mineração roda com a menor prioridade do sistema e, em máquinas com 2 ou mais núcleos, deixa um núcleo livre por padrão; o nó usa algumas dezenas de MB de memória. Se precisar, ajuste <code>threads</code> em <code>/etc/thecoin/thecoind.toml</code> e rode <code>sudo thecoin restart</code>.</p>
+    </div>
+    <div class="card">
+      <h3>Quanto vou ganhar?</h3>
+      <p class="muted">Depende de quantos validadores estão minerando e da força da sua máquina. É uma disputa justa: cada tentativa tem a mesma chance, e o algoritmo favorece CPUs comuns em vez de equipamentos especializados.</p>
+    </div>
+    <div class="card">
+      <h3>“Syncing: true” no status — está errado?</h3>
+      <p class="muted">Não. O nó está baixando e conferindo os blocos que já existem. A mineração começa sozinha quando ele alcançar o resto da rede.</p>
+    </div>
+    <div class="card">
+      <h3>Nenhum peer conectado</h3>
+      <p class="muted">Confira a saída de internet do servidor e a porta 7333 no firewall/painel do provedor. Veja os detalhes com <code>thecoin logs</code>.</p>
+    </div>
+    <div class="card">
+      <h3>O relógio precisa estar certo?</h3>
+      <p class="muted">Sim. Blocos com horário muito à frente são rejeitados. Ative a sincronização: <code>sudo timedatectl set-ntp true</code>.</p>
+    </div>
+    <div class="card">
+      <h3>Posso ter vários validadores?</h3>
+      <p class="muted">Sim, um por servidor. Para receber tudo numa carteira só, instale os outros com <code>--miner-address</code> apontando para o seu endereço.</p>
+    </div>
+    <div class="card">
+      <h3>E se o servidor for desligado?</h3>
+      <p class="muted">Suas moedas estão na blockchain, não no servidor. Com as 24 palavras você as recupera em qualquer lugar. Ao religar, o nó volta sozinho.</p>
+    </div>
+    <div class="card">
+      <h3>É seguro rodar o comando com sudo?</h3>
+      <p class="muted">O script é público e verifica o checksum de tudo o que baixa. Para ler antes: <code>curl -fsSLO https://the-coin.cloud/install.sh &amp;&amp; less install.sh</code>. O nó em si roda com um usuário sem privilégios.</p>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>The Coin v0.1 · the-coin.cloud · código aberto (MIT/Apache-2.0)</span>
+    <span><a data-repo-link="" href="#">Código-fonte</a> · <a href="/whitepaper/the-coin-whitepaper-v0.1.pdf">Whitepaper</a> · <a href="docs.html">API</a></span>
+  </div>
+</footer>
+<script src="assets/config.js"></script>
+<script src="assets/api.js"></script>
+</body>
+</html>
