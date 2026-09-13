@@ -139,11 +139,20 @@ impl Node {
         self.stopping.load(Ordering::Relaxed)
     }
 
-    /// True while downloading blocks from a peer that is ahead of us.
+    /// True while actively downloading blocks from a peer that is ahead of us.
+    ///
+    /// Heights announced by peers are only claims, so this also requires that
+    /// the sync peer delivered a block recently — a peer lying about its height
+    /// cannot pause mining.
     pub fn is_syncing(&self) -> bool {
         let our = self.chain.tip().height;
-        let best_peer = self.peers.read().values().map(|p| p.best_height()).max().unwrap_or(0);
-        best_peer > our + 1
+        let s = self.sync.lock();
+        let (Some(peer_id), Some(last_block)) = (s.peer, s.last_block) else { return false };
+        drop(s);
+        if last_block.elapsed() > std::time::Duration::from_secs(30) {
+            return false;
+        }
+        self.peers.read().get(&peer_id).is_some_and(|p| p.best_height() > our + 1)
     }
 
     /// Validates a transaction, adds it to the mempool and relays it.
@@ -204,6 +213,10 @@ fn spawn_block_processor(node: Arc<Node>, mut rx: mpsc::Receiver<BlockJob>) {
                             if let Some(p) = node.peers.read().get(&src) {
                                 p.update_best_height(height);
                             }
+                            let mut s = node.sync.lock();
+                            if s.peer == Some(src) {
+                                s.last_block = Some(Instant::now());
+                            }
                         }
                         crate::net::on_block_processed(&node, job.source, &hash);
                     }
@@ -215,7 +228,10 @@ fn spawn_block_processor(node: Arc<Node>, mut rx: mpsc::Receiver<BlockJob>) {
                     }
                     Ok(ProcessResult::Invalid(e)) => {
                         warn!(%hash, height, error = %e, "rejected invalid block");
-                        if let Some(src) = job.source {
+                        // A block slightly in the future may become valid later
+                        // (clock skew); do not punish the peer for it.
+                        let future = matches!(e, thecoin_core::BlockError::TimestampInFuture { .. });
+                        if let (Some(src), false) = (job.source, future) {
                             crate::net::misbehave(&node, src, 100, "invalid block");
                         }
                     }

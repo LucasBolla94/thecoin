@@ -98,11 +98,15 @@ pub enum ProcessResult {
 pub const MIN_PRUNE_KEEP: u64 = 1_000;
 const UNDO_MARGIN: u64 = 16;
 const MAX_ORPHANS: usize = 256;
+/// Memory budget of the orphan pool (small machines must not be exhausted).
+const MAX_ORPHAN_BYTES: usize = 16 * 1024 * 1024;
+const MAX_ORPHAN_BLOCK_BYTES: usize = 2 * 1024 * 1024;
 
 struct Inner {
     lthash: LtHash,
     hasher: PowHasher,
-    orphans: Vec<Block>,
+    /// Blocks whose parent is unknown, with their serialized size.
+    orphans: Vec<(Block, usize)>,
 }
 
 pub struct Chain {
@@ -298,10 +302,10 @@ impl Chain {
             }
             loop {
                 let r = self.db.read()?;
-                let pos = inner.orphans.iter().position(|o| r.header(&o.header.prev_hash).ok().flatten().is_some());
+                let pos = inner.orphans.iter().position(|(o, _)| r.header(&o.header.prev_hash).ok().flatten().is_some());
                 drop(r);
                 let Some(pos) = pos else { break };
-                let orphan = inner.orphans.swap_remove(pos);
+                let (orphan, _) = inner.orphans.swap_remove(pos);
                 if let ProcessResult::NewTip { disconnected, connected } = self.process_locked(&mut inner, orphan, false)? {
                     changed = true;
                     // A later reorg may disconnect blocks connected earlier in this loop.
@@ -334,6 +338,11 @@ impl Chain {
 
     fn process_inner(&self, inner: &mut Inner, block: Block, pow_checked: bool) -> std::result::Result<ProcessResult, Fail> {
         let hash = block.hash();
+        // Cheap sanity check first: a target easier than the network limit can
+        // never be valid (and would make fake orphans free to produce).
+        if block.header.target_u256() > self.params.pow_limit() {
+            return Err(Fail::Invalid(BlockError::BadTarget));
+        }
         let r = self.db.read()?;
         if let Some(rec) = r.header(&hash)? {
             return match rec.status {
@@ -341,15 +350,19 @@ impl Chain {
                 _ => Ok(ProcessResult::AlreadyKnown),
             };
         }
+        let tip = self.tip();
+        // Forks that start deeper than the maximum reorganization depth can never
+        // become active; do not spend disk or CPU on them.
+        if block.header.height.saturating_add(self.params.max_reorg_depth) < tip.height {
+            return Ok(ProcessResult::SideChain);
+        }
         let Some(parent) = r.header(&block.header.prev_hash)? else {
-            if !inner.orphans.iter().any(|o| o.hash() == hash) {
-                if block.serialized_size() as u64 > MAX_BLOCK_BYTES_HARD {
-                    return Err(Fail::Invalid(BlockError::TooLarge { size: block.serialized_size() as u64, max: MAX_BLOCK_BYTES_HARD }));
-                }
-                if inner.orphans.len() >= MAX_ORPHANS {
+            let size = block.serialized_size();
+            if size <= MAX_ORPHAN_BLOCK_BYTES && !inner.orphans.iter().any(|(o, _)| o.hash() == hash) {
+                inner.orphans.push((block, size));
+                while inner.orphans.len() > MAX_ORPHANS || inner.orphans.iter().map(|(_, s)| s).sum::<usize>() > MAX_ORPHAN_BYTES {
                     inner.orphans.remove(0);
                 }
-                inner.orphans.push(block);
             }
             return Ok(ProcessResult::Orphan);
         };
@@ -378,7 +391,6 @@ impl Chain {
             tx_count: block.txs.len() as u32,
             size: size as u32,
         };
-        let tip = self.tip();
 
         if chainwork <= tip.chainwork {
             let w = self.db.write()?;
@@ -406,11 +418,7 @@ impl Chain {
         branch.reverse();
         let depth = tip.height - fork_height;
         if depth > self.params.max_reorg_depth {
-            warn!(depth, fork_height, "refusing reorganization deeper than the maximum; keeping block on side chain");
-            let w = self.db.write()?;
-            w.put_header(&hash, &record)?;
-            w.put_block_txs(&hash, &block.txs)?;
-            w.commit()?;
+            warn!(depth, fork_height, "refusing reorganization deeper than the maximum; ignoring block");
             return Ok(ProcessResult::SideChain);
         }
 

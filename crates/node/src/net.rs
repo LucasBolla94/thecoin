@@ -35,7 +35,11 @@ const SYNC_STALL: Duration = Duration::from_secs(90);
 const BAN_DURATION: Duration = Duration::from_secs(24 * 3600);
 const MAX_PER_IP_INBOUND: usize = 4;
 const KNOWN_CAPACITY: usize = 8192;
-const WRITE_QUEUE: usize = 1024;
+const WRITE_QUEUE: usize = 4096;
+/// A peer whose unsent data exceeds this is disconnected.
+const MAX_QUEUED_BYTES: usize = 32 * 1024 * 1024;
+/// Bulk senders (block serving) wait while more than this is queued.
+const SOFT_QUEUED_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct SyncState {
@@ -43,6 +47,8 @@ pub struct SyncState {
     pub last_progress: Option<Instant>,
     /// Last block hash requested from the sync peer.
     pub last_request: Option<Hash32>,
+    /// When the sync peer last delivered a block that extended our chain.
+    pub last_block: Option<Instant>,
 }
 
 struct KnownSet {
@@ -83,6 +89,7 @@ pub struct Peer {
     known: crate::chain::NodeMutex<KnownSet>,
     best_height: AtomicU64,
     closing: AtomicBool,
+    queued_bytes: std::sync::atomic::AtomicUsize,
     close_notify: Notify,
 }
 
@@ -90,13 +97,36 @@ impl Peer {
     pub fn send(&self, msg: &Message) {
         match encode_frame(self.magic, msg) {
             Ok(frame) => {
-                if self.frames.try_send(Arc::new(frame)).is_err() {
+                let len = frame.len();
+                if self.queued_bytes.fetch_add(len, Ordering::SeqCst) + len > MAX_QUEUED_BYTES
+                    || self.frames.try_send(Arc::new(frame)).is_err()
+                {
                     debug!(peer = self.id, "write queue full; disconnecting slow peer");
                     self.close();
                 }
             }
             Err(e) => warn!(error = %e, "failed to encode message"),
         }
+    }
+
+    /// Like [`Peer::send`] but waits (blocking, up to 60 s) while the peer has a
+    /// large backlog. Use only from blocking threads. Returns false if the peer
+    /// was disconnected.
+    pub fn send_bulk(&self, msg: &Message) -> bool {
+        let start = Instant::now();
+        while self.queued_bytes.load(Ordering::SeqCst) > SOFT_QUEUED_BYTES {
+            if self.closing.load(Ordering::Relaxed) {
+                return false;
+            }
+            if start.elapsed() > Duration::from_secs(60) {
+                debug!(peer = self.id, "peer not reading; disconnecting");
+                self.close();
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        self.send(msg);
+        !self.closing.load(Ordering::Relaxed)
     }
 
     pub fn close(&self) {
@@ -290,6 +320,8 @@ async fn maintenance_loop(node: Arc<Node>) {
         };
         if let Some(p) = stalled {
             info!(peer = p, "sync peer stalled; switching");
+            // Claiming a higher chain and not delivering it wastes our time.
+            misbehave(&node, p, 50, "stalled block sync");
             if let Some(peer) = node.peers.read().get(&p) {
                 peer.close();
             }
@@ -422,6 +454,7 @@ async fn run_peer(node: Arc<Node>, stream: TcpStream, addr: SocketAddr, inbound:
         known: crate::chain::NodeMutex::new(KnownSet { set: HashSet::new(), order: VecDeque::new() }),
         best_height: AtomicU64::new(0),
         closing: AtomicBool::new(false),
+        queued_bytes: std::sync::atomic::AtomicUsize::new(0),
         close_notify: Notify::new(),
     });
 
@@ -429,7 +462,9 @@ async fn run_peer(node: Arc<Node>, stream: TcpStream, addr: SocketAddr, inbound:
     let writer_peer = peer.clone();
     let writer_task = tokio::spawn(async move {
         while let Some(frame) = frame_rx.recv().await {
-            if tokio::time::timeout(Duration::from_secs(60), writer.write_all(&frame)).await.map_or(true, |r| r.is_err()) {
+            let ok = tokio::time::timeout(Duration::from_secs(60), writer.write_all(&frame)).await.is_ok_and(|r| r.is_ok());
+            writer_peer.queued_bytes.fetch_sub(frame.len(), Ordering::SeqCst);
+            if !ok {
                 writer_peer.close();
                 break;
             }
@@ -686,7 +721,11 @@ fn serve_getdata(node: &Arc<Node>, peer: &Arc<Peer>, items: Vec<InvItem>) -> Res
         }
         match item.kind {
             InvKind::Block => match r.block(&item.hash)? {
-                Some(b) => peer.send(&Message::Block(Box::new(b))),
+                Some(b) => {
+                    if !peer.send_bulk(&Message::Block(Box::new(b))) {
+                        return Ok(());
+                    }
+                }
                 None => not_found.push(item),
             },
             InvKind::Tx => {
