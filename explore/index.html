@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Coin explorer</title>
+    <meta
+      name="description"
+      content="Explore blocks, transactions, addresses and contracts of The Coin networks: DevNet and Mainnet."
+    />
+    <meta name="theme-color" content="#f7f7f2" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/style.css?v=1" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="https://the-coin.cloud/" aria-label="The Coin home"
+          ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+          >the coin<span class="brand-period">.</span></a
+        ><button
+          class="menu-toggle"
+          aria-controls="navigation"
+          aria-expanded="false"
+          type="button"
+        >
+          Menu <span aria-hidden="true">☰</span>
+        </button>
+        <nav class="nav" id="navigation" aria-label="Main navigation">
+          <a href="https://the-coin.cloud/">Overview</a
+          ><a href="./" aria-current="page">Explorer</a
+          ><a href="https://the-coin.cloud/governance.html">Governance</a
+          ><a href="https://the-coin.cloud/docs.html">Developers</a
+          ><a class="nav-cta" href="https://the-coin.cloud/download.html"
+            >Run a node <span aria-hidden="true">↗</span></a
+          >
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <section class="wrap page-intro">
+        <div class="eyebrow">VERIFY IT FOR YOURSELF</div>
+        <h1>The network, in the open.</h1>
+        <p class="lead">
+          Blocks, payments, addresses and contracts of every The Coin network.
+          Data comes directly from the network’s seed nodes.
+        </p>
+      </section>
+      <section class="wrap explorer-content">
+        <div class="network-bar">
+          <label for="network">Network</label>
+          <select id="network"></select>
+          <span id="network-badge" class="badge warn"></span>
+          <span id="network-description" class="network-description"></span>
+        </div>
+        <p id="network-warning" class="notice error" hidden></p>
+        <form class="searchbar" id="search" role="search">
+          <label class="sr-only" for="q"
+            >Block height, hash, transaction ID, address, or contract ID</label
+          ><input
+            id="q"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Search a block, transaction, or address"
+            required
+          /><button class="btn btn-primary" type="submit">Search ↗</button>
+        </form>
+        <div class="explorer-tabs">
+          <a href="#/">Latest blocks</a
+          ><a href="#/mempool">Pending transactions</a>
+        </div>
+        <div id="view" aria-live="polite">
+          <p class="loading">Connecting to the network…</p>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap footer-top">
+        <div>
+          <a class="brand" href="https://the-coin.cloud/"
+            ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+            >the coin.</a
+          >
+          <p>A small footprint. A shared future.</p>
+        </div>
+        <div class="footer-links">
+          <a href="https://the-coin.cloud/download.html">Get started</a
+          ><a href="https://the-coin.cloud/whitepaper.html">Whitepaper</a
+          ><a href="https://github.com/LucasBolla94/thecoin">GitHub ↗</a
+          ><a href="https://the-coin.cloud/docs.html">Documentation</a>
+          <a href="https://the-coin.cloud/tccl.html">TCCL</a>
+          <a href="https://the-coin.cloud/validator.html">Validator guide</a>
+        </div>
+      </div>
+      <div class="wrap footer-bottom">
+        <span>Open source · MIT / Apache-2.0</span
+        ><span
+          >Built in Rust. Open to everyone.
+          <span class="version">v0.2</span></span
+        >
+      </div>
+    </footer>
+    <script src="assets/networks.js?v=1"></script>
+    <script src="assets/api.js?v=1"></script>
+    <script src="assets/site.js?v=1"></script>
+    <script src="assets/explore-ui.js?v=1"></script>
+    <script src="assets/explorer.js?v=1"></script>
+  </body>
+</html>
