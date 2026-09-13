@@ -434,7 +434,7 @@ pub struct SecurityView {
     pub confirmations: u64,
     /// Approximate minutes until that many confirmations.
     pub minutes: u64,
-    /// Block reward + fees an attacker gives up per block (motes).
+    /// Block subsidy an attacker gives up per block rewritten (motes; fees are not counted).
     pub value_per_block: u64,
     pub network_hashrate: f64,
     pub explanation: String,

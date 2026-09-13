@@ -18,19 +18,23 @@ pub const MAX_CALL_DEPTH: usize = 16;
 pub const MAX_RING_SIZE: usize = 64;
 
 /// Fuel schedule (consensus-critical).
+/// Fuel prices. Calibrated with `tests/fuel_bench.rs` and the node's
+/// `fuel_storage_bench.rs` so that every operation costs roughly 20 ns of CPU
+/// per unit of fuel on a 2 vCPU VPS: a completely full block (50 M fuel) then
+/// executes in about one second in the worst case.
 pub mod fuel {
     pub const STMT: u64 = 2;
     pub const EXPR: u64 = 1;
     pub const CALL: u64 = 20;
     pub const PER_32_BYTES: u64 = 1;
-    pub const STORAGE_READ: u64 = 100;
+    pub const STORAGE_READ: u64 = 250;
     pub const STORAGE_WRITE: u64 = 400;
     pub const STORAGE_WRITE_PER_BYTE: u64 = 4;
     pub const HASH: u64 = 60;
-    pub const HASH_PER_64_BYTES: u64 = 2;
-    pub const ED25519_VERIFY: u64 = 2_500;
-    pub const RING_BASE: u64 = 1_000;
-    pub const RING_PER_MEMBER: u64 = 2_000;
+    pub const HASH_PER_64_BYTES: u64 = 20;
+    pub const ED25519_VERIFY: u64 = 3_500;
+    pub const RING_BASE: u64 = 5_000;
+    pub const RING_PER_MEMBER: u64 = 10_000;
     pub const SEND: u64 = 300;
     pub const EMIT: u64 = 100;
     pub const DESTROY: u64 = 1_000;
