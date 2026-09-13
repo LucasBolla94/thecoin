@@ -13,6 +13,10 @@ pub enum TxError {
     WrongChain { expected: u32, got: u32 },
     #[error("invalid signature")]
     BadSignature,
+    #[error("unknown transaction flags {0:#x}")]
+    BadFlags(u8),
+    #[error("invalid contract transaction: {0}")]
+    BadContractTx(String),
     #[error("transaction expired at height {expiry}")]
     Expired { expiry: u64 },
     #[error("bad nonce: expected {expected}, got {got}")]
@@ -61,6 +65,8 @@ pub enum BlockError {
     BadStateRoot { expected: Hash32, computed: Hash32 },
     #[error("block too large ({size} bytes, max {max})")]
     TooLarge { size: u64, max: u64 },
+    #[error("block exceeds the fuel limit")]
+    FuelLimit,
     #[error("signal bits {0:#x} use unassigned bits")]
     BadSignal(u32),
     #[error("duplicate transaction {0}")]

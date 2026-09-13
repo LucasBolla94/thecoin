@@ -33,135 +33,104 @@ pub const MAX_VERSION_BYTES: usize = 32;
 /// One signalling bit per concurrently voting proposal.
 pub const MAX_CONCURRENT_PROPOSALS: usize = 32;
 
-/// Parameters adjustable by governance.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, serde::Serialize, serde::Deserialize)]
-pub struct GovParams {
+macro_rules! gov_params {
+    ($( $(#[doc = $doc:literal])* $field:ident => $variant:ident ),+ $(,)?) => {
+        /// Parameters adjustable by governance.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, serde::Serialize, serde::Deserialize)]
+        pub struct GovParams {
+            $( $(#[doc = $doc])* pub $field: u64, )+
+        }
+
+        /// Inclusive `(min, max)` bounds for each [`GovParams`] field.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct GovBounds {
+            $( pub $field: (u64, u64), )+
+        }
+
+        /// Identifies a governable parameter. **Variant order is consensus-critical.**
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        pub enum GovParamId {
+            $( $variant, )+
+        }
+
+        impl GovParamId {
+            pub const ALL: &'static [GovParamId] = &[ $( GovParamId::$variant, )+ ];
+
+            pub fn name(self) -> &'static str {
+                match self {
+                    $( GovParamId::$variant => stringify!($field), )+
+                }
+            }
+        }
+
+        impl GovParams {
+            pub fn get(&self, id: GovParamId) -> u64 {
+                match id {
+                    $( GovParamId::$variant => self.$field, )+
+                }
+            }
+
+            pub fn set(&mut self, id: GovParamId, v: u64) {
+                match id {
+                    $( GovParamId::$variant => self.$field = v, )+
+                }
+            }
+        }
+
+        impl GovBounds {
+            pub fn get(&self, id: GovParamId) -> (u64, u64) {
+                match id {
+                    $( GovParamId::$variant => self.$field, )+
+                }
+            }
+        }
+    };
+}
+
+gov_params! {
     /// Maximum serialized block size in bytes.
-    pub max_block_bytes: u64,
-    /// Minimum fee per transaction byte (motes).
-    pub min_fee_per_byte: u64,
+    max_block_bytes => MaxBlockBytes,
+    /// Maximum total `max_fuel` of the contract transactions in a block.
+    max_block_fuel => MaxBlockFuel,
+    /// Base fee of every transaction (motes).
+    base_fee => BaseFee,
+    /// Fee per 1 000 bytes of serialized transaction (motes).
+    fee_per_kb => FeePerKb,
+    /// Fee per 1 000 units of contract fuel reserved by `max_fuel` (motes).
+    fee_per_kfuel => FeePerKfuel,
+    /// Refundable deposit per 1 000 bytes of contract state (motes).
+    storage_deposit_per_kb => StorageDepositPerKb,
     /// Deposit required to open a proposal (motes).
-    pub proposal_deposit: u64,
+    proposal_deposit => ProposalDeposit,
     /// Voting duration in blocks.
-    pub vote_period: u64,
+    vote_period => VotePeriod,
     /// Quorum: votes cast / circulating supply, in basis points (1/100 %).
-    pub quorum_bp: u64,
+    quorum_bp => QuorumBp,
     /// Holder approval: yes / (yes + no), in basis points.
-    pub approval_bp: u64,
+    approval_bp => ApprovalBp,
     /// Miner approval: signalling blocks / blocks in the vote, in basis points.
-    pub miner_approval_bp: u64,
+    miner_approval_bp => MinerApprovalBp,
     /// Blocks between approval and activation (time for nodes to upgrade).
-    pub activation_delay: u64,
-}
-
-/// Inclusive `(min, max)` bounds for each [`GovParams`] field.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
-pub struct GovBounds {
-    pub max_block_bytes: (u64, u64),
-    pub min_fee_per_byte: (u64, u64),
-    pub proposal_deposit: (u64, u64),
-    pub vote_period: (u64, u64),
-    pub quorum_bp: (u64, u64),
-    pub approval_bp: (u64, u64),
-    pub miner_approval_bp: (u64, u64),
-    pub activation_delay: (u64, u64),
-}
-
-/// Identifies a governable parameter. **Variant order is consensus-critical.**
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum GovParamId {
-    MaxBlockBytes,
-    MinFeePerByte,
-    ProposalDeposit,
-    VotePeriod,
-    QuorumBp,
-    ApprovalBp,
-    MinerApprovalBp,
-    ActivationDelay,
+    activation_delay => ActivationDelay,
 }
 
 impl GovParamId {
-    pub const ALL: [GovParamId; 8] = [
-        GovParamId::MaxBlockBytes,
-        GovParamId::MinFeePerByte,
-        GovParamId::ProposalDeposit,
-        GovParamId::VotePeriod,
-        GovParamId::QuorumBp,
-        GovParamId::ApprovalBp,
-        GovParamId::MinerApprovalBp,
-        GovParamId::ActivationDelay,
-    ];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            GovParamId::MaxBlockBytes => "max_block_bytes",
-            GovParamId::MinFeePerByte => "min_fee_per_byte",
-            GovParamId::ProposalDeposit => "proposal_deposit",
-            GovParamId::VotePeriod => "vote_period",
-            GovParamId::QuorumBp => "quorum_bp",
-            GovParamId::ApprovalBp => "approval_bp",
-            GovParamId::MinerApprovalBp => "miner_approval_bp",
-            GovParamId::ActivationDelay => "activation_delay",
-        }
-    }
-
     pub fn from_name(s: &str) -> Option<GovParamId> {
-        GovParamId::ALL.into_iter().find(|p| p.name() == s)
+        GovParamId::ALL.iter().copied().find(|p| p.name() == s)
     }
 }
 
 impl GovParams {
-    pub fn get(&self, id: GovParamId) -> u64 {
-        match id {
-            GovParamId::MaxBlockBytes => self.max_block_bytes,
-            GovParamId::MinFeePerByte => self.min_fee_per_byte,
-            GovParamId::ProposalDeposit => self.proposal_deposit,
-            GovParamId::VotePeriod => self.vote_period,
-            GovParamId::QuorumBp => self.quorum_bp,
-            GovParamId::ApprovalBp => self.approval_bp,
-            GovParamId::MinerApprovalBp => self.miner_approval_bp,
-            GovParamId::ActivationDelay => self.activation_delay,
-        }
-    }
-
-    pub fn set(&mut self, id: GovParamId, v: u64) {
-        match id {
-            GovParamId::MaxBlockBytes => self.max_block_bytes = v,
-            GovParamId::MinFeePerByte => self.min_fee_per_byte = v,
-            GovParamId::ProposalDeposit => self.proposal_deposit = v,
-            GovParamId::VotePeriod => self.vote_period = v,
-            GovParamId::QuorumBp => self.quorum_bp = v,
-            GovParamId::ApprovalBp => self.approval_bp = v,
-            GovParamId::MinerApprovalBp => self.miner_approval_bp = v,
-            GovParamId::ActivationDelay => self.activation_delay = v,
-        }
-    }
-
     pub fn validate(&self, b: &GovBounds) -> Result<(), String> {
         for id in GovParamId::ALL {
-            let (lo, hi) = b.get(id);
-            let v = self.get(id);
+            let (lo, hi) = b.get(*id);
+            let v = self.get(*id);
             if v < lo || v > hi {
                 return Err(format!("{} = {v} outside bounds [{lo}, {hi}]", id.name()));
             }
         }
         Ok(())
-    }
-}
-
-impl GovBounds {
-    pub fn get(&self, id: GovParamId) -> (u64, u64) {
-        match id {
-            GovParamId::MaxBlockBytes => self.max_block_bytes,
-            GovParamId::MinFeePerByte => self.min_fee_per_byte,
-            GovParamId::ProposalDeposit => self.proposal_deposit,
-            GovParamId::VotePeriod => self.vote_period,
-            GovParamId::QuorumBp => self.quorum_bp,
-            GovParamId::ApprovalBp => self.approval_bp,
-            GovParamId::MinerApprovalBp => self.miner_approval_bp,
-            GovParamId::ActivationDelay => self.activation_delay,
-        }
     }
 }
 

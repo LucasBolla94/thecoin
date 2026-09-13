@@ -27,8 +27,14 @@ pub fn required_ancestors(p: &ChainParams) -> usize {
 /// with the parent (height `next_height - 1`). At most
 /// [`required_ancestors`] entries are used.
 pub fn next_target(p: &ChainParams, next_height: u64, ancestors: &[BlockTimeInfo]) -> U256 {
-    let n = p.lwma_window;
-    if !p.retarget || next_height <= n + 1 || (ancestors.len() as u64) < n + 1 {
+    if !p.retarget || ancestors.len() < 2 || next_height < 2 {
+        return p.genesis_target();
+    }
+    // Warm-up: use the solve times available (at least LWMA_MIN_WINDOW) until
+    // the full window exists, so a young network reacts after a few blocks
+    // instead of waiting for `lwma_window` blocks at the genesis difficulty.
+    let n = p.lwma_window.min(next_height - 1).min(ancestors.len() as u64 - 1);
+    if n < crate::params::LWMA_MIN_WINDOW {
         return p.genesis_target();
     }
     let window = &ancestors[ancestors.len() - (n as usize + 1)..];
@@ -46,7 +52,17 @@ pub fn next_target(p: &ChainParams, next_height: u64, ancestors: &[BlockTimeInfo
         sum_targets += U512::from(b.target);
     }
     // next = (sum_targets / N) * weighted / k   (computed in 512-bit to avoid overflow)
-    let next = sum_targets * U512::from(weighted) / U512::from(n * k);
+    let mut next = sum_targets * U512::from(weighted) / U512::from(n * k);
+    // Never more than 2× easier or harder than the previous block: smooths the
+    // warm-up window and bounds the effect of manipulated timestamps.
+    let prev = U512::from(window[n as usize].target);
+    let (lo, hi) = (prev / U512::from(2u8), prev * U512::from(2u8));
+    if next < lo {
+        next = lo;
+    }
+    if next > hi {
+        next = hi;
+    }
     let limit = U512::from(p.pow_limit());
     let next = if next > limit { limit } else { next };
     let next = U256::try_from(next).expect("clamped below 2^256");
@@ -95,6 +111,21 @@ mod tests {
         assert_eq!(fast, target / 2);
         let slow = next_target(p, 1000, &chain(61, 90, target));
         assert!(slow > target);
+    }
+
+    #[test]
+    fn warm_up_reacts_early_and_is_bounded() {
+        let p = &MAINNET;
+        let target = p.genesis_target();
+        // 5 solve times: not enough, genesis target
+        assert_eq!(next_target(p, 6, &chain(6, 10, target)), target);
+        // 6 fast blocks (10 s instead of 60 s): harder, but at most 2× per block
+        let t7 = next_target(p, 7, &chain(7, 10, target));
+        assert!(t7 < target);
+        assert_eq!(t7, target / 2);
+        // very slow blocks: easier, at most 2×
+        let slow = next_target(p, 20, &chain(20, 10_000, target));
+        assert_eq!(slow, target * 2);
     }
 
     #[test]

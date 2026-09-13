@@ -11,7 +11,10 @@
 //!
 //! Replay protection: `chain_id` (between networks) + `nonce` (within a network).
 //! A transaction is either fully valid and applied, or it cannot be included in
-//! a block at all — there is no "failed but fee charged" state.
+//! a block at all — there is no "failed but fee charged" state. The exception
+//! are TCCL smart-contract transactions (`Deploy`, `Invoke`): their fee is
+//! charged even if the contract code fails, and every other effect is reverted
+//! (otherwise anyone could make the network execute failing code for free).
 
 use crate::address::Address;
 use crate::contracts::{ContractCall, ContractSpec};
@@ -19,6 +22,7 @@ use crate::crypto;
 use crate::governance::{ProposalSpec, VoteChoice};
 use crate::hash::{tagged_hash, tags, Hash32};
 use borsh::{BorshDeserialize, BorshSerialize};
+use tccl::Value;
 
 pub const TX_VERSION: u8 = 1;
 
@@ -44,16 +48,30 @@ pub enum TxAction {
     Propose { proposal: ProposalSpec },
     /// Votes on a proposal with `weight` coins (locked until the vote ends).
     Vote { proposal: Hash32, choice: VoteChoice, weight: u64 },
+    /// Deploys a TCCL smart contract. Every node compiles `source`; invalid code
+    /// fails. `value` TCN go to the new contract; `init_args` are passed to `init`.
+    Deploy { source: String, init_args: Vec<Value>, value: u64, max_fuel: u64, max_deposit: u64 },
+    /// Calls an `action` of a TCCL contract, optionally sending `value` TCN.
+    Invoke { contract: Address, function: String, args: Vec<Value>, value: u64, max_fuel: u64, max_deposit: u64 },
 }
+
+/// `TxBody::flags` bit: the sender allows this transaction to be replaced in
+/// the mempool by one with the same nonce and a higher fee ("fee bump").
+/// Receivers of payments without this flag can rely on the first version seen.
+pub const FLAG_REPLACEABLE: u8 = 1;
+pub const KNOWN_FLAGS: u8 = FLAG_REPLACEABLE;
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct TxBody {
     pub version: u8,
     /// Network id, see [`crate::ChainParams::chain_id`].
     pub chain_id: u32,
+    /// Option bits, see [`FLAG_REPLACEABLE`]. Unknown bits make the tx invalid.
+    pub flags: u8,
     /// Must equal the sender account nonce; incremented on inclusion.
     pub nonce: u64,
-    /// Fee paid to the miner, in motes. Must be `>= min_fee_per_byte * size`.
+    /// Fee in motes. Must cover [`crate::execution::required_fee`]; anything above
+    /// it is a priority tip for the miner.
     pub fee: u64,
     /// Last block height at which this tx may be included (0 = no expiry).
     pub expiry_height: u64,
@@ -110,9 +128,27 @@ impl Transaction {
         crypto::verify(&self.public_key, &self.body.signing_hash().0, &self.signature)
     }
 
-    /// Fee per serialized byte (for mempool ordering).
+    /// Fuel reserved by a contract transaction (0 for other actions).
+    pub fn max_fuel(&self) -> u64 {
+        match &self.body.action {
+            TxAction::Deploy { max_fuel, .. } | TxAction::Invoke { max_fuel, .. } => *max_fuel,
+            _ => 0,
+        }
+    }
+
+    /// Resource weight used to rank transactions: bytes plus reserved fuel
+    /// (100 fuel ≈ 1 byte).
+    pub fn weight(&self) -> u64 {
+        self.size() as u64 + self.max_fuel() / 100
+    }
+
+    /// Fee per weight unit (for mempool ordering and priority).
     pub fn fee_rate(&self) -> u64 {
-        self.body.fee / self.size().max(1) as u64
+        self.body.fee / self.weight().max(1)
+    }
+
+    pub fn is_replaceable(&self) -> bool {
+        self.body.flags & FLAG_REPLACEABLE != 0
     }
 
     /// Upper bound of coins that leave the sender's balance (amounts + fee).
@@ -124,6 +160,7 @@ impl Transaction {
             TxAction::CallContract { call, .. } => call.deposit_amount(),
             TxAction::Propose { .. } => 0, // deposit is a chain parameter; checked on apply
             TxAction::Vote { .. } => 0,
+            TxAction::Deploy { value, max_deposit, .. } | TxAction::Invoke { value, max_deposit, .. } => value.saturating_add(*max_deposit),
         };
         amount.saturating_add(self.body.fee)
     }
@@ -139,6 +176,7 @@ mod tests {
         let body = |fee| TxBody {
             version: TX_VERSION,
             chain_id: 1,
+            flags: 0,
             nonce: 0,
             fee,
             expiry_height: 0,

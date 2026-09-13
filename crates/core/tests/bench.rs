@@ -40,8 +40,9 @@ fn bench_block_validation() {
             let body = TxBody {
                 version: TX_VERSION,
                 chain_id: p.chain_id,
+                flags: 0,
                 nonce: 0,
-                fee: 200 * 10,
+                fee: 10_000,
                 expiry_height: 0,
                 action: TxAction::Transfer { to, amount: COIN, memo: vec![] },
             };

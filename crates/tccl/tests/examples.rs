@@ -195,7 +195,7 @@ fn fuel_and_limits_protect_the_network() {
     let (c, _) = sim.deploy(growth, account("a"), vec![], 0).unwrap();
     assert_eq!(sim.view(&c, "grow", vec![]).unwrap().result, Err(VmError::TooLarge));
 
-    let destroy = "contract D\nstate n: int\naction set():\n    n = 1\naction clear():\n    n = 0\naction close():\n    destroy(caller)\n";
+    let destroy = "contract D\nstate owner: address\nstate m: map[int, int]\ninit():\n    owner = caller\naction set():\n    m[1] = 5\naction clear():\n    m.remove(1)\naction close():\n    destroy(caller)\n";
     let (c, _) = sim.deploy(destroy, account("a"), vec![], 0).unwrap();
     sim.call(&c, account("a"), "set", vec![], 0).unwrap().result.unwrap();
     assert_eq!(sim.call(&c, account("a"), "close", vec![], 0).unwrap().result, Err(VmError::StorageNotEmpty(1)));

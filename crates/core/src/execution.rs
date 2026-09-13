@@ -2,12 +2,22 @@
 //!
 //! Block processing order (consensus-critical):
 //!
-//! 1. **begin** — the reward of block `height - coinbase_maturity` becomes
-//!    spendable by its miner.
-//! 2. **transactions** — applied in block order; any invalid transaction
-//!    invalidates the whole block.
-//! 3. **end** — governance (miner signals, vote closing, activations), then
-//!    `subsidy + fees` of this block is stored as a pending reward.
+//! 1. **begin** — mining-reward cooldown: the first quarter of the reward of
+//!    block `height - coinbase_maturity` and the rest of the reward of block
+//!    `height - reward_unlock_blocks` become spendable by their miners.
+//! 2. **transactions** — applied in block order. Native transactions are
+//!    atomic (an invalid one invalidates the block). TCCL contract
+//!    transactions always pay their fee; if the contract code fails, every
+//!    other effect is reverted and the receipt records the failure.
+//! 3. **end** — governance (miner signals, vote closing, activations), the
+//!    congestion multiplier update, then `subsidy + miner fees` of this block
+//!    is stored as a pending reward.
+//!
+//! Fees: `required = (base_fee + fee_per_kb·kB + fee_per_kfuel·kfuel) ×
+//! congestion`. The congestion surcharge (`required − required at 1×`) is
+//! **burned**, so miners gain nothing by filling blocks with their own
+//! transactions to push fees up; anything paid above `required` is a priority
+//! tip that goes to the miner.
 //!
 //! Header-level rules (PoW, timestamps, difficulty, state root) are checked by
 //! the node's chain manager using [`crate::difficulty`] and [`crate::lthash`].
@@ -17,30 +27,102 @@ use crate::block::Block;
 use crate::contracts::{self, credit};
 use crate::emission::block_subsidy;
 use crate::error::{BlockError, TxError};
-use crate::governance::{self, assigned_signal_mask};
+use crate::governance::{self, assigned_signal_mask, GovParams};
 use crate::hash::Hash32;
-use crate::params::{ChainParams, MAX_BATCH_OUTPUTS, MAX_MEMO_BYTES, MAX_TX_BYTES};
+use crate::params::{
+    ChainParams, CONGESTION_MAX_BP, CONGESTION_MIN_BP, MAX_BATCH_OUTPUTS, MAX_DEPLOY_TX_BYTES, MAX_MEMO_BYTES, MAX_TX_BYTES, MAX_TX_FUEL,
+};
+use crate::programs;
 use crate::state::{pending_reward_key, Overlay, PendingReward, StateReader};
-use crate::tx::{Transaction, TxAction, TX_VERSION};
+use crate::tx::{Transaction, TxAction, KNOWN_FLAGS, TX_VERSION};
 use std::collections::HashSet;
 
-/// Effects of a transaction, used for indexing.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// An event emitted by a TCCL contract.
+#[derive(Clone, Debug, PartialEq, Eq, borsh::BorshSerialize, borsh::BorshDeserialize)]
+pub struct LogEntry {
+    pub contract: Address,
+    pub event: String,
+    pub fields: Vec<(String, tccl::Value)>,
+}
+
+/// Effects of a transaction, used for indexing, explorers and wallets.
+#[derive(Clone, Debug, PartialEq, Eq, borsh::BorshSerialize, borsh::BorshDeserialize)]
 pub struct TxReceipt {
     pub txid: Hash32,
+    /// Total fee paid by the sender.
     pub fee: u64,
+    /// Part of the fee burned (congestion surcharge).
+    pub burned: u64,
     /// Every address whose balance/role is affected (sender first).
     pub touched: Vec<Address>,
-    /// Contract or proposal created by this transaction, if any.
+    /// Native contract or proposal created by this transaction, if any.
     pub created: Option<Hash32>,
+    /// TCCL contract deployed by this transaction, if any.
+    pub program: Option<Address>,
+    /// False only for TCCL transactions whose code failed (fee still charged).
+    pub success: bool,
+    pub error: Option<String>,
+    pub fuel_used: u64,
+    pub logs: Vec<LogEntry>,
+    pub return_value: Option<tccl::Value>,
+}
+
+impl TxReceipt {
+    /// Fee going to the miner.
+    pub fn miner_fee(&self) -> u64 {
+        self.fee - self.burned
+    }
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct BlockReceipt {
     pub txs: Vec<TxReceipt>,
+    /// Fees going to the miner (after burning).
     pub fees: u64,
+    pub burned: u64,
     pub subsidy: u64,
-    pub matured: Option<PendingReward>,
+    /// Rewards released to miners at the beginning of this block.
+    pub released: u64,
+}
+
+/// Resource usage of a block (drives the congestion multiplier).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BlockUsage {
+    pub bytes: u64,
+    pub fuel: u64,
+}
+
+fn ceil_div(a: u128, b: u128) -> u128 {
+    a.div_ceil(b)
+}
+
+/// Minimum fee of a transaction of `size` bytes reserving `max_fuel` fuel.
+/// Returns `(required fee, required fee at 1× congestion)`.
+pub fn required_fee(params: &GovParams, congestion_bp: u64, size: usize, max_fuel: u64) -> (u64, u64) {
+    let base = params.base_fee as u128
+        + ceil_div(size as u128 * params.fee_per_kb as u128, 1_000)
+        + ceil_div(max_fuel as u128 * params.fee_per_kfuel as u128, 1_000);
+    let required = ceil_div(base * congestion_bp.max(CONGESTION_MIN_BP) as u128, 10_000);
+    (required.min(u64::MAX as u128) as u64, base.min(u64::MAX as u128) as u64)
+}
+
+/// Congestion multiplier for the next block given this block's usage.
+/// Target usage is 50% of the limits; the multiplier moves at most 12.5% per block.
+pub fn next_congestion(current_bp: u64, usage: BlockUsage, params: &GovParams) -> u64 {
+    let fill = |used: u64, max: u64| -> u128 { (used as u128 * 10_000 / max.max(1) as u128).min(10_000) };
+    let fill_bp = fill(usage.bytes, params.max_block_bytes).max(fill(usage.fuel, params.max_block_fuel));
+    let target: u128 = 5_000;
+    let cur = current_bp.max(CONGESTION_MIN_BP) as u128;
+    let next = if fill_bp > target {
+        let delta = (cur * (fill_bp - target) / target / 8).max(1);
+        cur + delta
+    } else if fill_bp < target {
+        let delta = cur * (target - fill_bp) / target / 8;
+        cur.saturating_sub(delta)
+    } else {
+        cur
+    };
+    next.clamp(CONGESTION_MIN_BP as u128, CONGESTION_MAX_BP as u128) as u64
 }
 
 /// Checks that do not depend on the state. Returns the serialized size.
@@ -52,14 +134,18 @@ pub fn check_tx_stateless(p: &ChainParams, tx: &Transaction) -> Result<usize, Tx
 /// check (for transactions whose signature was verified before).
 pub fn check_tx_context_free(p: &ChainParams, tx: &Transaction, verify_sig: bool) -> Result<usize, TxError> {
     let size = tx.size();
-    if size > MAX_TX_BYTES {
-        return Err(TxError::TooLarge { size, max: MAX_TX_BYTES });
+    let max = if matches!(tx.body.action, TxAction::Deploy { .. }) { MAX_DEPLOY_TX_BYTES } else { MAX_TX_BYTES };
+    if size > max {
+        return Err(TxError::TooLarge { size, max });
     }
     if tx.body.version != TX_VERSION {
         return Err(TxError::BadVersion(tx.body.version));
     }
     if tx.body.chain_id != p.chain_id {
         return Err(TxError::WrongChain { expected: p.chain_id, got: tx.body.chain_id });
+    }
+    if tx.body.flags & !KNOWN_FLAGS != 0 {
+        return Err(TxError::BadFlags(tx.body.flags));
     }
     match &tx.body.action {
         TxAction::Transfer { amount, memo, .. } => {
@@ -93,11 +179,39 @@ pub fn check_tx_context_free(p: &ChainParams, tx: &Transaction, verify_sig: bool
                 return Err(TxError::ZeroAmount);
             }
         }
+        TxAction::Deploy { source, init_args, max_fuel, .. } => {
+            if source.trim().is_empty() {
+                return Err(TxError::BadContractTx("empty source code".into()));
+            }
+            check_fuel(*max_fuel)?;
+            check_args(init_args)?;
+        }
+        TxAction::Invoke { function, args, max_fuel, .. } => {
+            if function.is_empty() || function.len() > 64 {
+                return Err(TxError::BadContractTx("function name must be 1..=64 bytes".into()));
+            }
+            check_fuel(*max_fuel)?;
+            check_args(args)?;
+        }
     }
     if verify_sig && !tx.verify_signature() {
         return Err(TxError::BadSignature);
     }
     Ok(size)
+}
+
+fn check_fuel(max_fuel: u64) -> Result<(), TxError> {
+    if max_fuel == 0 || max_fuel > MAX_TX_FUEL {
+        return Err(TxError::BadContractTx(format!("max_fuel must be 1..={MAX_TX_FUEL}")));
+    }
+    Ok(())
+}
+
+fn check_args(args: &[tccl::Value]) -> Result<(), TxError> {
+    if args.len() > 32 {
+        return Err(TxError::BadContractTx("at most 32 arguments".into()));
+    }
+    Ok(())
 }
 
 /// Applies a transaction whose stateless checks already passed.
@@ -113,10 +227,11 @@ pub fn apply_tx<R: StateReader + ?Sized>(
         return Err(TxError::Expired { expiry: body.expiry_height });
     }
     let g = state.global()?;
-    let min_fee = g.params.min_fee_per_byte.checked_mul(size as u64).ok_or(TxError::Overflow)?;
-    if body.fee < min_fee {
-        return Err(TxError::FeeTooLow { min: min_fee, got: body.fee });
+    let (required, base) = required_fee(&g.params, g.congestion_bp, size, tx.max_fuel());
+    if body.fee < required {
+        return Err(TxError::FeeTooLow { min: required, got: body.fee });
     }
+    let burned = required - base;
 
     let sender = tx.sender();
     let mut acc = state.account(&sender)?;
@@ -124,6 +239,7 @@ pub fn apply_tx<R: StateReader + ?Sized>(
         return Err(TxError::BadNonce { expected: acc.nonce, got: body.nonce });
     }
 
+    let is_program_tx = matches!(body.action, TxAction::Deploy { .. } | TxAction::Invoke { .. });
     let debit_amount: u64 = match &body.action {
         TxAction::Transfer { amount, .. } => *amount,
         TxAction::BatchTransfer { outputs, .. } => {
@@ -133,52 +249,78 @@ pub fn apply_tx<R: StateReader + ?Sized>(
         TxAction::CallContract { call, .. } => call.deposit_amount(),
         TxAction::Propose { .. } => g.params.proposal_deposit,
         TxAction::Vote { .. } => 0,
+        TxAction::Deploy { value, .. } | TxAction::Invoke { value, .. } => *value,
     };
     let needed = debit_amount.checked_add(body.fee).ok_or(TxError::Overflow)?;
     let available = acc.spendable(height);
     if needed > available {
         return Err(TxError::InsufficientFunds { needed, available });
     }
-    acc.balance -= needed;
+    // Contract transactions move `value` inside the revertible execution.
+    acc.balance -= if is_program_tx { body.fee } else { needed };
     acc.nonce = acc.nonce.checked_add(1).ok_or(TxError::Overflow)?;
     state.put_account(&sender, &acc);
 
-    let mut touched = vec![sender];
-    let mut created = None;
+    let mut receipt = TxReceipt {
+        txid: tx.txid(),
+        fee: body.fee,
+        burned,
+        touched: vec![sender],
+        created: None,
+        program: None,
+        success: true,
+        error: None,
+        fuel_used: 0,
+        logs: Vec::new(),
+        return_value: None,
+    };
     match &body.action {
         TxAction::Transfer { to, amount, .. } => {
             credit(state, to, *amount)?;
-            touched.push(*to);
+            receipt.touched.push(*to);
         }
         TxAction::BatchTransfer { outputs, .. } => {
             for o in outputs {
                 credit(state, &o.to, o.amount)?;
-                touched.push(o.to);
+                receipt.touched.push(o.to);
             }
         }
         TxAction::CreateContract { spec } => {
-            let (id, parties) = contracts::create(state, height, sender, body.nonce, spec)?;
+            let (id, parties) = contracts::create(state, height, sender, body.nonce, spec, g.params.storage_deposit_per_kb)?;
             g_increment_contracts(state)?;
-            touched.extend(parties);
-            created = Some(id);
+            receipt.touched.extend(parties);
+            receipt.created = Some(id);
         }
         TxAction::CallContract { contract, call } => {
-            touched.extend(contracts::call(state, height, sender, contract, call)?);
+            receipt.touched.extend(contracts::call(state, height, sender, contract, call)?);
         }
         TxAction::Propose { proposal } => {
             let id = governance::propose(state, &p.gov_bounds, height, sender, body.nonce, proposal, g.params.proposal_deposit)?;
-            created = Some(id);
+            receipt.created = Some(id);
         }
         TxAction::Vote { proposal, choice, weight } => {
             governance::vote(state, height, sender, proposal, *choice, *weight)?;
         }
+        TxAction::Deploy { source, init_args, value, max_fuel, max_deposit } => {
+            let call = programs::ProgramCall { sender, height, value: *value, max_fuel: *max_fuel, max_deposit: *max_deposit, deposit_per_kb: g.params.storage_deposit_per_kb };
+            let out = programs::deploy(p, state, &call, body.nonce, receipt.txid, source, init_args.clone())?;
+            if out.success {
+                g_increment_contracts(state)?;
+            }
+            out.fill(&mut receipt);
+        }
+        TxAction::Invoke { contract, function, args, value, max_fuel, max_deposit } => {
+            let call = programs::ProgramCall { sender, height, value: *value, max_fuel: *max_fuel, max_deposit: *max_deposit, deposit_per_kb: g.params.storage_deposit_per_kb };
+            let out = programs::invoke(state, &call, contract, function, args.clone())?;
+            out.fill(&mut receipt);
+        }
     }
-    let first = touched[0];
-    touched.sort();
-    touched.dedup();
-    touched.retain(|a| *a != first);
-    touched.insert(0, first);
-    Ok(TxReceipt { txid: tx.txid(), fee: body.fee, touched, created })
+    let first = receipt.touched[0];
+    receipt.touched.sort();
+    receipt.touched.dedup();
+    receipt.touched.retain(|a| *a != first);
+    receipt.touched.insert(0, first);
+    Ok(receipt)
 }
 
 fn g_increment_contracts<R: StateReader + ?Sized>(state: &mut Overlay<'_, R>) -> Result<(), TxError> {
@@ -188,44 +330,64 @@ fn g_increment_contracts<R: StateReader + ?Sized>(state: &mut Overlay<'_, R>) ->
     Ok(())
 }
 
-/// Step 1 of block processing. Returns the matured reward, if any.
-pub fn begin_block<R: StateReader + ?Sized>(
-    p: &ChainParams,
-    state: &mut Overlay<'_, R>,
-    height: u64,
-) -> Result<Option<PendingReward>, BlockError> {
-    if height <= p.coinbase_maturity {
-        return Ok(None);
+/// Step 1 of block processing: reward cooldown. Returns the motes released.
+pub fn begin_block<R: StateReader + ?Sized>(p: &ChainParams, state: &mut Overlay<'_, R>, height: u64) -> Result<u64, BlockError> {
+    let mut released = 0u64;
+    let werr = |e: TxError| BlockError::Governance(e.to_string());
+    // Early quarter.
+    if height > p.coinbase_maturity {
+        let key = pending_reward_key(height - p.coinbase_maturity);
+        if let Some(mut reward) = state.get::<PendingReward>(&key)? {
+            let early = reward.early_part();
+            if reward.released == 0 && early > 0 {
+                credit(state, &reward.miner, early).map_err(werr)?;
+                reward.released = early;
+                released += early;
+                state.put(key, &reward);
+            }
+        }
     }
-    let key = pending_reward_key(height - p.coinbase_maturity);
-    let Some(reward) = state.get::<PendingReward>(&key)? else {
-        return Ok(None);
-    };
-    state.delete_raw(key);
-    credit(state, &reward.miner, reward.amount).map_err(|e| BlockError::Governance(e.to_string()))?;
-    Ok(Some(reward))
+    // Rest, after the full cooldown.
+    if height > p.reward_unlock_blocks {
+        let key = pending_reward_key(height - p.reward_unlock_blocks);
+        if let Some(reward) = state.get::<PendingReward>(&key)? {
+            let rest = reward.locked();
+            state.delete_raw(key);
+            credit(state, &reward.miner, rest).map_err(werr)?;
+            released += rest;
+        }
+    }
+    Ok(released)
 }
 
 /// Step 3 of block processing. Returns the subsidy created.
+#[allow(clippy::too_many_arguments)]
 pub fn end_block<R: StateReader + ?Sized>(
     p: &ChainParams,
     state: &mut Overlay<'_, R>,
     height: u64,
     miner: &Address,
     signal: u32,
-    fees: u64,
+    miner_fees: u64,
+    burned: u64,
+    usage: BlockUsage,
 ) -> Result<u64, BlockError> {
+    let gerr = |m: &str| BlockError::Governance(m.to_string());
+    // The congestion multiplier is driven by the limits in force for this block.
+    let params_before = state.global()?.params;
     governance::end_block(state, &p.gov_bounds, height, signal)?;
     let subsidy = block_subsidy(p, height);
     let mut g = state.global()?;
-    g.emitted = g.emitted.checked_add(subsidy).ok_or(BlockError::Governance("emission overflow".into()))?;
+    g.emitted = g.emitted.checked_add(subsidy).ok_or_else(|| gerr("emission overflow"))?;
     if g.emitted > crate::params::MAX_SUPPLY {
-        return Err(BlockError::Governance("supply cap exceeded".into()));
+        return Err(gerr("supply cap exceeded"));
     }
+    g.burned = g.burned.checked_add(burned).ok_or_else(|| gerr("burn overflow"))?;
+    g.congestion_bp = next_congestion(g.congestion_bp, usage, &params_before);
     state.put_global(&g);
-    let total = subsidy.checked_add(fees).ok_or(BlockError::Governance("reward overflow".into()))?;
+    let total = subsidy.checked_add(miner_fees).ok_or_else(|| gerr("reward overflow"))?;
     if total > 0 {
-        state.put(pending_reward_key(height), &PendingReward { miner: *miner, amount: total });
+        state.put(pending_reward_key(height), &PendingReward { miner: *miner, amount: total, released: 0 });
     }
     Ok(subsidy)
 }
@@ -239,12 +401,7 @@ pub fn allowed_signal_mask<R: StateReader + ?Sized>(state: &Overlay<'_, R>) -> R
 ///
 /// `verified_sigs`: set to `true` only if every transaction signature was
 /// already verified (e.g. by the mempool or a parallel pre-check).
-pub fn apply_block<R: StateReader + ?Sized>(
-    p: &ChainParams,
-    state: &mut Overlay<'_, R>,
-    block: &Block,
-    verified_sigs: bool,
-) -> Result<BlockReceipt, BlockError> {
+pub fn apply_block<R: StateReader + ?Sized>(p: &ChainParams, state: &mut Overlay<'_, R>, block: &Block, verified_sigs: bool) -> Result<BlockReceipt, BlockError> {
     let h = &block.header;
     let height = h.height;
     let g = state.global()?;
@@ -252,12 +409,16 @@ pub fn apply_block<R: StateReader + ?Sized>(
     if size > g.params.max_block_bytes {
         return Err(BlockError::TooLarge { size, max: g.params.max_block_bytes });
     }
+    let fuel: u64 = block.txs.iter().try_fold(0u64, |a, t| a.checked_add(t.max_fuel())).ok_or(BlockError::FuelLimit)?;
+    if fuel > g.params.max_block_fuel {
+        return Err(BlockError::FuelLimit);
+    }
     let mask = assigned_signal_mask(&g.voting);
     if h.signal & !mask != 0 {
         return Err(BlockError::BadSignal(h.signal));
     }
 
-    let mut receipt = BlockReceipt { matured: begin_block(p, state, height)?, ..Default::default() };
+    let mut receipt = BlockReceipt { released: begin_block(p, state, height)?, ..Default::default() };
 
     let mut seen = HashSet::with_capacity(block.txs.len());
     for (index, tx) in block.txs.iter().enumerate() {
@@ -267,11 +428,12 @@ pub fn apply_block<R: StateReader + ?Sized>(
         }
         let size = check_tx_context_free(p, tx, !verified_sigs).map_err(|error| BlockError::Tx { index, txid, error })?;
         let r = apply_tx(p, state, height, tx, size).map_err(|error| BlockError::Tx { index, txid, error })?;
-        receipt.fees = receipt.fees.checked_add(r.fee).ok_or(BlockError::Governance("fee overflow".into()))?;
+        receipt.fees = receipt.fees.checked_add(r.miner_fee()).ok_or(BlockError::Governance("fee overflow".into()))?;
+        receipt.burned = receipt.burned.checked_add(r.burned).ok_or(BlockError::Governance("burn overflow".into()))?;
         receipt.txs.push(r);
     }
 
-    receipt.subsidy = end_block(p, state, height, &h.miner, h.signal, receipt.fees)?;
+    receipt.subsidy = end_block(p, state, height, &h.miner, h.signal, receipt.fees, receipt.burned, BlockUsage { bytes: size, fuel })?;
     Ok(receipt)
 }
 
@@ -283,8 +445,11 @@ pub struct BlockBuilder<'a, R: StateReader + ?Sized> {
     pub txs: Vec<Transaction>,
     pub receipts: Vec<TxReceipt>,
     pub fees: u64,
+    pub burned: u64,
     size: u64,
+    fuel: u64,
     max_bytes: u64,
+    max_fuel: u64,
     signal_mask: u32,
 }
 
@@ -304,13 +469,16 @@ impl<'a, R: StateReader + ?Sized> BlockBuilder<'a, R> {
             txs: Vec::new(),
             receipts: Vec::new(),
             fees: 0,
+            burned: 0,
             size: EMPTY_BLOCK_BYTES,
+            fuel: 0,
             max_bytes: g.params.max_block_bytes,
+            max_fuel: g.params.max_block_fuel,
             signal_mask,
         })
     }
 
-    /// Proposals currently voting, `(bit, id)`, to choose signal bits from.
+    /// Signal bits assigned to voting proposals.
     pub fn signal_mask(&self) -> u32 {
         self.signal_mask
     }
@@ -325,6 +493,9 @@ impl<'a, R: StateReader + ?Sized> BlockBuilder<'a, R> {
         if self.size + size as u64 > self.max_bytes {
             return Err(TxError::TooLarge { size, max: self.remaining_bytes() as usize });
         }
+        if self.fuel + tx.max_fuel() > self.max_fuel {
+            return Err(TxError::BadContractTx("block fuel limit reached".into()));
+        }
         check_tx_context_free(self.p, tx, false)?;
         if self.txs.iter().any(|t| t == tx) {
             return Err(TxError::Contract("duplicate".into()));
@@ -335,8 +506,10 @@ impl<'a, R: StateReader + ?Sized> BlockBuilder<'a, R> {
             (child.into_changes(), r)
         };
         self.state.absorb(changes);
-        self.fees = self.fees.checked_add(receipt.fee).ok_or(TxError::Overflow)?;
+        self.fees = self.fees.checked_add(receipt.miner_fee()).ok_or(TxError::Overflow)?;
+        self.burned = self.burned.checked_add(receipt.burned).ok_or(TxError::Overflow)?;
         self.size += size as u64;
+        self.fuel += tx.max_fuel();
         self.txs.push(tx.clone());
         self.receipts.push(receipt);
         Ok(())
@@ -345,7 +518,48 @@ impl<'a, R: StateReader + ?Sized> BlockBuilder<'a, R> {
     /// Runs end-of-block processing. `signal` is masked to assigned bits.
     pub fn finish(mut self, miner: &Address, signal: u32) -> Result<(Overlay<'a, R>, Vec<Transaction>, u32), BlockError> {
         let signal = signal & self.signal_mask;
-        end_block(self.p, &mut self.state, self.height, miner, signal, self.fees)?;
+        let usage = BlockUsage { bytes: self.size, fuel: self.fuel };
+        end_block(self.p, &mut self.state, self.height, miner, signal, self.fees, self.burned, usage)?;
         Ok((self.state, self.txs, signal))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::params::MAINNET;
+
+    #[test]
+    fn fee_formula() {
+        let params = MAINNET.gov_defaults;
+        // base 1000 + 158 bytes × 10 = 2580
+        assert_eq!(required_fee(&params, 10_000, 158, 0), (2_580, 2_580));
+        // 2× congestion doubles, the surcharge is burned
+        assert_eq!(required_fee(&params, 20_000, 158, 0), (5_160, 2_580));
+        // fuel: 1 001 units × 1 000 motes / 1 000 units = 1 001 motes
+        assert_eq!(required_fee(&params, 10_000, 158, 1_001), (3_581, 3_581));
+    }
+
+    #[test]
+    fn congestion_moves_gradually() {
+        let params = MAINNET.gov_defaults;
+        let full = BlockUsage { bytes: params.max_block_bytes, fuel: 0 };
+        let empty = BlockUsage::default();
+        let mut c = CONGESTION_MIN_BP;
+        for _ in 0..10 {
+            c = next_congestion(c, full, &params);
+        }
+        assert!(c > 30_000 && c < 33_000, "{c}"); // 1.125^10 ≈ 3.25
+        for _ in 0..200 {
+            c = next_congestion(c, empty, &params);
+        }
+        assert_eq!(c, CONGESTION_MIN_BP);
+        let half = BlockUsage { bytes: params.max_block_bytes / 2, fuel: 0 };
+        assert_eq!(next_congestion(40_000, half, &params), 40_000);
+        let mut c = CONGESTION_MIN_BP;
+        for _ in 0..10_000 {
+            c = next_congestion(c, full, &params);
+        }
+        assert_eq!(c, CONGESTION_MAX_BP);
     }
 }

@@ -10,6 +10,9 @@
 //! | `0x04` | proposal id (32) + addr(20) | [`VoteRecord`](crate::governance::VoteRecord) |
 //! | `0x05` | height (8, big-endian)      | [`PendingReward`]          |
 //! | `0x06` | (empty)                     | [`ChainGlobal`]            |
+//! | `0x07` | program address (20)        | [`ProgramMeta`]            |
+//! | `0x08` | program address (20)        | compiled TCCL program      |
+//! | `0x09` | program address (20) + key  | contract storage value     |
 //!
 //! Values are Borsh-encoded. All records together are committed by the LtHash
 //! state root of every block.
@@ -28,6 +31,9 @@ pub const PREFIX_PROPOSAL: u8 = 0x03;
 pub const PREFIX_VOTE: u8 = 0x04;
 pub const PREFIX_PENDING_REWARD: u8 = 0x05;
 pub const PREFIX_GLOBAL: u8 = 0x06;
+pub const PREFIX_PROGRAM_META: u8 = 0x07;
+pub const PREFIX_PROGRAM_CODE: u8 = 0x08;
+pub const PREFIX_PROGRAM_STORAGE: u8 = 0x09;
 
 pub fn account_key(a: &Address) -> Vec<u8> {
     let mut k = vec![PREFIX_ACCOUNT];
@@ -57,6 +63,41 @@ pub fn pending_reward_key(height: u64) -> Vec<u8> {
 }
 pub fn global_key() -> Vec<u8> {
     vec![PREFIX_GLOBAL]
+}
+pub fn program_meta_key(a: &Address) -> Vec<u8> {
+    let mut k = vec![PREFIX_PROGRAM_META];
+    k.extend_from_slice(&a.0);
+    k
+}
+pub fn program_code_key(a: &Address) -> Vec<u8> {
+    let mut k = vec![PREFIX_PROGRAM_CODE];
+    k.extend_from_slice(&a.0);
+    k
+}
+pub fn program_storage_key(a: &Address, local: &[u8]) -> Vec<u8> {
+    let mut k = Vec::with_capacity(21 + local.len());
+    k.push(PREFIX_PROGRAM_STORAGE);
+    k.extend_from_slice(&a.0);
+    k.extend_from_slice(local);
+    k
+}
+
+/// Metadata of a deployed TCCL contract. Its TCN balance is the [`Account`]
+/// at the same address.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct ProgramMeta {
+    pub creator: Address,
+    pub created_height: u64,
+    /// Transaction that deployed the contract (its source code is in it).
+    pub deploy_txid: Hash32,
+    /// BLAKE3 of the source code.
+    pub source_hash: Hash32,
+    pub name: String,
+    /// Bytes of compiled code plus storage entries (keys + values).
+    pub state_bytes: u64,
+    pub storage_items: u64,
+    /// Refundable storage deposit held for `state_bytes`.
+    pub deposit: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize, serde::Serialize)]
@@ -91,7 +132,21 @@ impl Account {
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct PendingReward {
     pub miner: Address,
+    /// Total reward (subsidy + fees) of the block.
     pub amount: u64,
+    /// Part already released to the miner (the early quarter).
+    pub released: u64,
+}
+
+impl PendingReward {
+    /// Quarter released after `coinbase_maturity` blocks.
+    pub fn early_part(&self) -> u64 {
+        self.amount / 4
+    }
+
+    pub fn locked(&self) -> u64 {
+        self.amount - self.released
+    }
 }
 
 /// Chain-wide values.
@@ -111,6 +166,9 @@ pub struct ChainGlobal {
     pub proposal_count: u64,
     /// Number of contracts ever created.
     pub contract_count: u64,
+    /// Congestion multiplier applied to minimum fees, in basis points
+    /// (10 000 = 1.0×). Adjusted after every block from how full it was.
+    pub congestion_bp: u64,
 }
 
 impl ChainGlobal {
@@ -236,6 +294,10 @@ impl<'a, R: StateReader + ?Sized> Overlay<'a, R> {
 
     pub fn contract(&self, id: &Hash32) -> Result<Option<Contract>, StateError> {
         self.get(&contract_key(id))
+    }
+
+    pub fn program_meta(&self, a: &Address) -> Result<Option<ProgramMeta>, StateError> {
+        self.get(&program_meta_key(a))
     }
 
     pub fn proposal(&self, id: &Hash32) -> Result<Option<Proposal>, StateError> {

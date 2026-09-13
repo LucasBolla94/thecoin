@@ -68,6 +68,9 @@ pub enum ContractCall {
     MultisigPropose { to: Address, amount: u64, memo: Vec<u8> },
     MultisigApprove { spend_id: u32 },
     MultisigCancel { spend_id: u32 },
+    /// Deletes an empty multisig (no balance, no pending spends) and refunds
+    /// the storage deposit to its creator. Any signer may call it.
+    MultisigClose,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -127,6 +130,9 @@ pub struct Contract {
     pub created_height: u64,
     /// Motes held by the contract.
     pub balance: u64,
+    /// Refundable storage deposit paid by the creator; returned to the creator
+    /// when the contract finishes (or a multisig is closed).
+    pub deposit: u64,
     pub state: ContractState,
 }
 
@@ -300,7 +306,13 @@ pub(crate) fn credit<R: StateReader + ?Sized>(state: &mut Overlay<'_, R>, to: &A
     Ok(())
 }
 
-/// Creates a contract. The funding has already been debited from `creator`.
+/// Refundable deposit for a state record of `bytes` bytes.
+pub fn storage_deposit(bytes: u64, per_kb: u64) -> u64 {
+    bytes.div_ceil(1_000).saturating_mul(per_kb)
+}
+
+/// Creates a contract. The funding has already been debited from `creator`;
+/// the storage deposit is debited here.
 /// Returns the new contract id and the addresses involved.
 pub(crate) fn create<R: StateReader + ?Sized>(
     state: &mut Overlay<'_, R>,
@@ -308,6 +320,7 @@ pub(crate) fn create<R: StateReader + ?Sized>(
     creator: Address,
     nonce: u64,
     spec: &ContractSpec,
+    deposit_per_kb: u64,
 ) -> Result<(Hash32, Vec<Address>), TxError> {
     let id = contract_id(&creator, nonce);
     if state.contract(&id)?.is_some() {
@@ -358,7 +371,18 @@ pub(crate) fn create<R: StateReader + ?Sized>(
             ContractState::Multisig { signers, threshold, next_spend_id: 0, pending: Vec::new() }
         }
     };
-    let contract = Contract { id, creator, created_height: height, balance: funding, state: cstate };
+    let mut contract = Contract { id, creator, created_height: height, balance: funding, deposit: 0, state: cstate };
+    let record_bytes = borsh::to_vec(&contract).expect("serializable").len() as u64 + 33;
+    contract.deposit = storage_deposit(record_bytes, deposit_per_kb);
+    if contract.deposit > 0 {
+        let mut acc = state.account(&creator)?;
+        let available = acc.spendable(height);
+        if contract.deposit > available {
+            return Err(TxError::InsufficientFunds { needed: contract.deposit, available });
+        }
+        acc.balance -= contract.deposit;
+        state.put_account(&creator, &acc);
+    }
     let parties = contract.parties();
     state.put(contract_key(&id), &contract);
     Ok((id, parties))
@@ -377,6 +401,7 @@ pub(crate) fn call<R: StateReader + ?Sized>(
     let err = |m: &str| -> Result<Vec<Address>, TxError> { Err(TxError::Contract(m.to_string())) };
     let mut touched = vec![caller];
     let mut payouts: Vec<(Address, u64)> = Vec::new();
+    let mut closed = false;
 
     match (&mut c.state, call) {
         (ContractState::Escrow { payer, payee, arbiter, .. }, ContractCall::EscrowRelease) => {
@@ -519,6 +544,15 @@ pub(crate) fn call<R: StateReader + ?Sized>(
             }
             pending.remove(pos);
         }
+        (ContractState::Multisig { signers, pending, .. }, ContractCall::MultisigClose) => {
+            if !signers.contains(&caller) {
+                return err("only signers can close the multisig");
+            }
+            if c.balance != 0 || !pending.is_empty() {
+                return err("multisig must have zero balance and no pending spends to be closed");
+            }
+            closed = true;
+        }
         _ => return err("call does not match contract type"),
     }
 
@@ -534,12 +568,16 @@ pub(crate) fn call<R: StateReader + ?Sized>(
     c.balance = c.balance.checked_sub(paid).ok_or_else(|| TxError::Contract("payout exceeds contract balance".into()))?;
 
     let finished = match &c.state {
-        ContractState::Multisig { .. } => false,
+        ContractState::Multisig { .. } => closed,
         ContractState::Subscription { claimed_periods, max_periods, .. } => c.balance == 0 || claimed_periods >= max_periods,
         _ => c.balance == 0,
     };
     if finished && c.balance == 0 {
         state.delete_raw(contract_key(id));
+        if c.deposit > 0 {
+            credit(state, &c.creator, c.deposit)?;
+            touched.push(c.creator);
+        }
     } else {
         state.put(contract_key(id), &c);
     }

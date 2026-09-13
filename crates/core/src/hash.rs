@@ -74,6 +74,7 @@ pub mod tags {
     pub const ADDRESS: &str = "address";
     pub const CONTRACT_ID: &str = "contract-id";
     pub const PROPOSAL_ID: &str = "proposal-id";
+    pub const PROGRAM_ADDRESS: &str = "program-address";
     pub const STATE_ROOT: &str = "state-root";
     pub const GENESIS: &str = "genesis";
     pub const P2P_CHECKSUM: &str = "p2p";

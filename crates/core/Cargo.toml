@@ -16,6 +16,7 @@ bech32.workspace = true
 serde.workspace = true
 hex.workspace = true
 thiserror.workspace = true
+tccl = { path = "../tccl" }
 
 [dev-dependencies]
 borsh.workspace = true

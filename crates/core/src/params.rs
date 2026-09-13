@@ -70,6 +70,19 @@ pub const MAX_SUPPLY: u64 = 50_000_000 * COIN;
 pub const MAX_BLOCK_BYTES_HARD: u64 = 8_000_000;
 /// Maximum serialized size of a single transaction.
 pub const MAX_TX_BYTES: usize = 16_384;
+/// Maximum serialized size of a contract deployment transaction.
+pub const MAX_DEPLOY_TX_BYTES: usize = 64_000;
+/// Maximum fuel a single transaction may reserve.
+pub const MAX_TX_FUEL: u64 = 10_000_000;
+/// Maximum size of a compiled contract program.
+pub const MAX_PROGRAM_BYTES: usize = 262_144;
+/// Maximum events a contract call may emit.
+pub const MAX_EVENTS_PER_CALL: usize = 64;
+/// Congestion multiplier bounds in basis points (1.0× … 1000×).
+pub const CONGESTION_MIN_BP: u64 = 10_000;
+pub const CONGESTION_MAX_BP: u64 = 10_000_000;
+/// LWMA starts adjusting once this many solve times are available.
+pub const LWMA_MIN_WINDOW: u64 = 6;
 /// Maximum memo size in bytes.
 pub const MAX_MEMO_BYTES: usize = 256;
 /// Maximum number of outputs in a `BatchTransfer`.
@@ -107,8 +120,12 @@ pub struct ChainParams {
     // ---- Emission ------------------------------------------------------
     pub initial_reward: u64,
     pub halving_interval: u64,
-    /// Blocks before a mining reward becomes spendable.
+    /// Blocks before the first quarter of a mining reward becomes spendable.
     pub coinbase_maturity: u64,
+    /// Blocks before the rest of the reward (cooldown) becomes spendable.
+    /// Chosen deeper than `max_reorg_depth`, so rewards of blocks that could
+    /// still be reorganized away are never fully spendable.
+    pub reward_unlock_blocks: u64,
 
     // ---- Chain safety --------------------------------------------------
     /// Reorganizations deeper than this many blocks are refused.
@@ -149,13 +166,36 @@ const GENESIS_MESSAGE: &str = "The Coin | the-coin.cloud | 2026-09-13 | A democr
 
 const MAINNET_GOV_BOUNDS: GovBounds = GovBounds {
     max_block_bytes: (250_000, MAX_BLOCK_BYTES_HARD),
-    min_fee_per_byte: (1, 100_000),
+    max_block_fuel: (5_000_000, 500_000_000),
+    base_fee: (0, 10_000_000),
+    fee_per_kb: (1, 100_000_000),
+    fee_per_kfuel: (1, 100_000_000),
+    storage_deposit_per_kb: (0, 1_000_000_000),
     proposal_deposit: (COIN, 1_000_000 * COIN),
     vote_period: (1_440, 201_600),
     quorum_bp: (100, 5_000),
     approval_bp: (5_001, 9_500),
     miner_approval_bp: (5_000, 9_500),
     activation_delay: (720, 43_200),
+};
+
+const MAINNET_GOV_DEFAULTS: GovParams = GovParams {
+    max_block_bytes: 1_000_000,
+    max_block_fuel: 50_000_000,
+    // 0.00001 TCN per transaction
+    base_fee: 1_000,
+    // 10 motes per byte
+    fee_per_kb: 10_000,
+    // 0.00001 TCN per 1 000 fuel
+    fee_per_kfuel: 1_000,
+    // 0.001 TCN locked per kB of contract state, refunded when freed
+    storage_deposit_per_kb: 100_000,
+    proposal_deposit: 100 * COIN,
+    vote_period: 20_160,
+    quorum_bp: 1_000,
+    approval_bp: 6_667,
+    miner_approval_bp: 6_000,
+    activation_delay: 2_880,
 };
 
 pub static MAINNET: ChainParams = ChainParams {
@@ -174,21 +214,13 @@ pub static MAINNET: ChainParams = ChainParams {
     initial_reward: 40 * COIN,
     halving_interval: 625_000,
     coinbase_maturity: 100,
+    reward_unlock_blocks: 1_000,
     max_reorg_depth: 720,
     checkpoints: &[],
     genesis_timestamp: 1_789_257_600, // 2026-09-13 00:00:00 UTC
     genesis_message: GENESIS_MESSAGE,
     seeds: &["seed1.the-coin.cloud:7333", "seed2.the-coin.cloud:7333"],
-    gov_defaults: GovParams {
-        max_block_bytes: 1_000_000,
-        min_fee_per_byte: 10,
-        proposal_deposit: 100 * COIN,
-        vote_period: 20_160,
-        quorum_bp: 1_000,
-        approval_bp: 6_667,
-        miner_approval_bp: 6_000,
-        activation_delay: 2_880,
-    },
+    gov_defaults: MAINNET_GOV_DEFAULTS,
     gov_bounds: MAINNET_GOV_BOUNDS,
 };
 
@@ -208,20 +240,19 @@ pub static TESTNET: ChainParams = ChainParams {
     initial_reward: 40 * COIN,
     halving_interval: 625_000,
     coinbase_maturity: 100,
+    reward_unlock_blocks: 1_000,
     max_reorg_depth: 720,
     checkpoints: &[],
     genesis_timestamp: 1_789_257_600,
     genesis_message: GENESIS_MESSAGE,
     seeds: &["testnet-seed1.the-coin.cloud:17333", "testnet-seed2.the-coin.cloud:17333"],
     gov_defaults: GovParams {
-        max_block_bytes: 1_000_000,
-        min_fee_per_byte: 10,
         proposal_deposit: 10 * COIN,
         vote_period: 1_440,
         quorum_bp: 500,
-        approval_bp: 6_667,
         miner_approval_bp: 5_000,
         activation_delay: 720,
+        ..MAINNET_GOV_DEFAULTS
     },
     gov_bounds: MAINNET_GOV_BOUNDS,
 };
@@ -243,24 +274,32 @@ pub static REGTEST: ChainParams = ChainParams {
     initial_reward: 40 * COIN,
     halving_interval: 150,
     coinbase_maturity: 5,
+    reward_unlock_blocks: 12,
     max_reorg_depth: 720,
     checkpoints: &[],
     genesis_timestamp: 1_789_257_600,
     genesis_message: GENESIS_MESSAGE,
     seeds: &[],
     gov_defaults: GovParams {
-        max_block_bytes: 1_000_000,
-        min_fee_per_byte: 1,
+        base_fee: 100,
+        fee_per_kb: 1_000,
+        fee_per_kfuel: 100,
+        storage_deposit_per_kb: 10_000,
         proposal_deposit: COIN,
         vote_period: 20,
         quorum_bp: 1_000,
         approval_bp: 6_667,
         miner_approval_bp: 5_000,
         activation_delay: 5,
+        ..MAINNET_GOV_DEFAULTS
     },
     gov_bounds: GovBounds {
         max_block_bytes: (10_000, MAX_BLOCK_BYTES_HARD),
-        min_fee_per_byte: (0, 100_000),
+        max_block_fuel: (1_000_000, 500_000_000),
+        base_fee: (0, 10_000_000),
+        fee_per_kb: (0, 100_000_000),
+        fee_per_kfuel: (0, 100_000_000),
+        storage_deposit_per_kb: (0, 1_000_000_000),
         proposal_deposit: (0, 1_000_000 * COIN),
         vote_period: (5, 201_600),
         quorum_bp: (0, 10_000),
@@ -280,6 +319,8 @@ mod tests {
             let p = n.params();
             p.gov_defaults.validate(&p.gov_bounds).unwrap();
             assert!(p.genesis_target() <= p.pow_limit());
+            assert!(p.coinbase_maturity < p.reward_unlock_blocks);
+            assert!(p.network == Network::Regtest || p.reward_unlock_blocks > p.max_reorg_depth);
         }
     }
 }

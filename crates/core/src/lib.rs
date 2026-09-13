@@ -13,6 +13,7 @@
 //! * [`block`], [`tx`], [`merkle`] — canonical (Borsh) wire and hashing formats.
 //! * [`state`], [`lthash`] — state keys/records and the homomorphic state commitment.
 //! * [`contracts`], [`governance`], [`execution`] — the state-transition function.
+//! * [`programs`] — execution of TCCL smart contracts (deploy, invoke, views).
 //! * [`genesis`] — deterministic genesis blocks.
 //! * [`api`] — JSON views shared by the node REST API and wallets.
 //!
@@ -36,6 +37,7 @@ pub mod lthash;
 pub mod merkle;
 pub mod params;
 pub mod pow;
+pub mod programs;
 pub mod state;
 pub mod tx;
 
@@ -46,6 +48,7 @@ pub use hash::Hash32;
 pub use params::{ChainParams, Network};
 pub use primitive_types::{U256, U512};
 pub use tx::{Transaction, TxAction, TxBody};
+pub use tccl;
 
 /// Software version string reported by nodes and wallets.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

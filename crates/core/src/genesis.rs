@@ -23,6 +23,7 @@ pub fn genesis_state(p: &ChainParams) -> Vec<(Vec<u8>, Vec<u8>)> {
         pending_activations: Vec::new(),
         proposal_count: 0,
         contract_count: 0,
+        congestion_bp: crate::params::CONGESTION_MIN_BP,
     };
     vec![(global_key(), borsh::to_vec(&g).expect("serializable"))]
 }

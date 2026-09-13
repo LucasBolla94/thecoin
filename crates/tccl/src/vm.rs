@@ -411,6 +411,14 @@ impl<'a, H: Host> Vm<'a, H> {
                 let Value::Address(addr) = self.eval(to, locals)? else {
                     return Err(VmError::Type("not an address".into()));
                 };
+                // Scalar state variables are cleared automatically; maps and lists
+                // cannot be enumerated, so the contract must empty them first.
+                let program = self.program;
+                for (i, sv) in program.states.iter().enumerate() {
+                    if sv.ty.is_scalar() {
+                        self.write(&scalar_key(i as u16), None)?;
+                    }
+                }
                 let items = self.host.storage_items()?;
                 if items > 0 {
                     return Err(VmError::StorageNotEmpty(items));

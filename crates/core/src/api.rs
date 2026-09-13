@@ -36,6 +36,8 @@ pub struct StatusView {
     pub syncing: bool,
     pub supply: SupplyView,
     pub params: GovParams,
+    /// Current congestion fee multiplier (10 000 = 1.0×).
+    pub congestion_bp: u64,
     pub software_upgrade_required: Option<String>,
 }
 
@@ -104,6 +106,41 @@ pub struct TxView {
     /// Contract or proposal id created by this transaction.
     #[serde(default)]
     pub created: Option<Hash32>,
+    /// The sender allows replacing this transaction with a higher fee.
+    #[serde(default)]
+    pub replaceable: bool,
+    /// Execution result (always true for confirmed native transactions).
+    #[serde(default = "default_true")]
+    pub success: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub fuel_used: u64,
+    /// Part of the fee burned by the congestion surcharge.
+    #[serde(default)]
+    pub burned: u64,
+    #[serde(default)]
+    pub logs: Vec<LogView>,
+    /// Address of the TCCL contract deployed by this transaction.
+    #[serde(default)]
+    pub program: Option<String>,
+    #[serde(default)]
+    pub return_value: Option<String>,
+    /// Another transaction with the same sender and nonce was seen (possible double spend).
+    #[serde(default)]
+    pub conflict: Option<Hash32>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LogView {
+    pub contract: String,
+    pub event: String,
+    /// `(field name, rendered value)`.
+    pub fields: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -121,6 +158,8 @@ pub enum ActionView {
     CallContract { contract: Hash32, call: ContractCallView },
     Propose { title: String, url: String, content_hash: Hash32, action: ProposalActionView },
     Vote { proposal: Hash32, choice: VoteChoice, weight: u64 },
+    Deploy { source: String, source_hash: Hash32, init_args: Vec<String>, value: u64, max_fuel: u64, max_deposit: u64 },
+    Invoke { contract: String, function: String, args: Vec<String>, value: u64, max_fuel: u64, max_deposit: u64 },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -148,6 +187,7 @@ pub enum ContractCallView {
     MultisigPropose { to: String, amount: u64, memo_hex: String, memo_text: Option<String> },
     MultisigApprove { spend_id: u32 },
     MultisigCancel { spend_id: u32 },
+    MultisigClose,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -168,7 +208,7 @@ pub struct AccountView {
     pub nonce: u64,
     /// Next nonce to use, counting transactions waiting in the mempool.
     pub next_nonce: u64,
-    /// Mining rewards that are not yet mature.
+    /// Mining rewards still in cooldown (not yet spendable).
     pub immature: u64,
     pub mempool_txs: usize,
 }
@@ -232,6 +272,8 @@ pub struct ContractView {
     pub creator: String,
     pub created_height: u64,
     pub balance: u64,
+    /// Refundable storage deposit returned to the creator when the contract ends.
+    pub deposit: u64,
     pub state: ContractStateView,
 }
 
@@ -303,10 +345,108 @@ pub struct MiningView {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FeeView {
-    pub min_fee_per_byte: u64,
-    /// Suggested fee rate given mempool congestion.
-    pub suggested_fee_per_byte: u64,
-    pub typical_transfer_bytes: u64,
+    pub base_fee: u64,
+    pub fee_per_kb: u64,
+    pub fee_per_kfuel: u64,
+    pub storage_deposit_per_kb: u64,
+    /// Current congestion multiplier (10 000 = 1.0×). The surcharge is burned.
+    pub congestion_bp: u64,
+    /// Minimum fee of a typical 160-byte transfer right now.
+    pub typical_transfer_fee: u64,
+    /// Multipliers (basis points over the minimum fee) for each priority level.
+    pub priority: PriorityView,
+    pub mempool_txs: usize,
+    pub mempool_bytes: usize,
+}
+
+/// Fee multipliers over the minimum fee. Higher priority confirms sooner:
+/// miners order transactions by fee per weight unit.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PriorityView {
+    /// Minimum fee: fine when blocks are not full.
+    pub low_bp: u64,
+    /// Survives one full block of congestion increase.
+    pub normal_bp: u64,
+    /// Beats most waiting transactions.
+    pub high_bp: u64,
+    /// Next block with very high probability.
+    pub urgent_bp: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProgramFunctionView {
+    pub name: String,
+    pub kind: String,
+    pub payable: bool,
+    pub params: Vec<(String, String)>,
+    pub returns: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProgramView {
+    pub address: String,
+    pub name: String,
+    pub creator: String,
+    pub created_height: u64,
+    pub deploy_txid: Hash32,
+    pub source_hash: Hash32,
+    pub balance: u64,
+    pub state_bytes: u64,
+    pub storage_items: u64,
+    pub deposit: u64,
+    pub functions: Vec<ProgramFunctionView>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ViewCallRequest {
+    pub function: String,
+    /// Arguments as text, parsed with the declared parameter types.
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ViewCallResponse {
+    pub result: Option<String>,
+    pub error: Option<String>,
+    pub fuel_used: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SimulateResponse {
+    pub valid: bool,
+    /// Why the transaction cannot be included (invalid), if so.
+    pub invalid_reason: Option<String>,
+    pub success: bool,
+    pub error: Option<String>,
+    pub fuel_used: u64,
+    pub required_fee: u64,
+    pub logs: Vec<LogView>,
+    pub return_value: Option<String>,
+    pub program: Option<String>,
+}
+
+/// How many confirmations make reversing a payment uneconomic.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SecurityView {
+    pub amount: u64,
+    /// Recommended confirmations for this amount.
+    pub confirmations: u64,
+    /// Approximate minutes until that many confirmations.
+    pub minutes: u64,
+    /// Block reward + fees an attacker gives up per block (motes).
+    pub value_per_block: u64,
+    pub network_hashrate: f64,
+    pub explanation: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DoubleSpendView {
+    pub sender: String,
+    pub nonce: u64,
+    pub first: Hash32,
+    pub second: Hash32,
+    pub seen_at: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -370,6 +510,7 @@ pub fn contract_call_view(call: &ContractCall, n: Network) -> ContractCallView {
         }
         ContractCall::MultisigApprove { spend_id } => ContractCallView::MultisigApprove { spend_id: *spend_id },
         ContractCall::MultisigCancel { spend_id } => ContractCallView::MultisigCancel { spend_id: *spend_id },
+        ContractCall::MultisigClose => ContractCallView::MultisigClose,
     }
 }
 
@@ -407,6 +548,22 @@ pub fn action_view(a: &TxAction, n: Network) -> ActionView {
             action: proposal_action_view(&proposal.action),
         },
         TxAction::Vote { proposal, choice, weight } => ActionView::Vote { proposal: *proposal, choice: *choice, weight: *weight },
+        TxAction::Deploy { source, init_args, value, max_fuel, max_deposit } => ActionView::Deploy {
+            source: source.clone(),
+            source_hash: crate::programs::source_hash(source),
+            init_args: init_args.iter().map(|v| tccl::abi::display(v, n.hrp())).collect(),
+            value: *value,
+            max_fuel: *max_fuel,
+            max_deposit: *max_deposit,
+        },
+        TxAction::Invoke { contract, function, args, value, max_fuel, max_deposit } => ActionView::Invoke {
+            contract: contract.encode(n),
+            function: function.clone(),
+            args: args.iter().map(|v| tccl::abi::display(v, n.hrp())).collect(),
+            value: *value,
+            max_fuel: *max_fuel,
+            max_deposit: *max_deposit,
+        },
     }
 }
 
@@ -425,6 +582,35 @@ pub fn tx_view(tx: &Transaction, n: Network) -> TxView {
         confirmations: 0,
         in_mempool: false,
         created: None,
+        replaceable: tx.is_replaceable(),
+        success: true,
+        error: None,
+        fuel_used: 0,
+        burned: 0,
+        logs: Vec::new(),
+        program: None,
+        return_value: None,
+        conflict: None,
+    }
+}
+
+/// Adds execution results from a receipt to a transaction view.
+pub fn apply_receipt(v: &mut TxView, r: &crate::execution::TxReceipt, n: Network) {
+    v.success = r.success;
+    v.error = r.error.clone();
+    v.fuel_used = r.fuel_used;
+    v.burned = r.burned;
+    v.created = r.created.or(v.created);
+    v.program = r.program.map(|a| a.encode(n));
+    v.return_value = r.return_value.as_ref().map(|x| tccl::abi::display(x, n.hrp()));
+    v.logs = r.logs.iter().map(|l| log_view(l, n)).collect();
+}
+
+pub fn log_view(l: &crate::execution::LogEntry, n: Network) -> LogView {
+    LogView {
+        contract: l.contract.encode(n),
+        event: l.event.clone(),
+        fields: l.fields.iter().map(|(k, x)| (k.clone(), tccl::abi::display(x, n.hrp()))).collect(),
     }
 }
 
@@ -515,7 +701,7 @@ pub fn contract_view(c: &Contract, height: u64, n: Network) -> ContractView {
             pending: pending.iter().map(|s| pending_spend_view(s, n)).collect(),
         },
     };
-    ContractView { id: c.id, creator: c.creator.encode(n), created_height: c.created_height, balance: c.balance, state }
+    ContractView { id: c.id, creator: c.creator.encode(n), created_height: c.created_height, balance: c.balance, deposit: c.deposit, state }
 }
 
 pub fn proposal_view(p: &Proposal, height: u64, params: &GovParams, circulating: u64, n: Network) -> ProposalView {
