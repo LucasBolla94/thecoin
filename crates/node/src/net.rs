@@ -10,7 +10,7 @@
 //!   their IP banned for 24 h.
 
 use crate::addrman::is_routable;
-use crate::chain::now_secs;
+use crate::chain::{now_secs, RelayedHeader};
 use crate::node::{BlockJob, Node};
 use crate::protocol::*;
 use anyhow::{bail, Result};
@@ -663,10 +663,39 @@ async fn handle_message(node: &Arc<Node>, peer: &Arc<Peer>, msg: Message, block_
         Message::CompactBlock(c) => {
             let hash = c.header.hash();
             peer.mark_known(hash);
+            // Validate the header (context + proof of work) before allocating
+            // anything for its transactions: fake compact blocks cost real work.
             let node2 = node.clone();
-            let known = tokio::task::spawn_blocking(move || -> Result<bool> { Ok(node2.chain.read()?.header(&hash)?.is_some()) }).await??;
-            if known {
-                return Ok(());
+            let header = c.header.clone();
+            let check = tokio::task::spawn_blocking(move || -> Result<Option<RelayedHeader>> {
+                let status = node2.chain.check_relayed_header(&header)?;
+                if !matches!(status, RelayedHeader::Valid) {
+                    return Ok(Some(status));
+                }
+                let pow = node2.params.pow;
+                let ok = POW_HASHER.with(|cell| {
+                    let mut slot = cell.borrow_mut();
+                    header.check_pow(slot.get_or_insert_with(|| PowHasher::new(pow)))
+                });
+                Ok(if ok { None } else { Some(RelayedHeader::Invalid(thecoin_core::BlockError::BadPow)) })
+            })
+            .await??;
+            match check {
+                None => {}
+                Some(RelayedHeader::Known) => return Ok(()),
+                Some(RelayedHeader::UnknownParent) => {
+                    // Out of order: fetch the full block and let orphan handling work.
+                    peer.send(&Message::GetData(vec![InvItem { kind: InvKind::Block, hash }]));
+                    return Ok(());
+                }
+                Some(RelayedHeader::Invalid(e)) => {
+                    // A timestamp slightly in the future may be clock skew: ignore without penalty.
+                    if !matches!(e, thecoin_core::BlockError::TimestampInFuture { .. }) {
+                        misbehave(node, peer.id, 100, &format!("invalid compact block header: {e}"));
+                    }
+                    return Ok(());
+                }
+                Some(RelayedHeader::Valid) => unreachable!("valid headers are returned as None"),
             }
             let n = c.short_ids.len();
             let mut slots: Vec<Option<thecoin_core::Transaction>> = vec![None; n];

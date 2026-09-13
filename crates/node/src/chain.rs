@@ -117,6 +117,16 @@ pub struct Chain {
     tip: RwLock<TipInfo>,
 }
 
+/// Result of [`Chain::check_relayed_header`].
+#[derive(Debug)]
+pub enum RelayedHeader {
+    Known,
+    UnknownParent,
+    Invalid(BlockError),
+    /// Context-valid (proof of work still to be checked).
+    Valid,
+}
+
 enum Fail {
     Invalid(BlockError),
     Storage(anyhow::Error),
@@ -257,6 +267,28 @@ impl Chain {
         }
         out.reverse();
         Ok(out)
+    }
+
+    /// Cheap context checks for a header relayed ahead of its transactions
+    /// (compact blocks), done before allocating anything for it. PoW is not checked.
+    pub fn check_relayed_header(&self, h: &BlockHeader) -> Result<RelayedHeader> {
+        if h.target_u256() > self.params.pow_limit() {
+            return Ok(RelayedHeader::Invalid(BlockError::BadTarget));
+        }
+        let r = self.db.read()?;
+        if r.header(&h.hash())?.is_some() {
+            return Ok(RelayedHeader::Known);
+        }
+        let Some(parent) = r.header(&h.prev_hash)? else { return Ok(RelayedHeader::UnknownParent) };
+        if h.height.saturating_add(self.params.max_reorg_depth) < self.tip().height {
+            // Too deep to ever matter: ignore like an already known block.
+            return Ok(RelayedHeader::Known);
+        }
+        match self.check_header(&r, &parent, h, now_secs()) {
+            Ok(()) => Ok(RelayedHeader::Valid),
+            Err(Fail::Invalid(e)) => Ok(RelayedHeader::Invalid(e)),
+            Err(Fail::Storage(e)) => Err(e),
+        }
     }
 
     fn expected_target<R: DbRead>(&self, r: &R, parent: &HeaderRecord) -> Result<(U256, u64)> {
