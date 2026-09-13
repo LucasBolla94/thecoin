@@ -113,8 +113,9 @@ pub struct ChainParams {
     // ---- Chain safety --------------------------------------------------
     /// Reorganizations deeper than this many blocks are refused.
     pub max_reorg_depth: u64,
-    /// Hardcoded `(height, block hash hex)` checkpoints. Blocks at or below
-    /// the last checkpoint skip PoW re-verification during initial sync.
+    /// Hardcoded `(height, block hash hex)` checkpoints. A block at a
+    /// checkpoint height must have exactly that hash, and no fork below the
+    /// last checkpoint is accepted.
     pub checkpoints: &'static [(u64, &'static str)],
 
     // ---- Genesis -------------------------------------------------------
