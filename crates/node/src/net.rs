@@ -767,6 +767,21 @@ async fn handle_message(node: &Arc<Node>, peer: &Arc<Peer>, msg: Message, block_
             if !valid {
                 bail!("invalid double-spend report");
             }
+            // Only a funded account's nonce that can still be spent is worth an
+            // alert (fresh keys cost nothing, so they could flood the network).
+            let node2 = node.clone();
+            let sender = first.sender();
+            let account = tokio::task::spawn_blocking(move || -> Result<Option<thecoin_core::state::Account>> {
+                let r = node2.chain.read()?;
+                Ok(thecoin_core::state::read_typed::<thecoin_core::state::Account, _>(&r, &thecoin_core::state::account_key(&sender))?)
+            })
+            .await??;
+            let Some(account) = account else { return Ok(()) };
+            let nonce = first.body.nonce;
+            let min_fee = first.body.fee.min(second.body.fee);
+            if account.balance < min_fee || nonce < account.nonce || nonce >= account.nonce + crate::mempool::MAX_PER_SENDER as u64 {
+                return Ok(());
+            }
             let new = node.mempool.lock().record_conflict(&first, &second);
             if new {
                 warn!(sender = %first.sender().encode(node.params.network), nonce = first.body.nonce, "double spend attempt reported by peer");

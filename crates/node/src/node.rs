@@ -206,7 +206,11 @@ impl Node {
             Ok(id) => id,
             Err(MempoolError::NotReplaceable { existing }) => {
                 // Warn the network: merchants watching unconfirmed payments see it at once.
-                let first = self.mempool.lock().get(&existing).cloned();
+                // Only the first conflict for this sender and nonce is announced.
+                let first = {
+                    let pool = self.mempool.lock();
+                    pool.conflict_for(&tx.txid()).and_then(|_| pool.get(&existing).cloned())
+                };
                 if let Some(first) = first {
                     warn!(sender = %tx.sender().encode(self.params.network), nonce = tx.body.nonce, "double spend attempt");
                     self.broadcast_double_spend(&first, &tx, source);

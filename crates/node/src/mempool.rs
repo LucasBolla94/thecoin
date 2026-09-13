@@ -189,7 +189,9 @@ impl Mempool {
         if a == b || first.sender() != second.sender() || first.body.nonce != second.body.nonce {
             return false;
         }
-        if self.conflict_of.get(&a) == Some(&b) || self.conflict_of.get(&b) == Some(&a) {
+        // One alert per (sender, nonce): creating conflicting variants is free, so
+        // more alerts for the same slot would let one key flood the network.
+        if self.conflicts.iter().any(|c| c.sender == first.sender() && c.nonce == first.body.nonce) {
             return false;
         }
         if self.conflicts.len() >= MAX_CONFLICTS {
