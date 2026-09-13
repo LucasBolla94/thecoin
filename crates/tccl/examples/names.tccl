@@ -1,0 +1,89 @@
+# A name service: register human-readable names that point to addresses.
+# Names are rented by the year; an expired name can be registered again.
+contract NameService
+
+const PRICE_PER_YEAR: int = TCN / 10   # 0.1 TCN
+const YEAR: int = 525_600              # blocks (1 block = 1 minute)
+const MAX_YEARS: int = 10
+
+state admin: address
+state owner_of: map[text, address]
+state target_of: map[text, address]
+state expires_at: map[text, int]
+
+event Registered(name: text, owner: address, expires: int)
+event Renewed(name: text, expires: int)
+event Transferred(name: text, from: address, to: address)
+event Pointed(name: text, target: address)
+
+init():
+    admin = caller
+
+action register(name: text, years: int) payable:
+    require valid_name(name), "names have 3 to 32 characters: a-z, 0-9 and '-'"
+    require years >= 1 and years <= MAX_YEARS, "register for 1 to 10 years"
+    require value == PRICE_PER_YEAR * years, "send exactly 0.1 TCN per year"
+    require not is_active(name), "this name is taken"
+    owner_of[name] = caller
+    target_of[name] = caller
+    expires_at[name] = height + YEAR * years
+    emit Registered(name, caller, expires_at[name])
+
+# Anyone may pay to renew a name (for example as a gift), but it stays with its owner.
+action renew(name: text, years: int) payable:
+    require is_active(name), "name not registered or expired"
+    require years >= 1 and years <= MAX_YEARS, "renew for 1 to 10 years"
+    require value == PRICE_PER_YEAR * years, "send exactly 0.1 TCN per year"
+    let new_expiry: int = expires_at[name] + YEAR * years
+    require new_expiry <= height + YEAR * MAX_YEARS, "at most 10 years ahead"
+    expires_at[name] = new_expiry
+    emit Renewed(name, new_expiry)
+
+action transfer(name: text, to: address):
+    only_name_owner(name)
+    owner_of[name] = to
+    emit Transferred(name, caller, to)
+
+action point_to(name: text, target: address):
+    only_name_owner(name)
+    target_of[name] = target
+    emit Pointed(name, target)
+
+action collect_fees():
+    require caller == admin, "only the admin"
+    require balance > 0, "nothing to collect"
+    send(admin, balance)
+
+view resolve(name: text) -> address:
+    require is_active(name), "name not registered or expired"
+    return target_of[name]
+
+view whois(name: text) -> address:
+    require is_active(name), "name not registered or expired"
+    return owner_of[name]
+
+view expires(name: text) -> int:
+    return expires_at[name]
+
+view available(name: text) -> bool:
+    return valid_name(name) and not is_active(name)
+
+fn only_name_owner(name: text):
+    require is_active(name), "name not registered or expired"
+    require owner_of[name] == caller, "you do not own this name"
+
+fn is_active(name: text) -> bool:
+    return owner_of.has(name) and expires_at[name] >= height
+
+fn valid_name(name: text) -> bool:
+    let n: int = len(name)
+    if n < 3 or n > 32:
+        return false
+    let b: bytes = to_bytes(name)
+    for i in range(0, n):
+        let c: int = b[i]
+        let letter: bool = c >= 97 and c <= 122
+        let digit: bool = c >= 48 and c <= 57
+        if not (letter or digit or c == 45):
+            return false
+    return true

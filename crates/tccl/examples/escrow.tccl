@@ -1,0 +1,93 @@
+# Escrow with an arbiter.
+#
+# The buyer deploys the contract with the payment attached. The buyer releases
+# the money when the goods arrive; if buyer and seller disagree, either can
+# open a dispute and the arbiter decides. If nobody acts before the deadline,
+# the buyer can take the money back.
+contract Escrow
+
+const MIN_DURATION: int = 60           # about 1 hour (1 block = 1 minute)
+const MAX_DURATION: int = 525_600      # about 1 year
+
+state buyer: address
+state seller: address
+state arbiter: address
+state amount: int
+state deadline: int
+state disputed: bool
+state settled: bool
+
+event Funded(buyer: address, seller: address, amount: int, deadline: int)
+event Disputed(by: address)
+event Settled(to: address, amount: int)
+
+init(seller_address: address, arbiter_address: address, duration_blocks: int) payable:
+    require value > 0, "attach the payment with --value"
+    require seller_address != caller, "buyer and seller must be different"
+    require arbiter_address != caller, "the arbiter must be a third party"
+    require arbiter_address != seller_address, "the arbiter must be a third party"
+    require duration_blocks >= MIN_DURATION, "duration too short (min 60 blocks)"
+    require duration_blocks <= MAX_DURATION, "duration too long (max 525600 blocks)"
+    buyer = caller
+    seller = seller_address
+    arbiter = arbiter_address
+    amount = value
+    deadline = height + duration_blocks
+    emit Funded(caller, seller_address, value, deadline)
+
+# The buyer is happy: pay the seller.
+action release():
+    require caller == buyer, "only the buyer can release"
+    pay(seller)
+
+# The seller cannot deliver: give the money back.
+action cancel():
+    require caller == seller, "only the seller can cancel"
+    pay(buyer)
+
+action dispute():
+    require caller == buyer or caller == seller, "only the buyer or the seller"
+    require not settled, "already settled"
+    require not disputed, "already disputed"
+    disputed = true
+    emit Disputed(caller)
+
+action resolve(pay_seller: bool):
+    require caller == arbiter, "only the arbiter"
+    require disputed, "there is no dispute"
+    if pay_seller:
+        pay(seller)
+    else:
+        pay(buyer)
+
+action reclaim():
+    require caller == buyer, "only the buyer"
+    require height > deadline, "the deadline has not passed"
+    require not disputed, "a dispute is open: the arbiter decides"
+    pay(buyer)
+
+# After settlement the buyer removes the contract and recovers its storage deposit.
+action close():
+    require caller == buyer, "only the buyer"
+    require settled, "settle the escrow first"
+    destroy(buyer)
+
+view status() -> text:
+    if settled:
+        return "settled"
+    elif disputed:
+        return "disputed"
+    elif height > deadline:
+        return "expired"
+    return "open"
+
+view locked() -> int:
+    if settled:
+        return 0
+    return amount
+
+fn pay(to: address):
+    require not settled, "already settled"
+    settled = true
+    send(to, amount)
+    emit Settled(to, amount)

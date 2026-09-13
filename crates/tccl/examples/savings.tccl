@@ -1,0 +1,47 @@
+# Time-locked savings: lock TCN until a block height you choose.
+# Nobody can withdraw early - not even the saver. Useful for self-discipline,
+# long-term goals or proving that funds are committed.
+contract Savings
+
+const MAX_LOCK: int = 2_628_000        # about 5 years (1 block = 1 minute)
+
+state balances: map[address, int]
+state unlock_at: map[address, int]
+state total_locked: int
+
+event Locked(saver: address, amount: int, unlock_height: int)
+event Withdrawn(saver: address, amount: int)
+
+action deposit(unlock_height: int) payable:
+    require value > 0, "attach TCN with --value"
+    require unlock_height > height, "the unlock height must be in the future"
+    require unlock_height <= height + MAX_LOCK, "locks are limited to about 5 years"
+    require unlock_height >= unlock_at[caller], "you cannot shorten an existing lock"
+    balances[caller] += value
+    unlock_at[caller] = unlock_height
+    total_locked += value
+    emit Locked(caller, value, unlock_height)
+
+action withdraw():
+    let amount: int = balances[caller]
+    require amount > 0, "you have no savings here"
+    require height >= unlock_at[caller], "your savings are still locked"
+    # Effects first ...
+    balances.remove(caller)
+    unlock_at.remove(caller)
+    total_locked -= amount
+    # ... interaction last.
+    send(caller, amount)
+    emit Withdrawn(caller, amount)
+
+view balance_of(saver: address) -> int:
+    return balances[saver]
+
+view unlock_height_of(saver: address) -> int:
+    return unlock_at[saver]
+
+view blocks_left(saver: address) -> int:
+    return max(0, unlock_at[saver] - height)
+
+view total() -> int:
+    return total_locked

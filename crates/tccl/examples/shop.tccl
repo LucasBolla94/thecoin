@@ -1,0 +1,27 @@
+contract Shop                      # 1. header: always the first line of code
+
+const MAX_NAME: int = 64           # 2. constants
+state owner: address               # 3. state variables
+state prices: map[text, int]
+event Sold(item: text, buyer: address, price: int)   # 4. events
+
+init():                            # 5. functions: init, action, view, fn
+    owner = caller
+
+action set_price(item: text, price: int):
+    require caller == owner, "only the owner"
+    require valid_name(item), "item names have 1 to 64 bytes"
+    require price >= 0, "price cannot be negative"
+    prices[item] = price           # a price of 0 removes the item
+
+action buy(item: text) payable:
+    require prices.has(item), "unknown item"
+    require value == prices[item], "wrong price"
+    send(owner, value)
+    emit Sold(item, caller, value)
+
+view price_of(item: text) -> int:
+    return prices[item]
+
+fn valid_name(item: text) -> bool:
+    return len(item) >= 1 and len(item) <= MAX_NAME

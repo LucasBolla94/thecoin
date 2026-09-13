@@ -1,0 +1,96 @@
+# Multi-owner treasury (M-of-N).
+# Any owner proposes a payment; it can be executed once `threshold` different
+# owners approved it. TCCL has no structs, so each proposal is stored as a set
+# of maps that share the same id ("parallel maps").
+contract Treasury
+
+const MAX_OWNERS: int = 10
+
+state owners: list[address]
+state is_owner: map[address, bool]
+state threshold: int
+state proposal_count: int
+state p_to: map[int, address]
+state p_amount: map[int, int]
+state p_memo: map[int, text]
+state p_approvals: map[int, int]
+state p_executed: map[int, bool]
+state approved: map[bytes, bool]
+
+event Deposited(from: address, amount: int)
+event Proposed(id: int, by: address, to: address, amount: int, memo: text)
+event Approved(id: int, by: address, approvals: int)
+event Executed(id: int, to: address, amount: int)
+
+init(owner_list: list[address], required: int):
+    let n: int = len(owner_list)
+    require n >= 2 and n <= MAX_OWNERS, "a treasury needs 2 to 10 owners"
+    require required >= 1 and required <= n, "threshold must be 1 to the number of owners"
+    for o in owner_list:
+        require not is_owner.has(o), "duplicate owner"
+        is_owner[o] = true
+        owners.push(o)
+    threshold = required
+
+action deposit() payable:
+    require value > 0, "attach TCN with --value"
+    emit Deposited(caller, value)
+
+action propose(to: address, amount: int, memo: text) -> int:
+    only_owner()
+    require amount > 0, "amount must be positive"
+    require len(memo) <= 140, "memo too long (max 140 bytes)"
+    let id: int = proposal_count
+    proposal_count += 1
+    p_to[id] = to
+    p_amount[id] = amount
+    p_memo[id] = memo
+    emit Proposed(id, caller, to, amount, memo)
+    record_approval(id)
+    return id
+
+action approve(id: int):
+    only_owner()
+    require id >= 0 and id < proposal_count, "unknown proposal"
+    record_approval(id)
+
+action execute(id: int):
+    only_owner()
+    require id >= 0 and id < proposal_count, "unknown proposal"
+    require not p_executed[id], "already executed"
+    require p_approvals[id] >= threshold, "not enough approvals"
+    require p_amount[id] <= balance, "treasury balance too low"
+    p_executed[id] = true
+    send(p_to[id], p_amount[id])
+    emit Executed(id, p_to[id], p_amount[id])
+
+view proposal(id: int) -> text:
+    require id >= 0 and id < proposal_count, "unknown proposal"
+    let state_name: text = "pending"
+    if p_executed[id]:
+        state_name = "executed"
+    elif p_approvals[id] >= threshold:
+        state_name = "ready"
+    let amount: text = to_text(p_amount[id]) + " motes, "
+    let approvals: text = to_text(p_approvals[id]) + " approval(s), "
+    return state_name + ": " + amount + approvals + "memo: " + p_memo[id]
+
+view has_approved(id: int, owner: address) -> bool:
+    return approved.has(approval_key(id, owner))
+
+view owner_count() -> int:
+    return len(owners)
+
+fn record_approval(id: int):
+    require not p_executed[id], "already executed"
+    let key: bytes = approval_key(id, caller)
+    require not approved.has(key), "you already approved this proposal"
+    approved[key] = true
+    p_approvals[id] += 1
+    emit Approved(id, caller, p_approvals[id])
+
+fn only_owner():
+    require is_owner.has(caller), "only an owner can do this"
+
+fn approval_key(id: int, owner: address) -> bytes:
+    return to_bytes(id) + to_bytes(owner)

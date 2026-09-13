@@ -1,0 +1,78 @@
+# A poll with a fixed list of options and registered voters.
+# One registered address = one vote. Results are public at any time.
+contract Poll
+
+const MAX_OPTIONS: int = 16
+const MAX_VOTERS_PER_CALL: int = 50
+
+state creator: address
+state question: text
+state options: list[text]
+state tally: list[int]
+state registered: map[address, bool]
+state voted: map[address, bool]
+state voters: int
+state votes_cast: int
+state closes_at: int
+
+event VoterAdded(voter: address)
+event Voted(voter: address, option: int)
+
+init(poll_question: text, choices: list[text], duration_blocks: int):
+    let size: int = len(poll_question)
+    require size >= 1 and size <= 200, "question must have 1 to 200 bytes"
+    require len(choices) >= 2 and len(choices) <= MAX_OPTIONS, "a poll needs 2 to 16 options"
+    require duration_blocks >= 1, "duration must be at least 1 block"
+    creator = caller
+    question = poll_question
+    closes_at = height + duration_blocks
+    for choice in choices:
+        require len(choice) >= 1 and len(choice) <= 64, "each option must have 1 to 64 bytes"
+        options.push(choice)
+        tally.push(0)
+
+action add_voters(who: list[address]):
+    require caller == creator, "only the creator registers voters"
+    require height <= closes_at, "voting is closed"
+    require len(who) <= MAX_VOTERS_PER_CALL, "at most 50 voters per call"
+    for v in who:
+        if not registered.has(v):
+            registered[v] = true
+            voters += 1
+            emit VoterAdded(v)
+
+action vote(option: int):
+    require height <= closes_at, "voting is closed"
+    require registered.has(caller), "you are not a registered voter"
+    require not voted.has(caller), "you already voted"
+    require option >= 0 and option < len(options), "unknown option"
+    voted[caller] = true
+    tally[option] += 1
+    votes_cast += 1
+    emit Voted(caller, option)
+
+view results() -> list[int]:
+    let out: list[int] = []
+    for count in tally:
+        out.push(count)
+    return out
+
+view option_name(index: int) -> text:
+    return options[index]
+
+view turnout() -> list[int]:
+    return [votes_cast, voters]
+
+view winner() -> text:
+    require height > closes_at, "voting is still open"
+    let best: int = 0
+    let tie: bool = false
+    for i in range(1, len(tally)):
+        if tally[i] > tally[best]:
+            best = i
+            tie = false
+        elif tally[i] == tally[best]:
+            tie = true
+    if tie:
+        return "tie"
+    return options[best]

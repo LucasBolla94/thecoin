@@ -436,6 +436,29 @@ impl<'o> Checker<'o> {
         Ok(slot)
     }
 
+    /// A hidden local slot (compiler temporaries).
+    fn temp_slot(&self, ctx: &mut FnCtx, pos: Pos) -> CResult<u16> {
+        if ctx.next_slot >= MAX_LOCALS {
+            return err(pos, "too many local variables");
+        }
+        ctx.next_slot += 1;
+        Ok((ctx.next_slot - 1) as u16)
+    }
+
+    /// `x[k] op= v` must evaluate `k` exactly once (it may call a function that
+    /// changes state): store it in a temporary, then read and write through it.
+    fn once(&self, ctx: &mut FnCtx, op: AssignOp, key: Expr, pos: Pos, build: impl FnOnce(Expr) -> Stmt) -> CResult<Stmt> {
+        if op == AssignOp::Set || matches!(key, Expr::Const(_) | Expr::Local(_)) {
+            return Ok(build(key));
+        }
+        let tmp = self.temp_slot(ctx, pos)?;
+        Ok(Stmt::If {
+            cond: Expr::Const(Value::Bool(true)),
+            then: vec![Stmt::SetLocal { slot: tmp, value: key }, build(Expr::Local(tmp))],
+            els: vec![],
+        })
+    }
+
     fn lookup_local(&self, ctx: &FnCtx, name: &str) -> Option<(u16, Type)> {
         ctx.scopes.iter().rev().find_map(|s| s.get(name).cloned())
     }
@@ -701,8 +724,10 @@ impl<'o> Checker<'o> {
                         check_op(&inner)?;
                         let i = self.expect_type(ctx, index, &Type::Int)?;
                         let rhs = self.expect_type(ctx, value, &inner)?;
-                        let current = Expr::Index { base: Box::new(Expr::Local(slot)), index: Box::new(i.clone()) };
-                        return Ok(Stmt::SetLocalListItem { slot, index: i, value: combine(current, rhs) });
+                        return self.once(ctx, op, i, pos, |i| {
+                            let current = Expr::Index { base: Box::new(Expr::Local(slot)), index: Box::new(i.clone()) };
+                            Stmt::SetLocalListItem { slot, index: i, value: combine(current, rhs) }
+                        });
                     }
                     if self.lookup_local(ctx, n).is_none() {
                         if let Some(&var) = self.state_index.get(n) {
@@ -712,16 +737,20 @@ impl<'o> Checker<'o> {
                                     check_op(&v)?;
                                     let key = self.expect_type(ctx, index, &k)?;
                                     let rhs = self.expect_type(ctx, value, &v)?;
-                                    let current = Expr::MapGet { var, key: Box::new(key.clone()) };
-                                    return Ok(Stmt::SetMap { var, key, value: combine(current, rhs) });
+                                    return self.once(ctx, op, key, pos, |key| {
+                                        let current = Expr::MapGet { var, key: Box::new(key.clone()) };
+                                        Stmt::SetMap { var, key, value: combine(current, rhs) }
+                                    });
                                 }
                                 Type::List(inner) => {
                                     self.require_mutable(ctx, pos, "change state")?;
                                     check_op(&inner)?;
                                     let i = self.expect_type(ctx, index, &Type::Int)?;
                                     let rhs = self.expect_type(ctx, value, &inner)?;
-                                    let current = Expr::StateListGet { var, index: Box::new(i.clone()) };
-                                    return Ok(Stmt::SetStateListItem { var, index: i, value: combine(current, rhs) });
+                                    return self.once(ctx, op, i, pos, |i| {
+                                        let current = Expr::StateListGet { var, index: Box::new(i.clone()) };
+                                        Stmt::SetStateListItem { var, index: i, value: combine(current, rhs) }
+                                    });
                                 }
                                 _ => {}
                             }
