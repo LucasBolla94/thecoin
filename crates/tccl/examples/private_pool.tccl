@@ -1,0 +1,57 @@
+# Private payments pool (fixed amount) using linkable ring signatures.
+#
+# 1. deposit(public_key) with exactly DENOMINATION TCN. The public key is a
+#    fresh ring key only you control (tccl ring keygen / thecoin-wallet privacy).
+# 2. Later, anyone holding the matching secret key withdraws to ANY address by
+#    signing with a ring made of several deposited keys. The contract learns
+#    that ONE of them signed — never which one. The key image stops the same
+#    deposit from being withdrawn twice.
+# 3. A relayer can submit the withdrawal and earn `fee`, so the destination
+#    address never needs TCN beforehand.
+contract PrivatePool
+
+const DENOMINATION: int = 10 * TCN
+const MIN_RING: int = 2
+const MAX_RING: int = 32
+
+state keys: list[bytes]
+state used: map[bytes, bool]
+state withdrawn: int
+
+event Deposited(index: int)
+event Withdrawn(ring_size: int)
+
+action deposit(public_key: bytes) payable:
+    require value == DENOMINATION, "deposit exactly 10 TCN"
+    require len(public_key) == 32, "public key must be 32 bytes"
+    keys.push(public_key)
+    emit Deposited(len(keys) - 1)
+
+action withdraw(to: address, relayer: address, fee: int, members: list[int], signature: bytes, key_image: bytes):
+    require len(members) >= MIN_RING and len(members) <= MAX_RING, "ring size must be 2 to 32"
+    require fee >= 0 and fee < DENOMINATION, "invalid relayer fee"
+    require not used.has(key_image), "this deposit was already withdrawn"
+    let ring: list[bytes] = []
+    for i in members:
+        require i >= 0 and i < len(keys), "unknown deposit index"
+        ring.push(keys[i])
+    let message: bytes = withdraw_message(to, relayer, fee)
+    require ring_verify(ring, message, signature, key_image), "invalid ring signature"
+    used[key_image] = true
+    withdrawn += 1
+    send(to, DENOMINATION - fee)
+    if fee > 0:
+        send(relayer, fee)
+    emit Withdrawn(len(members))
+
+view deposits() -> int:
+    return len(keys)
+
+view key_at(index: int) -> bytes:
+    return keys[index]
+
+view message_for(to: address, relayer: address, fee: int) -> bytes:
+    return withdraw_message(to, relayer, fee)
+
+fn withdraw_message(to: address, relayer: address, fee: int) -> bytes:
+    return blake3(to_bytes(self) + to_bytes(to) + to_bytes(relayer) + to_bytes(fee))

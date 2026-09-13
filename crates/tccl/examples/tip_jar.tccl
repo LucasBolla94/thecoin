@@ -1,0 +1,28 @@
+# A tip jar: anyone can send TCN with a message, only the owner withdraws.
+contract TipJar
+
+state owner: address
+state total_received: int
+state tips: int
+
+event Tip(from: address, amount: int, message: text)
+event Withdrawn(to: address, amount: int)
+
+init():
+    owner = caller
+
+action tip(message: text) payable:
+    require value >= TCN / 100, "minimum tip is 0.01 TCN"
+    require len(message) <= 140, "message too long"
+    total_received += value
+    tips += 1
+    emit Tip(caller, value, message)
+
+action withdraw(amount: int):
+    require caller == owner, "only the owner can withdraw"
+    require amount > 0 and amount <= balance, "invalid amount"
+    send(owner, amount)
+    emit Withdrawn(owner, amount)
+
+view stats() -> list[int]:
+    return [total_received, tips, balance]

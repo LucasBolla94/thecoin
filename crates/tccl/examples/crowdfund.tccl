@@ -1,0 +1,52 @@
+# Crowdfunding with a goal and a deadline (in blocks).
+# If the goal is reached the creator collects; otherwise backers get refunds.
+contract Crowdfund
+
+state creator: address
+state goal: int
+state deadline: int
+state raised: int
+state collected: bool
+state pledges: map[address, int]
+
+event Pledged(backer: address, amount: int)
+event Refunded(backer: address, amount: int)
+
+init(goal_tcn: int, duration_blocks: int):
+    require goal_tcn > 0, "goal must be positive"
+    require duration_blocks >= 10, "campaign too short"
+    creator = caller
+    goal = goal_tcn * TCN
+    deadline = height + duration_blocks
+
+action pledge() payable:
+    require height <= deadline, "campaign ended"
+    require value > 0, "send some TCN"
+    pledges[caller] += value
+    raised += value
+    emit Pledged(caller, value)
+
+action collect():
+    require caller == creator, "only the creator"
+    require height > deadline, "campaign still running"
+    require raised >= goal, "goal not reached"
+    require not collected, "already collected"
+    collected = true
+    send(creator, raised)
+
+action refund():
+    require height > deadline, "campaign still running"
+    require raised < goal, "goal was reached, no refunds"
+    let amount: int = pledges[caller]
+    require amount > 0, "nothing to refund"
+    pledges.remove(caller)
+    send(caller, amount)
+    emit Refunded(caller, amount)
+
+view status() -> text:
+    if height <= deadline:
+        return "running"
+    elif raised >= goal:
+        return "successful"
+    else:
+        return "failed"

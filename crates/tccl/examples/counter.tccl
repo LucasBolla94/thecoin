@@ -1,0 +1,20 @@
+# The smallest useful contract: a counter anyone can increase.
+contract Counter
+
+state count: int
+state last_caller: address
+
+event Increased(by: address, amount: int, total: int)
+
+action increment(amount: int):
+    require amount > 0, "amount must be positive"
+    require amount <= 100, "at most 100 per call"
+    count += amount
+    last_caller = caller
+    emit Increased(caller, amount, count)
+
+view get() -> int:
+    return count
+
+view last() -> address:
+    return last_caller

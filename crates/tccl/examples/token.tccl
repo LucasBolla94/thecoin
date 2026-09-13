@@ -1,0 +1,53 @@
+# A simple fungible token with a fixed maximum supply.
+contract SimpleToken
+
+const MAX_SUPPLY: int = 21_000_000
+state name: text = "Cloud Token"
+state owner: address
+state supply: int
+state balances: map[address, int]
+state allowances: map[bytes, int]
+
+event Transfer(from: address, to: address, amount: int)
+event Approval(holder: address, spender: address, amount: int)
+
+init():
+    owner = caller
+
+action mint(to: address, amount: int):
+    require caller == owner, "only the owner can mint"
+    require amount > 0, "amount must be positive"
+    require supply + amount <= MAX_SUPPLY, "max supply reached"
+    supply += amount
+    balances[to] += amount
+    emit Transfer(zero_address(), to, amount)
+
+action transfer(to: address, amount: int):
+    move(caller, to, amount)
+
+action approve(spender: address, amount: int):
+    require amount >= 0, "amount cannot be negative"
+    allowances[pair(caller, spender)] = amount
+    emit Approval(caller, spender, amount)
+
+action transfer_from(holder: address, to: address, amount: int):
+    let key: bytes = pair(holder, caller)
+    require allowances[key] >= amount, "allowance too low"
+    allowances[key] -= amount
+    move(holder, to, amount)
+
+view balance_of(who: address) -> int:
+    return balances[who]
+
+view allowance(holder: address, spender: address) -> int:
+    return allowances[pair(holder, spender)]
+
+fn move(from: address, to: address, amount: int):
+    require amount > 0, "amount must be positive"
+    require balances[from] >= amount, "insufficient token balance"
+    balances[from] -= amount
+    balances[to] += amount
+    emit Transfer(from, to, amount)
+
+fn pair(a: address, b: address) -> bytes:
+    return to_bytes(a) + to_bytes(b)

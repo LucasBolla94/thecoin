@@ -4,3 +4,4 @@ target/
 /data/
 *.log
 dist/
+.claude/
