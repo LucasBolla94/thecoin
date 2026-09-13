@@ -159,8 +159,8 @@ impl Mempool {
         }
         let size = check_tx_stateless(chain.params, &tx).map_err(MempoolError::Invalid)?;
         let sender = tx.sender();
-        let reader = chain.read().map_err(|e| MempoolError::Storage(e.to_string()))?;
-        let height = chain.tip().height + 1;
+        let (reader, tip_height) = chain.read_at_tip().map_err(|e| MempoolError::Storage(e.to_string()))?;
+        let height = tip_height + 1;
 
         let mut pending: Vec<Transaction> = self.sender_txs(&sender);
         let mut replaced: Option<Hash32> = None;
@@ -246,8 +246,8 @@ impl Mempool {
             self.remove(&id);
         }
 
-        let reader = chain.read()?;
-        let height = chain.tip().height + 1;
+        let (reader, tip_height) = chain.read_at_tip()?;
+        let height = tip_height + 1;
         let senders: Vec<Address> = self.by_sender.keys().copied().collect();
         for sender in senders {
             let txs = self.sender_txs(&sender);

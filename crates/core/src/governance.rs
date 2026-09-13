@@ -331,7 +331,7 @@ pub(crate) fn vote<R: StateReader + ?Sized>(
         return Err(TxError::ZeroAmount);
     }
     let mut p = state.proposal(id)?.ok_or_else(|| TxError::Governance("unknown proposal".into()))?;
-    if p.status != ProposalStatus::Voting || height > p.end_height || height <= p.created_height {
+    if p.status != ProposalStatus::Voting || height > p.end_height {
         return Err(TxError::Governance("proposal is not open for voting".into()));
     }
     if state.vote(id, &voter)?.is_some() {

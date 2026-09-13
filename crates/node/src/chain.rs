@@ -212,6 +212,15 @@ impl Chain {
         self.db.read()
     }
 
+    /// A read snapshot together with the height of the tip *in that snapshot*
+    /// (the cached tip may be updated a moment after a commit).
+    pub fn read_at_tip(&self) -> Result<(ReadTx, u64)> {
+        let r = self.db.read()?;
+        let hash = r.tip()?.context("missing tip")?;
+        let height = r.header(&hash)?.context("missing tip header")?.header.height;
+        Ok((r, height))
+    }
+
     pub fn options(&self) -> &ChainOptions {
         &self.opts
     }

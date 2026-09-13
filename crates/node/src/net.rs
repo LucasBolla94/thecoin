@@ -536,6 +536,11 @@ async fn peer_loop(node: &Arc<Node>, peer: &Arc<Peer>, msg_rx: &mut mpsc::Receiv
     if v.protocol < PROTOCOL_VERSION {
         bail!("peer protocol {} too old", v.protocol);
     }
+    // The same remote node may be reachable twice (we dialed it and it dialed us).
+    let duplicate = node.peers.read().values().any(|p| p.info.lock().version.as_ref().is_some_and(|pv| pv.nonce == v.nonce));
+    if duplicate {
+        bail!("already connected to this node");
+    }
     peer.update_best_height(v.height);
     let listen_port = v.listen_port;
     peer.info.lock().version = Some(v);

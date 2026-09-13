@@ -327,7 +327,10 @@ impl Ctx {
         let account = self.client.account(&from)?;
         let fees = self.client.fees()?;
         let tx: Transaction = build_tx(&sk, self.network, account.next_nonce, fees.suggested_fee_per_byte, 0, action);
-        let debit = tx.max_debit();
+        let mut debit = tx.max_debit();
+        if let TxAction::Propose { .. } = &tx.body.action {
+            debit = debit.saturating_add(self.client.status()?.params.proposal_deposit);
+        }
         println!("From:   {from}");
         println!("Action: {summary}");
         println!("Fee:    {} ({} bytes)", tcn(tx.body.fee), tx.size());

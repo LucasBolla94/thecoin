@@ -10,7 +10,7 @@
 //! | `blocks`    | block hash                       | zstd(borsh(Vec<Transaction>))           |
 //! | `main`      | height                           | block hash of the active chain          |
 //! | `state`     | state key                        | state record (see `thecoin_core::state`)|
-//! | `undo`      | height                           | zstd(borsh(Vec<StateChange>))           |
+//! | `undo`      | height                           | zstd(borsh(BlockUndo))                  |
 //! | `txindex`   | txid                             | height (8 LE) + position (4 LE)         |
 //! | `addrindex` | address + height BE + position BE| txid                                    |
 //! | `meta`      | name                             | bytes                                   |

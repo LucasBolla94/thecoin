@@ -31,6 +31,8 @@ pub struct MinerState {
     pub hashes: AtomicU64,
     hashrate_bits: AtomicU64,
     pub blocks_found: AtomicU64,
+    /// Wakes the coordinator to build a new job (e.g. after a block was found).
+    rebuild: tokio::sync::Notify,
 }
 
 impl MinerState {
@@ -44,6 +46,7 @@ impl MinerState {
             hashes: AtomicU64::new(0),
             hashrate_bits: AtomicU64::new(0f64.to_bits()),
             blocks_found: AtomicU64::new(0),
+            rebuild: tokio::sync::Notify::new(),
         }
     }
 
@@ -117,6 +120,7 @@ async fn coordinator(node: Arc<Node>, address: Address) {
                 // Debounce bursts of transactions.
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
+            _ = node.miner.rebuild.notified() => {}
             _ = tokio::time::sleep(Duration::from_secs(30)) => {}
             _ = shutdown.changed() => {
                 node.miner.set_job(None);
@@ -167,6 +171,8 @@ fn worker(node: Arc<Node>) {
                     node.miner.set_job(None);
                 }
                 let _ = node.block_queue.blocking_send(BlockJob { block, source: None, pow_checked: true });
+                // If the block turns out stale, do not stay idle until the next timer.
+                node.miner.rebuild.notify_one();
                 if node.params.network == thecoin_core::Network::Regtest {
                     // Regtest PoW is trivial; throttle so timestamps stay sane.
                     std::thread::sleep(Duration::from_millis(500));

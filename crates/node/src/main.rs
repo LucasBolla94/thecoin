@@ -137,7 +137,11 @@ fn print_params(network: Network) {
     println!("The Coin — {network}");
     println!("  genesis hash        {}", g.hash());
     println!("  genesis message     {}", p.genesis_message);
-    println!("  max supply          50,000,000 TCN (total emission {} TCN)", format_amount(total_emission(p)));
+    if network == Network::Regtest {
+        println!("  total emission      {} TCN (regtest uses fast halvings)", format_amount(total_emission(p)));
+    } else {
+        println!("  max supply          50,000,000 TCN (total emission {} TCN)", format_amount(total_emission(p)));
+    }
     println!("  block time          {} s", p.target_block_time);
     println!("  initial reward      {} TCN", format_amount(p.initial_reward));
     println!("  halving interval    {} blocks", p.halving_interval);
@@ -150,7 +154,7 @@ fn print_params(network: Network) {
         );
     }
     println!("  coinbase maturity   {} blocks", p.coinbase_maturity);
-    println!("  PoW                 CoinHash (Argon2id, {} MiB, t={})", p.pow.mem_kib / 1024, p.pow.iterations);
+    println!("  PoW                 CoinHash (Argon2id, {} KiB, t={})", p.pow.mem_kib, p.pow.iterations);
     println!("  ports               p2p {} / api {}", p.default_p2p_port, p.default_rpc_port);
     println!("  address prefix      {}1...", p.hrp());
 }
