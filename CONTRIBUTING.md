@@ -15,7 +15,7 @@ sudo apt install -y build-essential pkg-config git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup component add rustfmt clippy
 
-git clone https://github.com/the-coin-cloud/thecoin
+git clone https://github.com/LucasBolla94/thecoin
 cd thecoin
 cargo build
 ```

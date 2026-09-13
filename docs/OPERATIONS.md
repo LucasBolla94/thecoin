@@ -75,7 +75,7 @@ curl -fsSL https://the-coin.cloud/uninstall.sh | sudo bash
 ```bash
 sudo apt install -y build-essential pkg-config git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-git clone https://github.com/the-coin-cloud/thecoin && cd thecoin
+git clone https://github.com/LucasBolla94/thecoin && cd thecoin
 cargo build --release -p thecoin-node -p thecoin-wallet
 sudo install -m755 target/release/thecoind target/release/thecoin-wallet /usr/local/bin/
 thecoin-wallet create                         # anote a frase de recuperação!

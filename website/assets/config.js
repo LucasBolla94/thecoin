@@ -19,4 +19,4 @@ window.THECOIN_API = [
 window.THECOIN_NETWORK = "mainnet";
 
 /* Repository with the source code and documentation. */
-window.THECOIN_REPO = "https://github.com/the-coin-cloud/thecoin";
+window.THECOIN_REPO = "https://github.com/LucasBolla94/thecoin";
