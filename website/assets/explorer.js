@@ -102,9 +102,14 @@
     }
   }
   function showError(err, what) {
-    var missing = err && err.status === 404;
-    var msg = missing
-      ? "<strong>Not found</strong><p>" + e(err.message) + "</p>"
+    var status = err && err.status;
+    var answered = status >= 400 && status < 500;
+    var msg = answered
+      ? "<strong>" +
+        (status === 404 ? "Not found" : "Invalid request") +
+        "</strong><p>" +
+        e(what || err.message) +
+        "</p>"
       : "<strong>Live data is temporarily unavailable.</strong><p>We cannot reach a network node right now. You can still browse the guides and learn how The Coin works.</p>";
     view.innerHTML =
       '<div class="notice error">' +
@@ -125,13 +130,6 @@
     return v !== null && v !== undefined;
   }
 
-  /** Name declared in a TCCL source ("contract Name"), or null. */
-  function contractName(source) {
-    var m = /^[ \t]*contract[ \t]+([A-Za-z_][A-Za-z0-9_]*)/m.exec(
-      String(source || ""),
-    );
-    return m ? m[1] : null;
-  }
 
   /* ---------------- action rendering ---------------- */
   var CALL_LABELS = {
@@ -415,13 +413,15 @@
           ["Title", e(a.title)],
           [
             "Full text",
-            a.url
+            a.url && safeUrl(a.url) !== "#"
               ? '<a href="' +
-                e(safeUrl(a.url)) +
+                e(a.url) +
                 '" rel="noopener nofollow" target="_blank">' +
                 e(a.url) +
                 "</a>"
-              : faint("—"),
+              : a.url
+                ? '<span class="mono break">' + e(a.url) + "</span>"
+                : faint("—"),
           ],
           ["Content hash", mono(a.content_hash)],
           ["Effect", proposalActionText(a.action)],
@@ -437,7 +437,7 @@
         var where = t.program
           ? addrLink(t.program, false) +
             (t.in_mempool
-              ? ' <span class="faint">(address previsto)</span>'
+              ? ' <span class="faint">(expected address)</span>'
               : "")
           : t.block_height !== null && t.block_height !== undefined
             ? faint("none — deployment failed")
@@ -445,11 +445,11 @@
         return (
           kv([
             ["Contract", '<span class="mono">' + e(name || "—") + "</span>"],
-            ["Address do contract", where],
+            ["Contract address", where],
             ["Source code", TC.fmtInt(TC.byteLength(a.source)) + " bytes"],
             ["Source code hash", mono(a.source_hash)],
-            ["Arguments of init", argList(a.init_args)],
-            ["Amount enviado", amount(a.value)],
+            ["init arguments", argList(a.init_args)],
+            ["Amount sent", amount(a.value)],
             ["Maximum fuel", TC.fmtInt(a.max_fuel)],
             ["Maximum accepted deposit", amount(a.max_deposit)],
           ]) +
@@ -463,7 +463,7 @@
           ["Contract", addrLink(a.contract, false)],
           ["Function", '<span class="mono">' + e(a.function) + "</span>"],
           ["Arguments", argList(a.args)],
-          ["Amount enviado", amount(a.value)],
+          ["Amount sent", amount(a.value)],
           ["Maximum fuel", TC.fmtInt(a.max_fuel)],
           ["Maximum accepted deposit", amount(a.max_deposit)],
         ]);
@@ -642,9 +642,9 @@
     var out = document.getElementById("sec-out");
     function run() {
       var motes = TC.parseTCN(document.getElementById("sec-amount").value);
-      if (motes === null) {
+      if (motes === null || BigInt(motes) > 9007199254740991n) {
         out.innerHTML =
-          '<p class="notice error" style="margin-top:12px">Enter a TCN amount, such as 250 or 12.5.</p>';
+          '<p class="notice error" style="margin-top:12px">Enter a TCN amount, such as 250 or 12.5 (at most 50,000,000 TCN).</p>';
         return;
       }
       out.innerHTML = '<p class="loading">Querying…</p>';
@@ -663,7 +663,7 @@
             "</span>" +
             '<span class="sub">≈ ' +
             e(TC.fmtDuration(Math.max(1, Number(s.minutes)) * 60)) +
-            " to " +
+            " for a payment of " +
             e(TC.fmtTCN(s.amount)) +
             "</span></div>" +
             '<p class="muted" style="margin:10px 0 0">To reverse ' +
@@ -672,7 +672,11 @@
             e(TC.fmtTCN(atStake, { maxDecimals: 2 })) +
             " in rewards (" +
             e(TC.fmtTCN(s.value_per_block, { maxDecimals: 4 })) +
-            " per block) — at least twice the payment amount. Current network hashrate: " +
+            " per block)" +
+            (BigInt(atStake) >= BigInt(s.amount) * 2n
+              ? " — at least twice the payment amount"
+              : " — less than twice the payment: beyond 720 blocks the chain never reorganizes, so this is the maximum wait") +
+            ". Current network hashrate: " +
             e(TC.fmtHashrate(s.network_hashrate)) +
             ". Reorganizations beyond 720 blocks are rejected.</p></div>";
         })
@@ -840,6 +844,10 @@
   }
 
   async function pageBlocks(token, before) {
+    if (!(before > 0)) {
+      location.hash = "#/";
+      return;
+    }
     var blocks = await TC.api("/blocks?limit=20&before=" + before);
     if (token !== routeToken) return;
     var html =
@@ -872,9 +880,12 @@
           (b.height - 1) +
           '">← previous</a> '
         : "") +
-      '<a class="btn btn-small" href="#/block/' +
-      (b.height + 1) +
-      '">next →</a></span></div>';
+      (Number(b.confirmations) > 1
+        ? '<a class="btn btn-small" href="#/block/' +
+          (b.height + 1) +
+          '">next →</a>'
+        : "") +
+      "</span></div>";
     var burned = b.txs.reduce(function (acc, t) {
       return acc + BigInt(t.burned || 0);
     }, 0n);
@@ -941,7 +952,7 @@
       ? '<span class="badge warn">waiting in mempool</span>'
       : '<span class="badge ok">confirmed</span> ' +
         TC.fmtInt(t.confirmations) +
-        " confirmations";
+        (Number(t.confirmations) === 1 ? " confirmation" : " confirmations");
     if (confirmed && t.success === false)
       status += ' <span class="badge bad">execution failed</span>';
     var html =
@@ -967,7 +978,7 @@
       " bytes)</span>";
     if (Number(t.burned) > 0)
       feeCell +=
-        ' · <span class="nowrap">queimado ' +
+        ' · <span class="nowrap">burned ' +
         e(TC.fmtTCN(t.burned)) +
         "</span>";
     html +=
@@ -1190,7 +1201,7 @@
     var html;
     if (prog) {
       html =
-        '<div class="crumbs"><a href="#/">Blocks</a> › contract TCCL</div><h1>Contract TCCL · <span class="mono">' +
+        '<div class="crumbs"><a href="#/">Blocks</a> › TCCL contract</div><h1>TCCL contract · <span class="mono">' +
         e(prog.name) +
         "</span></h1>";
       html +=
@@ -1517,7 +1528,7 @@
                 })
                 .join("") +
               "</tbody></table></div>"
-            : '<p class="faint">No pending spends. Com saldo zero, qualquer assinante pode encerrar o cofre: <code>thecoin-wallet contract multisig-close</code>.</p>')
+            : '<p class="faint">No pending spends. With a zero balance, any signer can close the vault and refund its deposit: <code>thecoin-wallet contract multisig-close</code>.</p>')
         );
       default:
         return "<pre><code>" + e(JSON.stringify(s, null, 2)) + "</code></pre>";
@@ -1624,12 +1635,16 @@
   async function search(qRaw) {
     var q = qRaw.trim();
     if (!q) return;
+    function go(hash) {
+      if (location.hash === hash) route();
+      else location.hash = hash;
+    }
     if (/^\d+$/.test(q)) {
-      location.hash = "#/block/" + q;
+      go("#/block/" + q);
       return;
     }
     if (TC.isAddress(q)) {
-      location.hash = "#/address/" + q.toLowerCase();
+      go("#/address/" + q.toLowerCase());
       return;
     }
     if (TC.isHash(q)) {
@@ -1637,15 +1652,15 @@
       view.innerHTML =
         '<p class="loading">Searching ' + e(TC.shortHash(h)) + "…</p>";
       if (await exists("/block/" + h)) {
-        location.hash = "#/block/" + h;
+        go("#/block/" + h);
         return;
       }
       if (await exists("/tx/" + h)) {
-        location.hash = "#/tx/" + h;
+        go("#/tx/" + h);
         return;
       }
       if (await exists("/contract/" + h)) {
-        location.hash = "#/contract/" + h;
+        go("#/contract/" + h);
         return;
       }
       if (await exists("/governance/proposal/" + h)) {
@@ -1659,16 +1674,22 @@
       return;
     }
     view.innerHTML =
-      '<div class="notice error">Enter a block height, a 64-character hexadecimal hash, or a <span class="mono">tc1…</span> (contas e contratos TCCL).</div>';
+      '<div class="notice error">Enter a block height, a 64-character hexadecimal hash, or a <span class="mono">tc1…</span> address (accounts and TCCL contracts).</div>';
   }
 
   /* ---------------- router ---------------- */
   async function route() {
     clearTimeout(refreshTimer);
     var token = ++routeToken;
+    if (location.hash === "#main") return; // skip link, not a route
     var parts = (location.hash || "#/").replace(/^#\/?/, "").split("/");
     var kind = parts[0] || "",
-      arg = decodeURIComponent(parts.slice(1).join("/"));
+      arg = parts.slice(1).join("/");
+    try {
+      arg = decodeURIComponent(arg);
+    } catch (err) {
+      kind = "invalid";
+    }
     if (kind !== "blocks" && kind !== "") window.scrollTo(0, 0);
     view.innerHTML = '<p class="loading">Loading…</p>';
     try {

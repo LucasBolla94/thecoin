@@ -87,17 +87,13 @@ para os IPs dos nós (os mesmos nomes são usados como seeds P2P pelo software).
 ```bash
 sudo apt install nginx certbot python3-certbot-nginx
 
-# arquivos
+# arquivos (a partir de um clone do repositório nesta máquina)
 sudo mkdir -p /var/www/the-coin.cloud /var/www/certbot
-sudo cp -r website/*.html website/assets /var/www/the-coin.cloud/
-sudo mkdir -p /var/www/the-coin.cloud/{releases,whitepaper,tccl/examples}
-sudo cp installer/install.sh installer/uninstall.sh installer/thecoin /var/www/the-coin.cloud/   # instalador
-sudo cp docs/whitepaper/*.pdf /var/www/the-coin.cloud/whitepaper/                              # v0.2 e anteriores
-sudo cp docs/tccl/tccl-cookbook.pdf /var/www/the-coin.cloud/tccl/
-sudo cp crates/tccl/examples/*.tccl /var/www/the-coin.cloud/tccl/examples/
-# binários de release: releases/latest/thecoin-<target>.tar.gz + .sha256 (layout usado pelo install.sh)
-# atalho: no repositório, `scripts/package.sh <target>` e depois `scripts/publish-site.sh`
-# montam tudo em dist/site/, pronto para `rsync -av dist/site/ servidor:/var/www/the-coin.cloud/`
+git clone https://github.com/LucasBolla94/thecoin.git && cd thecoin
+sudo scripts/deploy-site.sh          # páginas, instalador, PDFs, exemplos TCCL e binários da release
+
+# para atualizar o site depois:
+#   cd thecoin && git pull && sudo scripts/deploy-site.sh
 
 # nginx
 sudo cp website/nginx/snippets/thecoin-proxy.conf /etc/nginx/snippets/

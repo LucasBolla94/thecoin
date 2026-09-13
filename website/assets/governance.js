@@ -524,19 +524,27 @@
   }
 
   async function route(silent) {
+    if (location.hash === "#main") return; // skip link, not a route
     var tk = ++token;
     var parts = (location.hash || "#/").replace(/^#\/?/, "").split("/");
     if (!silent) view.innerHTML = '<p class="loading">Loading…</p>';
     try {
-      if (parts[0] === "proposal" && parts[1])
-        await pageProposal(tk, decodeURIComponent(parts[1]));
+      if (parts[0] === "proposal" && parts[1]) {
+        var id = parts[1];
+        try {
+          id = decodeURIComponent(id);
+        } catch (err) {
+          /* keep the raw id; the API rejects it */
+        }
+        await pageProposal(tk, id);
+      }
       else await pageList(tk);
     } catch (err) {
       if (tk !== token) return;
       view.innerHTML =
         '<div class="notice error"><strong>' +
-        (err.status === 404
-          ? "Proposal not found."
+        (err.status >= 400 && err.status < 500
+          ? "Proposal not found (" + e(err.message) + ")."
           : "Live proposals are temporarily unavailable.") +
         '</strong><p>Read how governance works below, or try connecting again.</p></div><div class="actions"><button type="button" class="btn btn-small" id="retry-network">Try again ↻</button><a class="text-link" href="#/">All proposals</a></div>';
       document

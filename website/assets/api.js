@@ -60,6 +60,11 @@
         body = null;
       }
       if (!res.ok) {
+        // A 404 without the API's JSON error body comes from a web server
+        // that does not proxy the API: treat it as an outage, not an answer.
+        if (res.status === 404 && !(body && body.error)) {
+          throw new ApiError(0, "API not available at " + url);
+        }
         throw new ApiError(
           res.status,
           (body && body.error) || "HTTP " + res.status,
