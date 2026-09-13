@@ -457,6 +457,7 @@ Medições de desempenho:
 ```bash
 cargo test -p thecoin-core --release --test bench -- --ignored --nocapture
 cargo test -p thecoin-node --release --test storage_bench -- --ignored --nocapture
+cargo test -p thecoin-node --release --test storage_growth -- --ignored --nocapture
 cargo test -p thecoin-core --release -- --ignored bench_pow --nocapture
 ```
 
@@ -467,6 +468,8 @@ cargo test -p thecoin-core --release -- --ignored bench_pow --nocapture
 | Bloco de 790 kB com 5 000 transferências | aplicado em 0,39 s |
 | Memória do nó minerando | ≈ 42 MB |
 | Disco por bloco vazio | ≈ 765 bytes (≈ 400 MB/ano) |
+| Disco por transação (nó arquivo com índice de endereços) | ≈ 886 bytes |
+| Disco por transação (nó arquivo sem índice de endereços) | ≈ 437 bytes |
 
 ## 15. Releases e publicação do site
 

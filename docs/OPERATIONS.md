@@ -23,7 +23,8 @@ Consumo medido na v0.1 (VPS 2 vCPU Haswell, 3,7 GB RAM):
 | Verificação de assinaturas | ≈ 14 400 transações/s por núcleo |
 | Aplicar bloco com 5 000 tx (790 kB) | 0,39 s + 62 ms de LtHash |
 | Disco por bloco vazio | ≈ 765 bytes (~400 MB/ano) |
-| Disco por transação (com índices e undo) | ≲ 2,1 kB |
+| Disco por transação (nó arquivo com índice de endereços) | ≈ 886 bytes |
+| Disco por transação (sem índice de endereços) | ≈ 437 bytes |
 | Transferência simples | 158 bytes |
 
 Cada thread de mineração usa 16 MiB para o CoinHash.

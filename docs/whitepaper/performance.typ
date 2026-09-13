@@ -16,7 +16,8 @@ máquina para a qual a rede foi projetada.
     [Montar, validar e gravar bloco com 500 transferências], [≈ 104 ms],
     [Memória residente do nó minerando (1 thread)], [≈ 42 MB],
     [Disco por bloco vazio em regime (cabeçalho, índices)], [≈ 765 bytes (≈ 400 MB/ano)],
-    [Disco por transação (corpo, índices de tx e endereço, undo)], [≲ 2,1 kB],
+    [Disco por transação, nó arquivo com índice de endereços (300 mil tx medidas)], [≈ 886 bytes],
+    [Disco por transação, nó arquivo sem índice de endereços], [≈ 437 bytes],
   ),
   caption: [Desempenho medido da implementação de referência.],
 )

@@ -221,6 +221,12 @@ impl Chain {
         Ok((r, height))
     }
 
+    /// `(stored, metadata, fragmented)` bytes in the database file.
+    pub fn space_stats(&self) -> Result<(u64, u64, u64)> {
+        let _guard = self.inner.lock();
+        self.db.space_stats()
+    }
+
     pub fn options(&self) -> &ChainOptions {
         &self.opts
     }

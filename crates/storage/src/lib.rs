@@ -150,6 +150,15 @@ impl ChainDb {
         Ok(self.db.compact()?)
     }
 
+    /// `(stored, metadata, fragmented)` bytes inside the database file.
+    pub fn space_stats(&self) -> Result<(u64, u64, u64)> {
+        let w = self.db.begin_write()?;
+        let s = w.stats()?;
+        let out = (s.stored_bytes(), s.metadata_bytes(), s.fragmented_bytes());
+        w.abort()?;
+        Ok(out)
+    }
+
     pub fn read(&self) -> Result<ReadTx> {
         Ok(ReadTx { tx: self.db.begin_read()? })
     }
