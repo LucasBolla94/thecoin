@@ -1,0 +1,38 @@
+[package]
+name = "thecoin-wallet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Coin reference wallet: HD keys (BIP39/SLIP-10), encrypted keystore, tx builder and CLI"
+
+[lib]
+name = "thecoin_wallet"
+path = "src/lib.rs"
+
+[[bin]]
+name = "thecoin-wallet"
+path = "src/main.rs"
+
+[dependencies]
+thecoin-core.workspace = true
+borsh.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+ed25519-dalek.workspace = true
+argon2.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+bip39.workspace = true
+chacha20poly1305.workspace = true
+rand.workspace = true
+ureq.workspace = true
+rpassword.workspace = true
+zeroize.workspace = true
+clap.workspace = true
+dirs.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

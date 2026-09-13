@@ -1,0 +1,38 @@
+[package]
+name = "thecoin-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Coin full node (thecoind): P2P, mempool, CPU miner and REST API"
+
+[lib]
+name = "thecoin_node"
+path = "src/lib.rs"
+
+[[bin]]
+name = "thecoind"
+path = "src/main.rs"
+
+[dependencies]
+thecoin-core.workspace = true
+thecoin-storage.workspace = true
+borsh.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+toml.workspace = true
+rand.workspace = true
+libc.workspace = true
+dirs.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+thecoin-wallet.workspace = true

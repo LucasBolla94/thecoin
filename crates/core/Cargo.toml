@@ -1,0 +1,21 @@
+[package]
+name = "thecoin-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Coin: consensus types, cryptography, PoW and state-transition rules"
+
+[dependencies]
+borsh.workspace = true
+blake3.workspace = true
+sha2.workspace = true
+ed25519-dalek.workspace = true
+argon2.workspace = true
+primitive-types.workspace = true
+bech32.workspace = true
+serde.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+borsh.workspace = true

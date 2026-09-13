@@ -1,0 +1,16 @@
+[package]
+name = "thecoin-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Coin: compact redb-backed block, index and state storage"
+
+[dependencies]
+thecoin-core.workspace = true
+borsh.workspace = true
+redb.workspace = true
+zstd.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
