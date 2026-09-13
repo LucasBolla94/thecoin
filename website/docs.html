@@ -1,185 +1,246 @@
 <!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Desenvolvedores — The Coin</title>
-  <meta name="description" content="Documentação para desenvolvedores: protocolo, API REST, contratos TCCL, taxas, carteiras e governança da The Coin.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="assets/style.css">
-</head>
-<body>
-<header class="site-header">
-  <div class="wrap">
-    <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
-    <nav class="nav" aria-label="Principal">
-      <a href="index.html">Início</a>
-      <a href="validator.html">Validador</a>
-      <a href="download.html">Instalar</a>
-      <a href="explorer.html">Explorer</a>
-      <a href="governance.html">Governança</a>
-      <a href="tccl.html">TCCL</a>
-      <a href="docs.html">Desenvolvedores</a>
-    </nav>
-  </div>
-</header>
-
-<main class="wrap">
-  <h1>Desenvolvedores</h1>
-  <p class="muted" style="max-width:780px">The Coin é código aberto. Tudo que um nó, carteira ou explorer precisa está documentado no repositório — formatos binários canônicos (Borsh), regras de consenso, API REST, contratos TCCL e padrões de carteira. Novas carteiras e ferramentas são bem-vindas.</p>
-  <ul class="toc">
-    <li><a href="#documentos">Documentos</a></li>
-    <li><a href="#api">API REST</a></li>
-    <li><a href="#taxas">Taxas e prioridade</a></li>
-    <li><a href="#rbf">Substituição e alertas</a></li>
-    <li><a href="#seguranca">Confirmações</a></li>
-    <li><a href="#tccl">Contratos TCCL</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#padroes">Padrões</a></li>
-  </ul>
-
-  <h2 id="documentos">Documentos</h2>
-  <div class="grid grid-3" style="margin:16px 0 24px">
-    <a class="card" data-repo-link="/blob/main/docs/PROTOCOL.md" href="#"><h3>PROTOCOL.md</h3><p class="muted" style="margin:0">Blocos, transações, CoinHash, LWMA, estado e LtHash, taxas e congestionamento, contratos, P2P. A especificação de consenso.</p></a>
-    <a class="card" data-repo-link="/blob/main/docs/API.md" href="#"><h3>API.md</h3><p class="muted" style="margin:0">Todos os endpoints REST <code>/api/v1</code> com exemplos de requisição e resposta JSON.</p></a>
-    <a class="card" href="https://github.com/LucasBolla94/thecoin/blob/main/docs/tccl/TCCL.md"><h3>TCCL.md</h3><p class="muted" style="margin:0">Referência da linguagem de contratos inteligentes: tipos, instruções, funções embutidas, combustível e limites.</p></a>
-    <a class="card" href="/tccl/tccl-cookbook.pdf"><h3>TCCL Cookbook (PDF)</h3><p class="muted" style="margin:0">Receitas de contratos prontos para adaptar, em inglês. Exemplos em <span class="mono">/tccl/examples/</span>.</p></a>
-    <a class="card" data-repo-link="/blob/main/docs/CONTRACTS.md" href="#"><h3>CONTRACTS.md</h3><p class="muted" style="margin:0">Contratos de pagamento nativos (escrow, vesting, assinatura, HTLC, multisig): uso na carteira e integração.</p></a>
-    <a class="card" data-repo-link="/blob/main/docs/WALLET_DEVELOPERS.md" href="#"><h3>WALLET_DEVELOPERS.md</h3><p class="muted" style="margin:0">Derivação BIP-39/SLIP-0010, endereços bech32m, assinatura, taxas e prioridade, RBF, URIs <code>thecoin:</code> e vetores de teste.</p></a>
-    <a class="card" data-repo-link="/blob/main/docs/GOVERNANCE.md" href="#"><h3>GOVERNANCE.md</h3><p class="muted" style="margin:0">Ciclo de vida das propostas, quórum, aprovação bicameral, sinalização, parâmetros e limites.</p></a>
-    <a class="card" data-repo-link="/blob/main/docs/OPERATIONS.md" href="#"><h3>OPERATIONS.md</h3><p class="muted" style="margin:0">Operar nós e seeds: configuração, firewall, backups, poda, monitoramento e atualização.</p></a>
-    <a class="card" data-repo-link="/blob/main/docs/ROADMAP.md" href="#"><h3>ROADMAP.md</h3><p class="muted" style="margin:0">Plano de consenso PoW → híbrido PoW/PoS → PoS, com condições de ativação e riscos.</p></a>
-    <a class="card" href="/whitepaper/the-coin-whitepaper-v0.2.pdf"><h3>Whitepaper v0.2</h3><p class="muted" style="margin:0">Visão geral do design, economia, taxas, contratos, segurança e roadmap (PDF). <span class="faint">Anterior: <span class="mono">v0.1</span>.</span></p></a>
-  </div>
-  <p class="faint">Versão anterior do whitepaper: <a href="/whitepaper/the-coin-whitepaper-v0.1.pdf">v0.1 (PDF)</a>.</p>
-
-  <h2 id="api">API REST em resumo</h2>
-  <p class="muted">Todo nó expõe a API em <code>http://127.0.0.1:7334/api/v1</code> (mainnet). O site usa <code>https://the-coin.cloud/api/v1</code>, que encaminha para os nós seed. Respostas em JSON; valores em <strong>motes</strong> (1 TCN = 100.000.000 motes, inteiros); multiplicadores em <strong>bp</strong> (10.000 = 1,0×); hashes em hexadecimal; endereços em bech32m. Erros retornam <code>{"error": "..."}</code> com status HTTP 4xx/5xx.</p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Método</th><th>Caminho</th><th>Descrição</th></tr></thead>
-      <tbody>
-        <tr><td>GET</td><td class="mono">/status</td><td>Altura, tip, dificuldade, hashrate, peers, mempool, oferta, parâmetros de governança e <code>congestion_bp</code></td></tr>
-        <tr><td>GET</td><td class="mono">/supply</td><td>Oferta máxima, emitida, queimada, circulante, recompensa e próximo halving</td></tr>
-        <tr><td>GET</td><td class="mono">/fees</td><td>Taxa base, por kB, por mil de combustível, depósito por kB, congestionamento, taxa de uma transferência típica e multiplicadores de prioridade</td></tr>
-        <tr><td>GET</td><td class="mono">/security?amount=M</td><td>Confirmações recomendadas para receber <code>M</code> motes</td></tr>
-        <tr><td>GET</td><td class="mono">/alerts</td><td>Tentativas recentes de gasto duplo vistas pelo nó</td></tr>
-        <tr><td>GET</td><td class="mono">/blocks?limit=20&amp;before=H</td><td>Resumo dos blocos mais recentes (paginação por altura)</td></tr>
-        <tr><td>GET</td><td class="mono">/block/{altura|hash}</td><td>Bloco completo com transações e recibos</td></tr>
-        <tr><td>GET</td><td class="mono">/tx/{txid}</td><td>Transação confirmada ou no mempool, com recibo (<code>success</code>, <code>error</code>, <code>fuel_used</code>, <code>burned</code>, <code>logs</code>, <code>program</code>), <code>replaceable</code> e <code>conflict</code></td></tr>
-        <tr><td>POST</td><td class="mono">/tx</td><td>Envia transação assinada: <code>{"tx": "&lt;hex borsh&gt;"}</code> → <code>{"txid": "..."}</code></td></tr>
-        <tr><td>POST</td><td class="mono">/tx/simulate</td><td>Executa uma transação assinada sobre o estado atual sem publicá-la: validade, sucesso, combustível, eventos e taxa mínima</td></tr>
-        <tr><td>GET</td><td class="mono">/address/{endereço}</td><td>Saldo, disponível, travado, recompensas em cooldown (<code>immature</code>), nonce e próximo nonce</td></tr>
-        <tr><td>GET</td><td class="mono">/address/{endereço}/txs?limit=25&amp;cursor=H:P</td><td>Histórico do endereço (mais recente primeiro)</td></tr>
-        <tr><td>GET</td><td class="mono">/program/{endereço}</td><td>Contrato TCCL: nome, criador, hash do código-fonte, saldo, armazenamento, depósito e funções</td></tr>
-        <tr><td>POST</td><td class="mono">/program/{endereço}/view</td><td>Chama uma <em>view</em> de graça: <code>{"function": "...", "args": ["..."]}</code> → <code>{"result", "error", "fuel_used"}</code></td></tr>
-        <tr><td>GET</td><td class="mono">/contract/{id}</td><td>Estado de um contrato de pagamento nativo ativo (inclui o depósito de armazenamento)</td></tr>
-        <tr><td>GET</td><td class="mono">/governance/proposals</td><td>Todas as propostas com apuração e projeções</td></tr>
-        <tr><td>GET</td><td class="mono">/governance/proposal/{id}</td><td>Uma proposta</td></tr>
-        <tr><td>GET</td><td class="mono">/governance/params</td><td>Parâmetros atuais e limites</td></tr>
-        <tr><td>GET</td><td class="mono">/mempool</td><td>Contagem, bytes e transações de maior taxa por peso</td></tr>
-        <tr><td>GET</td><td class="mono">/peers</td><td>Peers conectados ao nó</td></tr>
-        <tr><td>GET</td><td class="mono">/mining</td><td>Minerador local: threads, hashrate, blocos encontrados, propostas sinalizadas</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h2>Exemplos</h2>
-  <pre><code>curl -s https://the-coin.cloud/api/v1/status
-curl -s https://the-coin.cloud/api/v1/fees
-curl -s "https://the-coin.cloud/api/v1/security?amount=25000000000"
-curl -s https://the-coin.cloud/api/v1/address/tc1q...
-curl -s -X POST https://the-coin.cloud/api/v1/tx \
-     -H 'content-type: application/json' \
-     -d '{"tx":"0100..."}'
-curl -s -X POST https://the-coin.cloud/api/v1/program/tc1q.../view \
-     -H 'content-type: application/json' \
-     -d '{"function":"balance_of","args":["tc1q..."]}'</code></pre>
-
-  <h2 id="taxas">Taxas e prioridade</h2>
-  <div class="grid grid-2">
-    <div class="card">
-      <p class="muted">A taxa mínima de uma transação depende do tamanho, do combustível reservado (só contratos TCCL) e do congestionamento:</p>
-      <div class="formula">mínimo = (base_fee + ⌈bytes × fee_per_kb / 1000⌉ + ⌈max_fuel × fee_per_kfuel / 1000⌉) × congestion_bp / 10000</div>
-      <p class="muted">O multiplicador de congestionamento começa em 1× e muda a cada bloco para manter os blocos em 50% de uso: sobe até 12,5% por bloco quando estão mais cheios e desce quando estão mais vazios, entre 1× e 1000×. A parte da taxa que vem do congestionamento é <strong>queimada</strong>; o que passa do mínimo vai para o minerador como gorjeta.</p>
-      <p class="muted" style="margin:0">Mineradores ordenam transações por taxa por unidade de peso (<code>bytes + max_fuel / 100</code>).</p>
-    </div>
-    <div class="card">
-      <p class="muted"><code>GET /fees</code> devolve multiplicadores sobre o mínimo para cada prioridade. A carteira de referência usa <code>--priority</code>:</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Prioridade</th><th>Campo</th><th>Uso</th></tr></thead>
-          <tbody>
-            <tr><td>low</td><td class="mono">low_bp</td><td>o mínimo (10.000 bp)</td></tr>
-            <tr><td>normal</td><td class="mono">normal_bp</td><td>mínimo + 25% (12.500 bp), padrão</td></tr>
-            <tr><td>high</td><td class="mono">high_bp</td><td>acima da maioria das transações na fila (≥ 2×)</td></tr>
-            <tr><td>urgent</td><td class="mono">urgent_bp</td><td>próximo bloco com probabilidade muito alta</td></tr>
-          </tbody>
-        </table>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Build on The Coin — The Coin</title>
+    <meta
+      name="description"
+      content="Documentation, REST API, wallet standards, and native payment contracts for The Coin."
+    />
+    <meta name="theme-color" content="#f7f7f2" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/style.css?v=4" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="index.html" aria-label="The Coin home"
+          ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+          >the coin<span class="brand-period">.</span></a
+        ><button
+          class="menu-toggle"
+          aria-controls="navigation"
+          aria-expanded="false"
+          type="button"
+        >
+          Menu <span aria-hidden="true">☰</span>
+        </button>
+        <nav class="nav" id="navigation" aria-label="Main navigation">
+          <a href="index.html">Overview</a><a href="explorer.html">Explorer</a
+          ><a href="governance.html">Governance</a
+          ><a href="docs.html" aria-current="page">Developers</a
+          ><a class="nav-cta" href="download.html"
+            >Run a node <span aria-hidden="true">↗</span></a
+          >
+        </nav>
       </div>
-      <p class="faint" style="margin:10px 0 0">Taxa a pagar = ⌈mínimo × multiplicador / 10000⌉. Valores padrão da mainnet: base 1.000 motes, 10.000 motes por kB e 1.000 motes por 1.000 de combustível — uma transferência de 160 bytes custa 2.600 motes (0,000026 TCN) sem congestionamento.</p>
-    </div>
-  </div>
+    </header>
+    <main id="main">
+      <section class="wrap page-intro">
+        <div class="eyebrow">OPEN SOURCE. OPEN POSSIBILITIES.</div>
+        <h1>Build something useful.</h1>
+        <p class="lead">
+          A Rust implementation, a straightforward REST API, and documented
+          wallet standards. Start with the part you want to build.
+        </p>
+        <a
+          class="btn btn-primary"
+          href="https://github.com/LucasBolla94/thecoin"
+          >Explore the source ↗</a
+        >
+      </section>
+      <section class="wrap grid grid-3">
+        <a
+          class="resource-card"
+          href="https://github.com/LucasBolla94/thecoin/blob/main/docs/PROTOCOL.md"
+          ><span class="resource-arrow">↗</span>
+          <h3>Protocol specification</h3>
+          <p>
+            Consensus, transaction encoding, addresses, and network parameters.
+          </p>
+          <small>PROTOCOL.md</small></a
+        ><a
+          class="resource-card"
+          href="https://github.com/LucasBolla94/thecoin/blob/main/docs/API.md"
+          ><span class="resource-arrow">↗</span>
+          <h3>Node API</h3>
+          <p>
+            Query blocks, balances, contracts, and governance. Submit signed
+            transactions.
+          </p>
+          <small>API.md</small></a
+        ><a
+          class="resource-card"
+          href="https://github.com/LucasBolla94/thecoin/blob/main/docs/WALLET_DEVELOPERS.md"
+          ><span class="resource-arrow">↗</span>
+          <h3>Build a wallet</h3>
+          <p>Key derivation, encrypted keystores, signing, and payment URIs.</p>
+          <small>WALLET_DEVELOPERS.md</small></a
+        ><a
+          class="resource-card"
+          href="https://github.com/LucasBolla94/thecoin/blob/main/docs/ARCHITECTURE.md"
+          ><span class="resource-arrow">↗</span>
+          <h3>Code architecture</h3>
+          <p>
+            Find your way through the Rust workspace and the lifecycle of a
+            block.
+          </p>
+          <small>ARCHITECTURE.md</small></a
+        ><a
+          class="resource-card"
+          href="https://github.com/LucasBolla94/thecoin/blob/main/docs/OPERATIONS.md"
+          ><span class="resource-arrow">↗</span>
+          <h3>Operate a node</h3>
+          <p>Configuration, monitoring, backups, and network operations.</p>
+          <small>OPERATIONS.md</small></a
+        ><a
+          class="resource-card"
+          href="https://github.com/LucasBolla94/thecoin/blob/main/docs/GOVERNANCE.md"
+          ><span class="resource-arrow">↗</span>
+          <h3>Governance</h3>
+          <p>Proposals, voting thresholds, miner signaling, and activation.</p>
+          <small>GOVERNANCE.md</small></a
+        >
+      </section>
+      <section class="wrap section">
+        <div class="eyebrow">NEW IN VERSION 0.2</div>
+        <h2>TCCL: build beyond payments.</h2>
+        <p class="section-copy">
+          The Coin Cloud Language adds typed smart contracts, deterministic
+          execution, fuel limits, on-chain source code, and read-only views.
+          Storage deposits are returned when space is released.
+        </p>
+        <div class="actions">
+          <a class="btn btn-primary" href="tccl.html"
+            >TCCL guide (Portuguese) ↗</a
+          ><a class="btn" href="/tccl/tccl-cookbook.pdf">English cookbook ↗</a
+          ><a
+            class="text-link"
+            href="https://github.com/LucasBolla94/thecoin/blob/main/docs/ROADMAP.md"
+            >Consensus roadmap ↗</a
+          >
+        </div>
+        <p class="faint">
+          Proof of work is active in v0.2. The hybrid and proof-of-stake phases
+          are roadmap proposals, not active consensus.
+        </p>
+      </section>
+      <section class="wrap section">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">A SIMPLE START</div>
+            <h2>Ask your node.</h2>
+          </div>
+          <p>
+            The local mainnet API listens on port 7334. Amounts are integers in
+            motes: 100,000,000 motes = 1 TCN.
+          </p>
+        </div>
+        <pre><code># Get the status of your local mainnet node
+curl http://127.0.0.1:7334/api/v1/status
 
-  <h2 id="rbf">Substituição (RBF) e alertas de gasto duplo</h2>
-  <div class="grid grid-2">
-    <div class="card">
-      <h3>Substituição opcional</h3>
-      <p class="muted">Uma transação pode ser marcada como <strong>substituível</strong> (bit <code>FLAG_REPLACEABLE</code>, campo <code>replaceable</code> no JSON). Enquanto está no mempool, o remetente pode enviar outra com o mesmo nonce e taxa pelo menos 25% maior.</p>
-      <pre><code>thecoin-wallet send tc1... 5 --replaceable --priority low
-thecoin-wallet bump-fee &lt;txid&gt;</code></pre>
-      <p class="muted" style="margin:0">Quem recebe uma transação substituível deve esperar a confirmação.</p>
-    </div>
-    <div class="card">
-      <h3>Alertas</h3>
-      <p class="muted">Uma segunda transação com o mesmo remetente e nonce de outra <strong>não</strong> substituível é recusada, registrada e repassada aos peers como tentativa de gasto duplo. Ela aparece em <code>GET /alerts</code> (<code>sender</code>, <code>nonce</code>, <code>first</code>, <code>second</code>, <code>seen_at</code>) e no campo <code>conflict</code> da transação.</p>
-      <pre><code>thecoin-wallet alerts</code></pre>
-    </div>
-  </div>
-
-  <h2 id="seguranca">Quantas confirmações esperar</h2>
-  <p class="muted" style="max-width:800px"><code>GET /security?amount=&lt;motes&gt;</code> recomenda confirmações para que desfazer o pagamento custe ao atacante pelo menos o dobro do valor em recompensas de bloco (mínimo 1, máximo 720 — o limite de reorganização). A resposta traz <code>confirmations</code>, <code>minutes</code>, <code>value_per_block</code>, <code>network_hashrate</code> e <code>explanation</code>. No terminal: <code>thecoin-wallet confirmations 250</code>; no site: <a href="explorer.html">Explorer → Quantas confirmações?</a>.</p>
-
-  <h2 id="tccl">Contratos TCCL</h2>
-  <div class="grid grid-3">
-    <a class="card" href="tccl.html"><h3>Guia em português</h3><p class="muted" style="margin:0">Primeiro contrato passo a passo, guia rápido da linguagem, taxas, combustível, depósito e privacidade.</p></a>
-    <a class="card" href="/tccl/tccl-cookbook.pdf"><h3>Cookbook (inglês)</h3><p class="muted" style="margin:0">Receitas completas e comentadas.</p></a>
-    <a class="card" href="/tccl/examples/"><h3>Exemplos</h3><p class="muted" style="margin:0">Contador, token, crowdfunding, cofrinho de gorjetas e pool de privacidade prontos para <code>tccl check</code>.</p></a>
-  </div>
-  <p class="muted" style="margin-top:14px">Ferramentas: <code>tccl check|abi|run|ring</code> (local, sem nó) e <code>thecoin-wallet contract deploy|invoke|view|program</code>. Carteiras de terceiros publicam contratos com as ações <code>deploy</code> e <code>invoke</code> descritas em PROTOCOL.md, medem combustível com <code>POST /tx/simulate</code> e leem dados com <code>POST /program/{endereço}/view</code>.</p>
-
-  <h2 id="roadmap">Roadmap</h2>
-  <p class="muted" style="max-width:800px">Fase 1 (atual): proof-of-work. Fase 2: híbrido, com validadores finalizando checkpoints a cada 120 blocos (não antes do bloco 1.250.000). Fase 3: proof-of-stake com finalidade em ~2 blocos (não antes do bloco 3.125.000). Cada fase exige aprovação da governança. <a href="index.html#roadmap">Resumo</a> · <a data-repo-link="/blob/main/docs/ROADMAP.md" href="#">ROADMAP.md</a>.</p>
-
-  <h2 id="padroes">Padrões usados</h2>
-  <div class="table-wrap">
-    <table>
-      <tbody>
-        <tr><td>Serialização canônica</td><td>Borsh (inteiros little-endian, vetores com prefixo u32)</td></tr>
-        <tr><td>Hash</td><td>BLAKE3 com separação de domínio <code>"TheCoin:" || tag || 0x00 || dados</code></td></tr>
-        <tr><td>Assinaturas</td><td>Ed25519 (RFC 8032), verificação estrita</td></tr>
-        <tr><td>Endereços</td><td>bech32m (BIP-350): <code>tc1</code> mainnet, <code>tct1</code> testnet, <code>tcr1</code> regtest — contas e contratos TCCL</td></tr>
-        <tr><td>Carteiras HD</td><td>BIP-39 + SLIP-0010, caminho <code>m/44'/7333'/conta'/0'/índice'</code></td></tr>
-        <tr><td>Keystore</td><td>Argon2id + ChaCha20-Poly1305</td></tr>
-        <tr><td>Proof of work</td><td>CoinHash = Argon2id (16 MiB, t=1, p=1) sobre o cabeçalho de 180 bytes</td></tr>
-        <tr><td>Dificuldade</td><td>LWMA-1, janela de 60 blocos, alvo de 60 s</td></tr>
-        <tr><td>HTLC</td><td>SHA-256 (compatível com Bitcoin/Lightning para swaps atômicos)</td></tr>
-        <tr><td>Contratos</td><td>TCCL (linguagem versão 1), máquina virtual determinística com combustível; interface de privacidade <code>TCCL-PRIV-1</code></td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h2>Contribuir</h2>
-  <p class="muted">Leia <a data-repo-link="/blob/main/CONTRIBUTING.md" href="#">CONTRIBUTING.md</a>, rode <code>cargo test --workspace</code> e abra um pull request. Mudanças de consenso exigem proposta de governança e atualização coordenada da rede.</p>
-</main>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <span>The Coin v0.2 · the-coin.cloud · código aberto (MIT/Apache-2.0)</span>
-    <span><a data-repo-link="" href="#">Código-fonte</a> · <a href="explorer.html">Explorer</a></span>
-  </div>
-</footer>
-<script src="assets/config.js"></script>
-<script src="assets/api.js"></script>
-</body>
+# Get recent blocks
+curl 'http://127.0.0.1:7334/api/v1/blocks?limit=10'</code></pre>
+      </section>
+      <section class="wrap section" id="contracts">
+        <div class="eyebrow">PAYMENT BUILDING BLOCKS</div>
+        <h2>Five contracts. Practical possibilities.</h2>
+        <p class="section-copy">
+          Version 0.2 includes native payment templates with bounded execution,
+          alongside TCCL smart contracts with deterministic, fuel-metered
+          execution. Fees include a base fee, size, and reserved fuel; contract
+          storage uses refundable deposits.
+        </p>
+        <div class="contract-list">
+          <article>
+            <span>01</span>
+            <h3>Escrow</h3>
+            <p>
+              Lock a payment until it is released, refunded, or resolved under
+              the agreed arbitration rules.
+            </p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>Vesting</h3>
+            <p>Release funds over time, with a cliff before the first claim.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Subscriptions</h3>
+            <p>
+              Prepay recurring periods. The recipient claims payments as they
+              become available.
+            </p>
+          </article>
+          <article>
+            <span>04</span>
+            <h3>HTLC</h3>
+            <p>
+              Use a secret and a deadline for conditional payments — a building
+              block for atomic swaps.
+            </p>
+          </article>
+          <article>
+            <span>05</span>
+            <h3>Multisig</h3>
+            <p>
+              Require approval from multiple signers before a shared vault can
+              spend.
+            </p>
+          </article>
+        </div>
+        <a
+          class="text-link"
+          href="https://github.com/LucasBolla94/thecoin/blob/main/docs/CONTRACTS.md"
+          >Read the contract rules ↗</a
+        >
+      </section>
+      <section class="wrap bottom-callout">
+        <div>
+          <h2>Make your first contribution.</h2>
+          <p>
+            Read the contribution guide, explore the issues, and help improve
+            the network.
+          </p>
+        </div>
+        <a
+          class="btn"
+          href="https://github.com/LucasBolla94/thecoin/blob/main/CONTRIBUTING.md"
+          >Contribute on GitHub ↗</a
+        >
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap footer-top">
+        <div>
+          <a class="brand" href="index.html"
+            ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+            >the coin.</a
+          >
+          <p>A small footprint. A shared future.</p>
+        </div>
+        <div class="footer-links">
+          <a href="download.html">Get started</a
+          ><a href="whitepaper.html">Whitepaper</a
+          ><a href="https://github.com/LucasBolla94/thecoin">GitHub ↗</a
+          ><a href="docs.html">Documentation</a>
+          <a href="tccl.html">TCCL</a>
+          <a href="validator.html">Validator guide</a>
+        </div>
+      </div>
+      <div class="wrap footer-bottom">
+        <span>Open source · MIT / Apache-2.0</span
+        ><span
+          >Built in Rust. Open to everyone.
+          <span class="version">v0.2</span></span
+        >
+      </div>
+    </footer>
+    <script src="assets/config.js?v=4"></script>
+    <script src="assets/api.js?v=4"></script>
+    <script src="assets/site.js?v=4"></script>
+  </body>
 </html>

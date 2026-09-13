@@ -1,227 +1,502 @@
 <!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>The Coin — dinheiro proof-of-work leve, democrático e programável</title>
-  <meta name="description" content="The Coin: blockchain proof-of-work leve para VPS pequenas. 50 milhões de TCN, sem pré-mineração, contratos inteligentes TCCL, taxas com prioridade e governança bicameral.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="assets/style.css">
-</head>
-<body>
-<header class="site-header">
-  <div class="wrap">
-    <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
-    <nav class="nav" aria-label="Principal">
-      <a href="index.html">Início</a>
-      <a href="validator.html">Validador</a>
-      <a href="download.html">Instalar</a>
-      <a href="explorer.html">Explorer</a>
-      <a href="governance.html">Governança</a>
-      <a href="tccl.html">TCCL</a>
-      <a href="docs.html">Desenvolvedores</a>
-    </nav>
-  </div>
-</header>
-
-<main>
-  <section class="wrap hero">
-    <div class="eyebrow">Versão 0.2 · contratos inteligentes TCCL · sem pré-mineração</div>
-    <h1>O dinheiro proof-of-work que roda em qualquer VPS.</h1>
-    <p class="lead">
-      The Coin é uma blockchain escrita em Rust, feita para máquinas com poucos recursos.
-      Qualquer pessoa instala um nó com um comando, ajuda a proteger a rede e concorre às
-      recompensas — com oferta limitada a <strong>50 milhões de TCN</strong>, contratos inteligentes
-      na linguagem <strong>TCCL</strong> e uma governança em que nem baleias nem mineradores decidem sozinhos.
-    </p>
-    <div class="actions">
-      <a class="btn btn-primary" href="validator.html">Seja um validador</a>
-      <a class="btn" href="tccl.html">Contratos TCCL</a>
-      <a class="btn" href="/whitepaper/the-coin-whitepaper-v0.2.pdf">Whitepaper v0.2 (PDF)</a>
-      <a class="btn" href="explorer.html">Explorar a rede</a>
-    </div>
-    <div class="card" style="margin-top:28px">
-      <h3>Validador em um comando</h3>
-      <p class="muted">Num servidor Linux (1–2 vCPU, 2–4 GB de RAM), entre por SSH e cole:</p>
-      <div class="codeblock">
-        <button class="btn btn-small" data-copy="curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes">copiar</button>
-        <pre><code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes</code></pre>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A small footprint. A shared future. — The Coin</title>
+    <meta
+      name="description"
+      content="An open proof-of-work network built for everyday computers. Discover TCN, CPU mining, payment contracts, and shared governance."
+    />
+    <meta name="theme-color" content="#f7f7f2" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/style.css?v=4" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="index.html" aria-label="The Coin home"
+          ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+          >the coin<span class="brand-period">.</span></a
+        ><button
+          class="menu-toggle"
+          aria-controls="navigation"
+          aria-expanded="false"
+          type="button"
+        >
+          Menu <span aria-hidden="true">☰</span>
+        </button>
+        <nav class="nav" id="navigation" aria-label="Main navigation">
+          <a href="index.html" aria-current="page">Overview</a
+          ><a href="explorer.html">Explorer</a
+          ><a href="governance.html">Governance</a
+          ><a href="docs.html">Developers</a
+          ><a class="nav-cta" href="download.html"
+            >Run a node <span aria-hidden="true">↗</span></a
+          >
+        </nav>
       </div>
-      <p class="faint" style="margin:0">Baixa e confere os programas, cria a carteira de recompensas, instala o serviço e começa a validar e minerar — em cerca de um minuto. <a href="validator.html">Passo a passo para iniciantes</a>.</p>
-    </div>
-  </section>
-
-  <section class="wrap">
-    <div class="section-title">
-      <h2><span id="live-dot" class="live-dot"></span>Rede ao vivo</h2>
-      <span class="faint" id="live-updated">conectando…</span>
-    </div>
-    <div class="grid grid-4" id="stats">
-      <div class="card stat"><span class="label">Altura do bloco</span><span class="value" id="s-height">—</span><span class="sub" id="s-tip">—</span></div>
-      <div class="card stat"><span class="label">Hashrate estimado</span><span class="value" id="s-hashrate">—</span><span class="sub" id="s-difficulty">—</span></div>
-      <div class="card stat"><span class="label">TCN emitidos</span><span class="value" id="s-emitted">—</span><span class="sub" id="s-emitted-pct">—</span></div>
-      <div class="card stat"><span class="label">Em circulação</span><span class="value" id="s-circulating">—</span><span class="sub" id="s-burned">—</span></div>
-      <div class="card stat"><span class="label">Recompensa por bloco</span><span class="value" id="s-reward">—</span><span class="sub" id="s-era">—</span></div>
-      <div class="card stat"><span class="label">Próximo halving</span><span class="value" id="s-halving">—</span><span class="sub" id="s-halving-eta">—</span></div>
-      <div class="card stat"><span class="label">Peers do nó</span><span class="value" id="s-peers">—</span><span class="sub" id="s-mempool">—</span></div>
-      <div class="card stat"><span class="label">Taxa de uma transferência</span><span class="value" id="s-fee">—</span><span class="sub" id="s-fee-sub">transferência de 160 bytes</span></div>
-    </div>
-    <p class="faint" id="live-error" hidden></p>
-  </section>
-
-  <section class="wrap">
-    <h2>Por que The Coin</h2>
-    <div class="grid grid-3">
-      <div class="card feature">
-        <div class="icon" aria-hidden="true">⚙️</div>
-        <h3>Leve de verdade</h3>
-        <p class="muted">Roda em VPS de 1–2 vCPU e 2–4 GB de RAM. Banco de dados embarcado (redb), blocos comprimidos com zstd, modo <em>pruned</em> opcional e compromisso de estado incremental (LtHash). Cada transação ocupa ≈ 430 bytes em disco com o índice de endereços.</p>
-      </div>
-      <div class="card feature">
-        <div class="icon" aria-hidden="true">⛏️</div>
-        <h3>Mineração com CPU</h3>
-        <p class="muted">O PoW <strong>CoinHash</strong> usa Argon2id com 16 MiB por hash: memory-hard, favorece CPUs comuns e reduz a vantagem de GPUs e ASICs. O minerador roda com prioridade mínima para não travar a máquina.</p>
-      </div>
-      <div class="card feature">
-        <div class="icon" aria-hidden="true">🧩</div>
-        <h3>Contratos inteligentes TCCL</h3>
-        <p class="muted">Uma linguagem simples, com tipos estritos e execução determinística. Cada passo gasta <em>combustível</em>, o código-fonte fica na blockchain para qualquer um conferir e o armazenamento usa um depósito reembolsável. <a href="tccl.html">Aprenda TCCL</a>.</p>
-      </div>
-      <div class="card feature">
-        <div class="icon" aria-hidden="true">🕶️</div>
-        <h3>Pagamentos privados via contratos</h3>
-        <p class="muted">A rede é transparente, mas contratos TCCL podem criar <em>pools</em> de privacidade com assinaturas em anel: você deposita de um endereço e saca em outro sem revelar qual depósito era seu. A carteira já fala o padrão <code>TCCL-PRIV-1</code>.</p>
-      </div>
-      <div class="card feature">
-        <div class="icon" aria-hidden="true">🚦</div>
-        <h3>Taxas com prioridade</h3>
-        <p class="muted">Escolha <code>--priority low|normal|high|urgent</code>. Quando os blocos passam de 50% de uso a taxa mínima sobe até 12,5% por bloco — e essa sobretaxa é <strong>queimada</strong>, então mineradores não ganham inflando taxas. Esqueceu de pagar mais? Envie com <code>--replaceable</code> e use <code>bump-fee</code>.</p>
-      </div>
-      <div class="card feature">
-        <div class="icon" aria-hidden="true">⚡</div>
-        <h3>Confirmação rápida com segurança</h3>
-        <p class="muted">O explorer e a carteira dizem quantas confirmações esperar para cada valor, e todo nó avisa na hora quando alguém tenta gastar as mesmas moedas duas vezes. Recompensas de mineração têm <em>cooldown</em>, o que desencoraja reorganizar a cadeia.</p>
-      </div>
-      <div class="card feature">
-        <div class="icon" aria-hidden="true">🔒</div>
-        <h3>Seguro por construção</h3>
-        <p class="muted">Assinaturas Ed25519 estritas, hashes BLAKE3 com separação de domínio, escolha da cadeia por trabalho acumulado, limite de reorganização de 720 blocos, raiz de estado em cada bloco e banimento de peers maliciosos.</p>
-      </div>
-      <div class="card feature">
-        <div class="icon" aria-hidden="true">🤝</div>
-        <h3>Contratos de pagamento nativos</h3>
-        <p class="muted">Escrow com árbitro, vesting com cliff, assinaturas recorrentes, HTLC para swaps atômicos e cofres multisig M-de-N, prontos na carteira, sem escrever código.</p>
-      </div>
-      <div class="card feature">
-        <div class="icon" aria-hidden="true">🗳️</div>
-        <h3>Governança bicameral</h3>
-        <p class="muted">Mudanças passam só com aprovação dos <strong>detentores</strong> (voto com moedas travadas, quórum e supermaioria) <strong>e</strong> dos <strong>validadores</strong> (sinalização nos blocos com <code>thecoin signal</code>). O teto de 50M nunca pode ser alterado.</p>
-      </div>
-    </div>
-  </section>
-
-  <section class="wrap">
-    <h2>Emissão: ciclo de estabilização de ~5 anos</h2>
-    <div class="grid grid-2">
-      <div class="card">
-        <p class="muted">Blocos a cada <strong>60 s</strong>. A recompensa começa em <strong>40 TCN</strong> e cai pela metade a cada <strong>625.000 blocos</strong> (≈ 1,19 ano). Em ≈ 4,76 anos, quatro eras emitem <strong>93,75%</strong> da oferta; depois as recompensas seguem caindo até zero e os mineradores passam a viver das taxas. A oferta total nunca ultrapassa 50.000.000 TCN.</p>
-        <div class="era-bars" role="img" aria-label="Oferta acumulada ao fim de cada era: 50%, 75%, 87,5% e 93,75% dos 50 milhões">
-          <div class="era-bar"><span>Era 1</span><div class="bar"><span style="width:50%"></span></div><span class="v">25,0 M · 50%</span></div>
-          <div class="era-bar"><span>Era 2</span><div class="bar"><span style="width:75%"></span></div><span class="v">37,5 M · 75%</span></div>
-          <div class="era-bar"><span>Era 3</span><div class="bar"><span style="width:87.5%"></span></div><span class="v">43,75 M · 87,5%</span></div>
-          <div class="era-bar"><span>Era 4</span><div class="bar"><span style="width:93.75%"></span></div><span class="v">46,875 M · 93,75%</span></div>
+    </header>
+    <main id="main">
+      <section class="wrap hero">
+        <div class="hero-copy">
+          <div class="eyebrow">
+            <span class="tiny-dot"></span> SMALL MACHINES. OPEN POSSIBILITIES.
+          </div>
+          <h1>A small footprint.<br />A <em>shared</em> future.</h1>
+          <p class="lead">
+            An open digital currency built for everyday computers. Send
+            payments, run a node, and help shape a network that belongs to its
+            participants.
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="download.html"
+              >Be part of the network <span>↗</span></a
+            ><a class="text-link" href="#how-it-works"
+              >See how it works <span>↓</span></a
+            >
+          </div>
+          <p class="hero-note">
+            <span>CPU-friendly proof of work</span><span>No premine</span
+            ><span>Open source</span>
+          </p>
         </div>
-        <p class="faint" style="margin-top:10px">Oferta acumulada ao fim de cada era (barra = % de 50 milhões).</p>
+        <div class="network-art">
+          <div class="art-meta">
+            <span><i class="tiny-dot"></i> THE POWER OF PEERS</span
+            ><span>01 / NETWORK</span>
+          </div>
+          <svg viewBox="0 0 560 430" role="img" aria-labelledby="network-title">
+            <title id="network-title">
+              Illustration of independent nodes sharing transactions across a
+              peer-to-peer network
+            </title>
+            <defs>
+              <pattern
+                id="dots"
+                width="22"
+                height="22"
+                patternUnits="userSpaceOnUse"
+              >
+                <circle cx="1" cy="1" r="1" fill="#d7d8cb" />
+              </pattern>
+            </defs>
+            <rect width="560" height="430" fill="url(#dots)" />
+            <g fill="none" stroke="#d6d7ca">
+              <circle cx="280" cy="215" r="164" />
+              <circle cx="280" cy="215" r="108" />
+              <path d="M20 215H540M280 20V410" stroke-dasharray="3 7" />
+            </g>
+            <g
+              class="network-lines"
+              fill="none"
+              stroke="#b9bca8"
+              stroke-width="1.5"
+            >
+              <path
+                d="M280 215L130 112L405 90L458 283L325 365L97 300L130 112M280 215L405 90M280 215L458 283M280 215L325 365M280 215L97 300M130 112L458 283M405 90L325 365"
+              />
+            </g>
+            <g
+              class="signal-lines"
+              fill="none"
+              stroke="#e66c31"
+              stroke-width="2"
+            >
+              <path d="M130 112L280 215L458 283" />
+              <path d="M405 90L280 215L97 300" />
+            </g>
+            <g fill="#f7f7f2" stroke="#aeb19d" stroke-width="1.5">
+              <rect x="112" y="94" width="36" height="36" rx="10" />
+              <rect x="387" y="72" width="36" height="36" rx="10" />
+              <rect x="440" y="265" width="36" height="36" rx="10" />
+              <rect x="307" y="347" width="36" height="36" rx="10" />
+              <rect x="79" y="282" width="36" height="36" rx="10" />
+            </g>
+            <g fill="#6f745c">
+              <circle cx="130" cy="112" r="5" />
+              <circle cx="405" cy="90" r="5" />
+              <circle cx="458" cy="283" r="5" />
+              <circle cx="325" cy="365" r="5" />
+              <circle cx="97" cy="300" r="5" />
+            </g>
+            <circle
+              class="central-halo"
+              cx="280"
+              cy="215"
+              r="57"
+              fill="#ef7538"
+              opacity=".12"
+            />
+            <circle cx="280" cy="215" r="42" fill="#ed7135" />
+            <text
+              x="280"
+              y="227"
+              text-anchor="middle"
+              fill="#fff"
+              font-size="37"
+              font-family="Arial,sans-serif"
+              font-weight="bold"
+              letter-spacing="-4"
+            >
+              tc
+            </text>
+            <g
+              fill="#626650"
+              font-size="10"
+              font-family="monospace"
+              letter-spacing="1"
+            >
+              <text x="104" y="151">VERIFY</text>
+              <text x="378" y="57">RELAY</text>
+              <text x="435" y="323">VERIFY</text>
+              <text x="303" y="402">MINE</text>
+              <text x="65" y="265">RELAY</text>
+            </g>
+          </svg>
+          <div class="art-footer">
+            <span
+              >Many independent nodes.<br /><strong
+                >One shared set of rules.</strong
+              ></span
+            ><button
+              class="text-button motion-toggle"
+              type="button"
+              aria-pressed="false"
+            >
+              Pause motion Ⅱ
+            </button>
+          </div>
+        </div>
+      </section>
+      <section class="wrap facts" aria-label="Protocol at a glance">
+        <div>
+          <span class="fact-value">50<span>M</span></span>
+          <p>Maximum TCN supply</p>
+        </div>
+        <div>
+          <span class="fact-value">60<span>s</span></span>
+          <p>Target block time</p>
+        </div>
+        <div>
+          <span class="fact-value">1<span>GB</span></span>
+          <p>Minimum RAM, with swap</p>
+        </div>
+        <div>
+          <span class="fact-value">0</span>
+          <p>Premined coins</p>
+        </div>
+      </section>
+      <section class="wrap section" id="why">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">01 — BUILT FOR PARTICIPATION</div>
+            <h2>You don’t need a data center<br />to make a difference.</h2>
+          </div>
+          <p>
+            The Coin keeps the essentials simple: accessible hardware,
+            predictable supply, and useful payments.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature">
+            <div class="feature-symbol" aria-hidden="true">⌘</div>
+            <span class="small-label">A LIGHTER WAY IN</span>
+            <h3>Your CPU. Your contribution.</h3>
+            <p>
+              Run a node on a modest Linux server. CoinHash uses memory-hard
+              proof of work designed with ordinary CPUs in mind.
+            </p>
+            <a class="text-link" href="download.html"
+              >Explore the requirements ↗</a
+            >
+          </article>
+          <article class="feature">
+            <div class="feature-symbol coin-symbol" aria-hidden="true">50</div>
+            <span class="small-label">RULES YOU CAN VERIFY</span>
+            <h3>Limited by design.</h3>
+            <p>
+              No premine or founder allocation. New TCN comes from mining, with
+              rewards that halve every 625,000 blocks.
+            </p>
+            <a class="text-link" href="#supply">Understand the supply ↗</a>
+          </article>
+          <article class="feature">
+            <div class="feature-symbol" aria-hidden="true">⇄</div>
+            <span class="small-label">PAYMENTS WITH PURPOSE</span>
+            <h3>More than a transfer.</h3>
+            <p>
+              Built-in contracts support escrow, vesting, subscriptions,
+              atomic-swap building blocks, and shared multisig vaults. Version
+              0.2 also adds programmable TCCL contracts.
+            </p>
+            <a class="text-link" href="docs.html#contracts"
+              >Discover payment contracts ↗</a
+            >
+          </article>
+        </div>
+      </section>
+      <section class="how-section" id="how-it-works">
+        <div class="wrap section">
+          <div class="section-heading">
+            <div>
+              <div class="eyebrow">02 — FROM YOU TO THE NETWORK</div>
+              <h2>A payment’s journey.<br />No middleman required.</h2>
+            </div>
+            <p>
+              Every node checks the same rules independently. Here’s how a
+              signed payment becomes part of the shared chain.
+            </p>
+          </div>
+          <div class="journey">
+            <div class="journey-track" aria-hidden="true">
+              <div class="journey-node" data-node="0">↗</div>
+              <span></span>
+              <div class="journey-node" data-node="1">✓</div>
+              <span></span>
+              <div class="journey-node" data-node="2">▦</div>
+              <span></span>
+              <div class="journey-node" data-node="3">⇄</div>
+            </div>
+            <div class="journey-steps">
+              <button
+                type="button"
+                class="journey-step active"
+                data-step="0"
+                aria-pressed="true"
+              >
+                <span>01 / SIGN</span
+                ><strong>You send a payment</strong></button
+              ><button
+                type="button"
+                class="journey-step"
+                data-step="1"
+                aria-pressed="false"
+              >
+                <span>02 / VERIFY</span
+                ><strong>Nodes check the rules</strong></button
+              ><button
+                type="button"
+                class="journey-step"
+                data-step="2"
+                aria-pressed="false"
+              >
+                <span>03 / MINE</span
+                ><strong>A miner finds a block</strong></button
+              ><button
+                type="button"
+                class="journey-step"
+                data-step="3"
+                aria-pressed="false"
+              >
+                <span>04 / SHARE</span><strong>The network verifies it</strong>
+              </button>
+            </div>
+            <div class="journey-caption">
+              <p id="journey-description" aria-live="polite">
+                Your wallet signs the transaction locally. Your private keys
+                stay with you.
+              </p>
+              <button class="btn btn-small" id="play-journey" type="button">
+                Play the journey ↗
+              </button>
+            </div>
+            <p class="simulation-label">
+              Illustration of the protocol · not live network activity
+            </p>
+          </div>
+        </div>
+      </section>
+      <section class="wrap section supply-section" id="supply">
+        <div>
+          <div class="eyebrow">03 — A PREDICTABLE SUPPLY</div>
+          <h2>50 million.<br />A limit, not a target<br />to move.</h2>
+          <p class="section-copy">
+            The initial reward is 40 TCN per block. It halves every 625,000
+            blocks, gradually slowing new issuance. The supply cap and emission
+            schedule cannot be changed by an on-chain vote.
+          </p>
+          <a class="text-link" href="whitepaper.html"
+            >Read the monetary policy ↗</a
+          >
+        </div>
+        <div class="supply-chart">
+          <div class="chart-heading">
+            <span>CUMULATIVE ISSUANCE</span><span>Share of the 50M cap</span>
+          </div>
+          <div class="bars">
+            <div>
+              <span>50%</span><i style="--bar: 50%"></i><small>Era 1</small>
+            </div>
+            <div>
+              <span>75%</span><i style="--bar: 75%"></i><small>Era 2</small>
+            </div>
+            <div>
+              <span>87.5%</span><i style="--bar: 87.5%"></i><small>Era 3</small>
+            </div>
+            <div>
+              <span>93.75%</span><i style="--bar: 93.75%"></i
+              ><small>Era 4</small>
+            </div>
+          </div>
+          <p>
+            93.75% issued over the first four eras — roughly 4.75 years at the
+            target block time. Issuance continues at decreasing rates afterward.
+          </p>
+        </div>
+      </section>
+      <section class="wrap governance-banner">
+        <div>
+          <div class="eyebrow">04 — TWO VOICES. ONE DECISION.</div>
+          <h2>Shape what comes next.<br />Together.</h2>
+          <p>
+            Holders vote with locked TCN. Miners signal support in their blocks.
+            Protocol proposals need both chambers to pass.
+          </p>
+          <a class="btn" href="governance.html">How governance works ↗</a>
+        </div>
+        <div
+          class="vote-visual"
+          aria-label="Holders and miners must both approve a proposal"
+        >
+          <span>HOLDERS</span><span>+</span><span>MINERS</span>
+          <div class="vote-lines" aria-hidden="true"></div>
+          <strong>Shared approval <span>✓</span></strong>
+        </div>
+      </section>
+      <section class="wrap section">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">EXPLORE THE NETWORK</div>
+            <h2>Open by nature.<br />Verifiable by anyone.</h2>
+          </div>
+          <a class="text-link" href="explorer.html">Open the explorer ↗</a>
+        </div>
+        <div class="network-status">
+          <p>
+            <span id="live-dot" class="live-dot"></span
+            ><strong id="live-updated">Checking network data…</strong>
+          </p>
+          <span id="live-error"
+            >Live data is read directly from the node API.</span
+          >
+        </div>
+        <div class="grid grid-4 live-stats">
+          <div class="stat">
+            <span class="label">Block height</span
+            ><strong id="s-height">—</strong>
+          </div>
+          <div class="stat">
+            <span class="label">Estimated hashrate</span
+            ><strong id="s-hashrate">—</strong>
+          </div>
+          <div class="stat">
+            <span class="label">TCN issued</span
+            ><strong id="s-emitted">—</strong>
+          </div>
+          <div class="stat">
+            <span class="label">Node peers</span><strong id="s-peers">—</strong>
+          </div>
+        </div>
+      </section>
+      <section class="wrap paper-banner">
+        <div class="paper-cover" aria-hidden="true">
+          <span>THE COIN<br />RESEARCH / 001</span>
+          <div class="paper-orbit"></div>
+          <strong>The foundations<br />of an open network.</strong
+          ><small>WHITEPAPER · V0.2</small>
+        </div>
+        <div>
+          <div class="eyebrow">GO A LITTLE DEEPER</div>
+          <h2>The thinking<br />behind The Coin.</h2>
+          <p>
+            Explore the consensus rules, monetary policy, payment contracts, and
+            governance that make the network work.
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="whitepaper.html"
+              >Explore the whitepaper ↗</a
+            ><a
+              class="text-link"
+              href="/whitepaper/the-coin-whitepaper-v0.2.pdf"
+              download
+              >Download PDF ↓</a
+            >
+          </div>
+          <small>Version 0.2 · Original document in Portuguese · PDF</small>
+        </div>
+      </section>
+      <section class="wrap section faq">
+        <div>
+          <div class="eyebrow">A FEW GOOD QUESTIONS</div>
+          <h2>Start with<br />the basics.</h2>
+        </div>
+        <div>
+          <details>
+            <summary>What is The Coin?</summary>
+            <p>
+              The Coin is an open-source, peer-to-peer digital currency.
+              Independent computers verify payments and use proof of work to
+              agree on a shared transaction history. Its currency is called TCN.
+            </p>
+          </details>
+          <details>
+            <summary>Do I need special mining hardware?</summary>
+            <p>
+              The node is designed for ordinary CPUs on Linux, starting at 1
+              vCPU and 1 GB RAM with swap. Mining rewards depend on your share
+              of the network’s work; running a node does not guarantee rewards.
+            </p>
+          </details>
+          <details>
+            <summary>Can I participate without mining?</summary>
+            <p>
+              Yes. Run a validating node with the installer’s
+              <code>--no-mine</code> option, build a wallet or integration,
+              contribute code, or take part in governance if you hold TCN.
+            </p>
+          </details>
+          <details>
+            <summary>Is there a browser wallet?</summary>
+            <p>
+              Version 0.2 provides a command-line reference wallet. Graphical
+              and web wallets are roadmap items. This website does not create
+              wallets or hold your private keys.
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap footer-top">
+        <div>
+          <a class="brand" href="index.html"
+            ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+            >the coin.</a
+          >
+          <p>A small footprint. A shared future.</p>
+        </div>
+        <div class="footer-links">
+          <a href="download.html">Get started</a
+          ><a href="whitepaper.html">Whitepaper</a
+          ><a href="https://github.com/LucasBolla94/thecoin">GitHub ↗</a
+          ><a href="docs.html">Documentation</a>
+          <a href="tccl.html">TCCL</a>
+          <a href="validator.html">Validator guide</a>
+        </div>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Era</th><th>Blocos</th><th class="num">Recompensa</th><th class="num">Emitido na era</th><th class="num">Fim ≈</th></tr></thead>
-          <tbody>
-            <tr><td>1</td><td class="mono">1 – 625.000</td><td class="num">40 TCN</td><td class="num">25.000.000</td><td class="num">1,19 ano</td></tr>
-            <tr><td>2</td><td class="mono">625.001 – 1.250.000</td><td class="num">20 TCN</td><td class="num">12.500.000</td><td class="num">2,38 anos</td></tr>
-            <tr><td>3</td><td class="mono">1.250.001 – 1.875.000</td><td class="num">10 TCN</td><td class="num">6.250.000</td><td class="num">3,57 anos</td></tr>
-            <tr><td>4</td><td class="mono">1.875.001 – 2.500.000</td><td class="num">5 TCN</td><td class="num">3.125.000</td><td class="num">4,76 anos</td></tr>
-            <tr><td>5+</td><td class="mono">2.500.001 – …</td><td class="num">2,5 → 0</td><td class="num">&lt; 3.125.000</td><td class="num">cauda</td></tr>
-          </tbody>
-        </table>
+      <div class="wrap footer-bottom">
+        <span>Open source · MIT / Apache-2.0</span
+        ><span
+          >Built in Rust. Open to everyone.
+          <span class="version">v0.2</span></span
+        >
       </div>
-    </div>
-    <p class="faint">Recompensas de mineração passam por um <em>cooldown</em>: 25% ficam disponíveis após 100 blocos e o restante após 1.000 blocos — mais que o limite de reorganização de 720 blocos. O bloco gênese não tem recompensa e não existe pré-mineração.</p>
-  </section>
-
-  <section class="wrap">
-    <h2>Recebendo pagamentos? Confirme rápido e com segurança</h2>
-    <div class="grid grid-2">
-      <div class="card">
-        <ol class="steps">
-          <li><strong>Veja quantas confirmações esperar</strong> — no <a href="explorer.html">Explorer</a> (“Quantas confirmações?”) ou com <code>thecoin-wallet confirmations 250</code>. Valores pequenos precisam de poucos blocos; valores grandes, de mais.</li>
-          <li><strong>Desconfie de “substituível”</strong> — uma transação enviada com <code>--replaceable</code> ainda pode ter a taxa trocada. Espere ao menos 1 confirmação.</li>
-          <li><strong>Olhe os alertas de gasto duplo</strong> — se o remetente tentou gastar as mesmas moedas duas vezes, o explorer mostra o aviso na transação e em <code>thecoin-wallet alerts</code>.</li>
-        </ol>
-      </div>
-      <div class="card">
-        <h3>Enviando? Escolha a prioridade</h3>
-        <pre><code># padrão: normal (mínimo + 25%)
-thecoin-wallet send tc1... 12.5
-
-# pressa: urgente; sem pressa: low
-thecoin-wallet send tc1... 12.5 --priority urgent
-
-# permitir aumentar a taxa depois
-thecoin-wallet send tc1... 12.5 --replaceable
-thecoin-wallet bump-fee &lt;txid&gt;
-
-# taxas agora
-thecoin-wallet fees</code></pre>
-      </div>
-    </div>
-  </section>
-
-  <section class="wrap" id="roadmap">
-    <h2>Roadmap: PoW → Híbrido → PoS</h2>
-    <p class="muted" style="max-width:800px">A The Coin nasce em prova de trabalho para distribuir as moedas de forma justa, ganha depois finalidade por participação (stake) e, quando a emissão já estiver quase toda distribuída, passa a prova de participação com confirmações em segundos — sempre com hardware modesto (2 vCPU / 4 GB). <strong>Cada transição só acontece com aprovação da governança bicameral</strong> e após testes públicos; nada disso está ativo na versão 0.2.</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th></th><th>Fase 1 — PoW (atual)</th><th>Fase 2 — Híbrido</th><th>Fase 3 — PoS</th></tr></thead>
-        <tbody>
-          <tr><td>Quem produz blocos</td><td>mineradores (CoinHash)</td><td>mineradores (CoinHash)</td><td>validadores com stake, em rodízio</td></tr>
-          <tr><td>Quem finaliza</td><td>ninguém (probabilístico, reorg máx. 720)</td><td>validadores votam checkpoints a cada 120 blocos</td><td>validadores (BFT) a cada bloco</td></tr>
-          <tr><td>Tempo até irreversível</td><td>~1 h a 12 h, conforme o valor</td><td>≤ 2 épocas (~4 h), depois nunca reverte</td><td>~2 blocos</td></tr>
-          <tr><td>Tempo de bloco</td><td>60 s</td><td>60 s</td><td>10 s (parâmetro de governança)</td></tr>
-          <tr><td>Recompensa</td><td>100% mineradores</td><td>dividida (de 90/10 até 50/50)</td><td>100% validadores</td></tr>
-          <tr><td>Mais cedo possível</td><td>bloco 0</td><td>bloco 1.250.000 (~2,4 anos)</td><td>bloco 3.125.000 (~5,9 anos)</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="faint" style="margin-top:10px">Em nenhuma fase mudam o teto de 50.000.000 TCN, o cronograma de emissão, os endereços, as carteiras ou a linguagem TCCL. Detalhes, condições de ativação e riscos: <a data-repo-link="/blob/main/docs/ROADMAP.md" href="#">ROADMAP.md</a>.</p>
-  </section>
-
-  <section class="wrap">
-    <h2>Participe em 3 passos</h2>
-    <ol class="steps">
-      <li><strong>Instale o nó</strong> — <code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes</code> baixa, confere, cria a carteira e inicia o serviço. Também instala <code>thecoin-wallet</code> e a ferramenta de contratos <code>tccl</code>.</li>
-      <li><strong>Guarde as 24 palavras</strong> — aparecem no final da instalação. Anote no papel: elas são a sua carteira.</li>
-      <li><strong>Minere, pague e programe</strong> — o nó sincroniza e minera para o seu endereço; você já pode enviar TCN, votar e publicar contratos TCCL.</li>
-    </ol>
-    <div class="grid grid-3" style="margin-top:24px">
-      <a class="card" href="/tccl/tccl-cookbook.pdf"><h3>TCCL Cookbook (PDF, inglês)</h3><p class="muted" style="margin:0">Receitas prontas de contratos: tokens, crowdfunding, pools de privacidade e mais.</p></a>
-      <a class="card" href="/whitepaper/the-coin-whitepaper-v0.2.pdf"><h3>Whitepaper v0.2</h3><p class="muted" style="margin:0">Design, economia, taxas, contratos, segurança e roadmap. <span class="faint">Versão anterior: v0.1 (link abaixo).</span></p></a>
-      <a class="card" href="docs.html"><h3>Desenvolvedores</h3><p class="muted" style="margin:0">API REST, protocolo, carteiras, TCCL e governança.</p></a>
-    </div>
-    <p class="faint" style="margin-top:12px">Whitepaper anterior: <a href="/whitepaper/the-coin-whitepaper-v0.1.pdf">versão 0.1 (PDF)</a>.</p>
-    <p style="margin-top:20px"><a class="btn btn-primary" href="validator.html">Guia do validador</a> <a class="btn" href="download.html">Instalação completa</a></p>
-  </section>
-</main>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <span>The Coin v0.2 · the-coin.cloud · código aberto (MIT/Apache-2.0)</span>
-    <span><a data-repo-link="" href="#">Código-fonte</a> · <a href="/whitepaper/the-coin-whitepaper-v0.2.pdf">Whitepaper v0.2</a> · <a href="tccl.html">TCCL</a> · <a href="docs.html">API</a></span>
-  </div>
-</footer>
-
-<script src="assets/config.js"></script>
-<script src="assets/api.js"></script>
-<script src="assets/home.js"></script>
-</body>
+    </footer>
+    <script src="assets/config.js?v=4"></script>
+    <script src="assets/api.js?v=4"></script>
+    <script src="assets/site.js?v=4"></script>
+    <script src="assets/home.js?v=4"></script>
+  </body>
 </html>

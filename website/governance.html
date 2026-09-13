@@ -1,105 +1,140 @@
 <!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Governança — The Coin</title>
-  <meta name="description" content="Propostas e votações on-chain da rede The Coin: detentores e mineradores decidem juntos.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="assets/style.css">
-</head>
-<body>
-<header class="site-header">
-  <div class="wrap">
-    <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
-    <nav class="nav" aria-label="Principal">
-      <a href="index.html">Início</a>
-      <a href="validator.html">Validador</a>
-      <a href="download.html">Instalar</a>
-      <a href="explorer.html">Explorer</a>
-      <a href="governance.html">Governança</a>
-      <a href="tccl.html">TCCL</a>
-      <a href="docs.html">Desenvolvedores</a>
-    </nav>
-  </div>
-</header>
-
-<main class="wrap">
-  <div id="view" aria-live="polite"><p class="loading">Carregando propostas…</p></div>
-
-  <h2 id="como-participar">Como participar</h2>
-  <div class="grid grid-2">
-    <div class="card">
-      <h3>Duas câmaras, uma decisão</h3>
-      <p class="muted">Uma proposta só é aprovada quando, ao fim do período de votação:</p>
-      <ol class="muted">
-        <li><strong>Detentores</strong>: os votos (em TCN travados) atingem o <em>quórum</em> sobre a oferta circulante e o “sim” alcança a supermaioria de <em>sim / (sim + não)</em>;</li>
-        <li><strong>Mineradores</strong>: a fração de blocos que sinalizaram apoio durante a votação alcança o mínimo exigido.</li>
-      </ol>
-      <p class="muted">Aprovada, a mudança é ativada automaticamente depois do <em>atraso de ativação</em> — tempo para todos atualizarem. O depósito da proposta volta ao autor se houver quórum; sem quórum ele é queimado (anti-spam).</p>
-      <p class="muted" style="margin:0">A governança altera apenas parâmetros dentro de limites fixos (taxas, depósito de armazenamento, limites de bloco, regras de votação). <strong>O teto de 50 milhões, a emissão e o algoritmo de PoW nunca podem ser mudados por votação.</strong></p>
-    </div>
-    <div class="card">
-      <h3>Detentores: votar e propor</h3>
-      <pre><code># listar e ver propostas
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shared governance — The Coin</title>
+    <meta
+      name="description"
+      content="Understand how TCN holders and miners vote together on changes to The Coin."
+    />
+    <meta name="theme-color" content="#f7f7f2" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/style.css?v=4" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="index.html" aria-label="The Coin home"
+          ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+          >the coin<span class="brand-period">.</span></a
+        ><button
+          class="menu-toggle"
+          aria-controls="navigation"
+          aria-expanded="false"
+          type="button"
+        >
+          Menu <span aria-hidden="true">☰</span>
+        </button>
+        <nav class="nav" id="navigation" aria-label="Main navigation">
+          <a href="index.html">Overview</a><a href="explorer.html">Explorer</a
+          ><a href="governance.html" aria-current="page">Governance</a
+          ><a href="docs.html">Developers</a
+          ><a class="nav-cta" href="download.html"
+            >Run a node <span aria-hidden="true">↗</span></a
+          >
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <section class="wrap page-intro">
+        <div class="eyebrow">TWO CHAMBERS. A SHARED FUTURE.</div>
+        <h1>A voice on both sides.</h1>
+        <p class="lead">
+          The network evolves through on-chain proposals. Holders and miners
+          must both approve — neither chamber decides alone.
+        </p>
+      </section>
+      <section class="wrap grid grid-2">
+        <article class="card chamber">
+          <span class="small-label">01 / HOLDERS</span>
+          <h2>Coins carry a vote.</h2>
+          <p>
+            Holders lock TCN until voting ends. Under mainnet defaults,
+            participation must reach a 10% quorum and yes votes must reach
+            66.67% of yes + no votes.
+          </p>
+        </article>
+        <article class="card chamber">
+          <span class="small-label">02 / MINERS</span>
+          <h2>Blocks carry support.</h2>
+          <p>
+            Miners signal support in the blocks they produce. Under mainnet
+            defaults, at least 60% of blocks in the voting period must support
+            the proposal.
+          </p>
+        </article>
+      </section>
+      <section class="wrap section">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">ON-CHAIN ACTIVITY</div>
+            <h2>Proposals &amp; decisions.</h2>
+          </div>
+        </div>
+        <div id="view" aria-live="polite">
+          <p class="loading">Loading proposals…</p>
+        </div>
+      </section>
+      <section class="wrap bottom-callout">
+        <div>
+          <h2>Some rules stay fixed.</h2>
+          <p>
+            On-chain votes cannot change the 50 million TCN cap, emission
+            schedule, or proof-of-work algorithm. Approved changes follow an
+            activation delay.
+          </p>
+        </div>
+        <a
+          class="btn"
+          href="https://github.com/LucasBolla94/thecoin/blob/main/docs/GOVERNANCE.md"
+          >Read the governance guide ↗</a
+        >
+      </section>
+      <section class="wrap section">
+        <h2>Take part from your wallet.</h2>
+        <p>
+          Review a proposal before voting. Voting locks the selected coin amount
+          until the voting period ends.
+        </p>
+        <pre><code># List proposals and inspect one
 thecoin-wallet gov list
-thecoin-wallet gov show &lt;id&gt;
+thecoin-wallet gov show &lt;proposal-id&gt;
 
-# votar (o peso fica travado até o fim da votação)
-thecoin-wallet gov vote &lt;id&gt; yes 150
-thecoin-wallet gov vote &lt;id&gt; no 20
-thecoin-wallet gov vote &lt;id&gt; abstain 5
-
-# propor mudança de parâmetro (valores em motes ou bp)
-thecoin-wallet gov propose \
-  --title "Taxa por kB de 0,0002 TCN" \
-  --url https://the-coin.cloud/propostas/taxa-kb \
-  --text-file proposta.md \
-  --set-param fee_per_kb=20000
-
-# proposta de texto ou de atualização de software
-thecoin-wallet gov propose --title "Roadmap 2027" --text-file roadmap.md
-thecoin-wallet gov propose --title "Versão 0.3.0" \
-  --upgrade-version 0.3.0 --release-hash &lt;sha256&gt;</code></pre>
-    </div>
-  </div>
-
-  <h2 id="sinalizar">Validadores: sinalizar apoio</h2>
-  <div class="grid grid-2">
-    <div class="card">
-      <h3>Com o instalador de uma linha</h3>
-      <p class="muted">Quem instalou o nó com <code>install.sh</code> usa o comando <code>thecoin</code>. Ele grava o id em <code>/etc/thecoin/thecoind.toml</code> e reinicia o nó; a partir daí cada bloco que você minerar sinaliza apoio.</p>
-      <pre><code>thecoin signals            # propostas abertas e as que você apoia
-sudo thecoin signal &lt;id&gt;     # apoiar uma proposta
-sudo thecoin unsignal &lt;id&gt;   # retirar o apoio</code></pre>
-    </div>
-    <div class="card">
-      <h3>Nó configurado à mão</h3>
-      <p class="muted">Passe o id na linha de comando (pode repetir) ou no arquivo de configuração:</p>
-      <pre><code>thecoind --signal &lt;id da proposta&gt;
-
-# ou em thecoind.toml
-[mining]
-signal = ["&lt;id da proposta&gt;"]</code></pre>
-      <p class="muted" style="margin:0">Só blocos minerados durante a votação contam. Um nó que não minera não sinaliza.</p>
-    </div>
-  </div>
-
-  <h2 id="roadmap">Roadmap de consenso</h2>
-  <div class="card">
-    <p class="muted">As próximas grandes mudanças — <strong>PoW → híbrido PoW/PoS → PoS</strong> — também passam por aqui: cada fase só é ativada por uma proposta <code>software_upgrade</code> aprovada pelos detentores <strong>e</strong> sinalizada pelos mineradores, e só depois de alturas mínimas e testes públicos.</p>
-    <p style="margin:0"><a class="btn btn-small" href="index.html#roadmap">Resumo das 3 fases</a> <a class="btn btn-small" data-repo-link="/blob/main/docs/ROADMAP.md" href="#">ROADMAP.md completo</a></p>
-  </div>
-</main>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <span>The Coin · governança on-chain</span>
-    <span><a data-repo-link="/blob/main/docs/GOVERNANCE.md" href="#">GOVERNANCE.md</a> · <a data-repo-link="/blob/main/docs/ROADMAP.md" href="#">ROADMAP.md</a> · <a href="explorer.html">Explorer</a></span>
-  </div>
-</footer>
-<script src="assets/config.js"></script>
-<script src="assets/api.js"></script>
-<script src="assets/governance.js"></script>
-</body>
+# Vote yes with a weight of 150 TCN
+thecoin-wallet gov vote &lt;proposal-id&gt; yes 150</code></pre>
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap footer-top">
+        <div>
+          <a class="brand" href="index.html"
+            ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+            >the coin.</a
+          >
+          <p>A small footprint. A shared future.</p>
+        </div>
+        <div class="footer-links">
+          <a href="download.html">Get started</a
+          ><a href="whitepaper.html">Whitepaper</a
+          ><a href="https://github.com/LucasBolla94/thecoin">GitHub ↗</a
+          ><a href="docs.html">Documentation</a>
+          <a href="tccl.html">TCCL</a>
+          <a href="validator.html">Validator guide</a>
+        </div>
+      </div>
+      <div class="wrap footer-bottom">
+        <span>Open source · MIT / Apache-2.0</span
+        ><span
+          >Built in Rust. Open to everyone.
+          <span class="version">v0.2</span></span
+        >
+      </div>
+    </footer>
+    <script src="assets/config.js?v=4"></script>
+    <script src="assets/api.js?v=4"></script>
+    <script src="assets/site.js?v=4"></script>
+    <script src="assets/governance.js?v=4"></script>
+  </body>
 </html>

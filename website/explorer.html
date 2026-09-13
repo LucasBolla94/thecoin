@@ -1,47 +1,103 @@
 <!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Explorer — The Coin</title>
-  <meta name="description" content="Explorador de blocos da rede The Coin: blocos, transações, endereços, contratos TCCL, taxas e alertas de gasto duplo.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="assets/style.css">
-</head>
-<body>
-<header class="site-header">
-  <div class="wrap">
-    <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
-    <nav class="nav" aria-label="Principal">
-      <a href="index.html">Início</a>
-      <a href="validator.html">Validador</a>
-      <a href="download.html">Instalar</a>
-      <a href="explorer.html">Explorer</a>
-      <a href="governance.html">Governança</a>
-      <a href="tccl.html">TCCL</a>
-      <a href="docs.html">Desenvolvedores</a>
-    </nav>
-  </div>
-</header>
-
-<main class="wrap">
-  <form class="searchbar" id="search" role="search">
-    <input id="q" type="search" autocomplete="off" spellcheck="false"
-           placeholder="Altura, hash, txid, endereço ou contrato tc1…, id de proposta"
-           aria-label="Buscar na blockchain">
-    <button class="btn btn-primary" type="submit">Buscar</button>
-  </form>
-  <div id="view" aria-live="polite"><p class="loading">Carregando…</p></div>
-</main>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <span>The Coin Explorer · dados lidos diretamente dos nós da rede</span>
-    <span><a href="#/">Blocos, taxas e alertas</a> · <a href="#/mempool">Mempool</a> · <a href="governance.html">Governança</a> · <a href="tccl.html">Contratos TCCL</a></span>
-  </div>
-</footer>
-<script src="assets/config.js"></script>
-<script src="assets/api.js"></script>
-<script src="assets/explorer.js"></script>
-</body>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Network explorer — The Coin</title>
+    <meta
+      name="description"
+      content="Explore The Coin blocks, transactions, addresses, and payment contracts."
+    />
+    <meta name="theme-color" content="#f7f7f2" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/style.css?v=4" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="index.html" aria-label="The Coin home"
+          ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+          >the coin<span class="brand-period">.</span></a
+        ><button
+          class="menu-toggle"
+          aria-controls="navigation"
+          aria-expanded="false"
+          type="button"
+        >
+          Menu <span aria-hidden="true">☰</span>
+        </button>
+        <nav class="nav" id="navigation" aria-label="Main navigation">
+          <a href="index.html">Overview</a
+          ><a href="explorer.html" aria-current="page">Explorer</a
+          ><a href="governance.html">Governance</a
+          ><a href="docs.html">Developers</a
+          ><a class="nav-cta" href="download.html"
+            >Run a node <span aria-hidden="true">↗</span></a
+          >
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <section class="wrap page-intro">
+        <div class="eyebrow">VERIFY IT FOR YOURSELF</div>
+        <h1>The network, in the open.</h1>
+        <p class="lead">
+          Find a block, follow a payment, or look up an address. Data comes
+          directly from the network’s node API.
+        </p>
+      </section>
+      <section class="wrap explorer-content">
+        <form class="searchbar" id="search" role="search">
+          <label class="sr-only" for="q"
+            >Block height, hash, transaction ID, address, or contract ID</label
+          ><input
+            id="q"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Search a block, transaction, or tc1… address"
+            required
+          /><button class="btn btn-primary" type="submit">Search ↗</button>
+        </form>
+        <div class="explorer-tabs">
+          <a href="#/">Latest blocks</a
+          ><a href="#/mempool">Pending transactions</a>
+        </div>
+        <div id="view" aria-live="polite">
+          <p class="loading">Connecting to the network…</p>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap footer-top">
+        <div>
+          <a class="brand" href="index.html"
+            ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+            >the coin.</a
+          >
+          <p>A small footprint. A shared future.</p>
+        </div>
+        <div class="footer-links">
+          <a href="download.html">Get started</a
+          ><a href="whitepaper.html">Whitepaper</a
+          ><a href="https://github.com/LucasBolla94/thecoin">GitHub ↗</a
+          ><a href="docs.html">Documentation</a>
+          <a href="tccl.html">TCCL</a>
+          <a href="validator.html">Validator guide</a>
+        </div>
+      </div>
+      <div class="wrap footer-bottom">
+        <span>Open source · MIT / Apache-2.0</span
+        ><span
+          >Built in Rust. Open to everyone.
+          <span class="version">v0.2</span></span
+        >
+      </div>
+    </footer>
+    <script src="assets/config.js?v=4"></script>
+    <script src="assets/api.js?v=4"></script>
+    <script src="assets/site.js?v=4"></script>
+    <script src="assets/explorer.js?v=4"></script>
+  </body>
 </html>

@@ -24,6 +24,22 @@ website/
     └── snippets/thecoin-proxy.conf
 ```
 
+## Redesign (September 2026)
+
+The public website defaults to English, including explorer/governance labels,
+number formatting, and API outage messages. No build is required.
+
+- `whitepaper.html` introduces the paper in English and links to the unchanged
+  original Portuguese PDF, with separate read and download actions.
+- `assets/site.js` controls the mobile menu, motion toggle, and four-step
+  transaction demonstration. Illustrations are explicitly labeled, never live data.
+- Motion honors `prefers-reduced-motion`; the journey also supports manual steps.
+- Inter is served locally; its OFL license is in `assets/inter-LICENSE.txt`.
+- API errors show an unavailable state, with retry actions in the explorer and
+  governance. The homepage clears stale statistics when a refresh fails.
+- Static assets use a version query on entry pages to avoid the previous CSS/JS
+  remaining cached after deployment. Increment it when publishing future changes.
+
 ## Arquitetura
 
 ```

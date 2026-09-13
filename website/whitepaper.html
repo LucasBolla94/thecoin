@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Read the whitepaper — The Coin</title>
+    <meta
+      name="description"
+      content="Read about The Coin consensus, supply, payment contracts, and governance. Open or download the original whitepaper PDF."
+    />
+    <meta name="theme-color" content="#f7f7f2" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/style.css?v=4" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="index.html" aria-label="The Coin home"
+          ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+          >the coin<span class="brand-period">.</span></a
+        ><button
+          class="menu-toggle"
+          aria-controls="navigation"
+          aria-expanded="false"
+          type="button"
+        >
+          Menu <span aria-hidden="true">☰</span>
+        </button>
+        <nav class="nav" id="navigation" aria-label="Main navigation">
+          <a href="index.html">Overview</a><a href="explorer.html">Explorer</a
+          ><a href="governance.html">Governance</a
+          ><a href="docs.html">Developers</a
+          ><a class="nav-cta" href="download.html"
+            >Run a node <span aria-hidden="true">↗</span></a
+          >
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <section class="wrap page-intro">
+        <div class="eyebrow">THE COIN / WHITEPAPER V0.2</div>
+        <h1>Understand the foundations.</h1>
+        <p class="lead">
+          The design of a lightweight proof-of-work currency, from the first
+          signed payment to the rules that govern its future.
+        </p>
+        <div class="actions">
+          <a
+            class="btn btn-primary"
+            href="/whitepaper/the-coin-whitepaper-v0.2.pdf"
+            target="_blank"
+            rel="noopener"
+            >Read PDF <span class="sr-only">in a new tab</span> ↗</a
+          ><a
+            class="btn"
+            href="/whitepaper/the-coin-whitepaper-v0.2.pdf"
+            download="the-coin-whitepaper-v0.2.pdf"
+            >Download PDF ↓</a
+          >
+        </div>
+        <p class="faint">
+          Original whitepaper in Portuguese · September 2026 · Version 0.2 · PDF
+        </p>
+      </section>
+      <section class="wrap paper-summary">
+        <div class="paper-cover" aria-hidden="true">
+          <span>THE COIN<br />RESEARCH / 001</span>
+          <div class="paper-orbit"></div>
+          <strong>The foundations<br />of an open network.</strong
+          ><small>WHITEPAPER · V0.2</small>
+        </div>
+        <div>
+          <div class="eyebrow">AN ENGLISH INTRODUCTION</div>
+          <h2>What’s inside?</h2>
+          <p>
+            The Coin aims to make participation possible on modest computers.
+            Nodes independently verify transactions, while miners use CoinHash,
+            an Argon2id-based proof of work, to propose blocks.
+          </p>
+          <p>
+            The protocol caps supply at 50 million TCN, with no premine. Block
+            rewards halve every 625,000 blocks. Built-in payment contracts cover
+            practical uses. Version 0.2 also adds TCCL smart contracts with
+            deterministic, fuel-metered execution and refundable storage
+            deposits.
+          </p>
+          <p>
+            On-chain governance combines coin-holder votes with miner signaling.
+            Proposals must meet both chambers’ requirements; the supply cap and
+            emission schedule are outside the scope of those votes.
+          </p>
+          <p class="faint">
+            This introduction summarizes the document. The repository’s protocol
+            specification and implementation define the exact rules.
+          </p>
+        </div>
+      </section>
+      <section class="wrap section">
+        <h2>Inside the paper</h2>
+        <div class="grid grid-3">
+          <div class="card">
+            <span class="small-label">THE NETWORK</span>
+            <h3>Consensus &amp; storage</h3>
+            <p>
+              CoinHash, block validation, peer discovery, state commitments, and
+              compact storage.
+            </p>
+          </div>
+          <div class="card">
+            <span class="small-label">THE CURRENCY</span>
+            <h3>Supply &amp; payments</h3>
+            <p>
+              Issuance, halvings, fees, wallet standards, and five native
+              payment contracts.
+            </p>
+          </div>
+          <div class="card">
+            <span class="small-label">THE FUTURE</span>
+            <h3>Governance &amp; evolution</h3>
+            <p>
+              Two-chamber voting, protocol boundaries, security assumptions, and
+              the roadmap.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap footer-top">
+        <div>
+          <a class="brand" href="index.html"
+            ><span class="brand-mark" aria-hidden="true">t<span>c</span></span
+            >the coin.</a
+          >
+          <p>A small footprint. A shared future.</p>
+        </div>
+        <div class="footer-links">
+          <a href="download.html">Get started</a
+          ><a href="whitepaper.html">Whitepaper</a
+          ><a href="https://github.com/LucasBolla94/thecoin">GitHub ↗</a
+          ><a href="docs.html">Documentation</a>
+          <a href="tccl.html">TCCL</a>
+          <a href="validator.html">Validator guide</a>
+        </div>
+      </div>
+      <div class="wrap footer-bottom">
+        <span>Open source · MIT / Apache-2.0</span
+        ><span
+          >Built in Rust. Open to everyone.
+          <span class="version">v0.2</span></span
+        >
+      </div>
+    </footer>
+    <script src="assets/config.js?v=4"></script>
+    <script src="assets/api.js?v=4"></script>
+    <script src="assets/site.js?v=4"></script>
+  </body>
+</html>
