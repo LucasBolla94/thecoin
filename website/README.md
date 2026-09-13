@@ -73,7 +73,9 @@ sudo cp -r website/*.html website/assets /var/www/the-coin.cloud/
 sudo mkdir -p /var/www/the-coin.cloud/{releases,whitepaper}
 sudo cp installer/install.sh installer/uninstall.sh /var/www/the-coin.cloud/     # scripts do instalador
 sudo cp docs/whitepaper/the-coin-whitepaper-v0.1.pdf /var/www/the-coin.cloud/whitepaper/
-# binários de release + SHA256SUMS em /var/www/the-coin.cloud/releases/
+# binários de release: releases/latest/thecoin-<target>.tar.gz + .sha256 (layout usado pelo install.sh)
+# atalho: no repositório, `scripts/package.sh <target>` e depois `scripts/publish-site.sh`
+# montam tudo em dist/site/, pronto para `rsync -av dist/site/ servidor:/var/www/the-coin.cloud/`
 
 # nginx
 sudo cp website/nginx/snippets/thecoin-proxy.conf /etc/nginx/snippets/

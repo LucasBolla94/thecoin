@@ -225,7 +225,17 @@ Os seeds são o ponto de entrada de novos nós e a fonte de dados do site.
 O site (`website/`) roda em outra máquina com nginx, TLS (Let's Encrypt) e
 proxy de `/api/` para os dois seeds com *rate limit* e cache — configuração
 pronta em `website/nginx/the-coin.cloud.conf`. Detalhes em
-[API.md](API.md#expondo-a-api-publicamente).
+[API.md](API.md#expondo-a-api-publicamente) e `website/README.md`.
+
+Para montar tudo o que o site serve (páginas, `install.sh`, whitepaper e
+binários no layout `releases/latest/thecoin-<target>.tar.gz` + `.sha256` que o
+instalador espera):
+
+```bash
+scripts/package.sh x86_64-unknown-linux-musl     # ou baixe os arquivos do GitHub Release para dist/
+scripts/publish-site.sh                          # gera dist/site/
+rsync -av --delete dist/site/ usuario@maquina-do-site:/var/www/the-coin.cloud/
+```
 
 ## 8. Monitoramento
 
