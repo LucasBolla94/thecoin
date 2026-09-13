@@ -101,7 +101,8 @@ pub fn router(node: AppState) -> Router {
 }
 
 pub async fn start(node: AppState) -> anyhow::Result<()> {
-    let listen: std::net::SocketAddr = node.config.rpc.listen.parse().map_err(|_| anyhow::anyhow!("invalid rpc.listen '{}'", node.config.rpc.listen))?;
+    let listen: std::net::SocketAddr =
+        node.config.rpc.listen.parse().map_err(|_| anyhow::anyhow!("invalid rpc.listen '{}'", node.config.rpc.listen))?;
     let listener = tokio::net::TcpListener::bind(listen).await.map_err(|e| anyhow::anyhow!("cannot bind API port {listen}: {e}"))?;
     let _ = node.rpc_addr.set(listener.local_addr()?);
     let app = router(node.clone());
@@ -129,7 +130,9 @@ async fn root(State(node): State<AppState>) -> Json<serde_json::Value> {
 }
 
 fn global(r: &impl DbRead) -> Result<ChainGlobal, ApiErr> {
-    read_typed::<ChainGlobal, _>(&ReaderAdapter(r), &state::global_key()).map_err(|e| ApiErr(StatusCode::INTERNAL_SERVER_ERROR, e.0))?.ok_or_else(|| not_found("global"))
+    read_typed::<ChainGlobal, _>(&ReaderAdapter(r), &state::global_key())
+        .map_err(|e| ApiErr(StatusCode::INTERNAL_SERVER_ERROR, e.0))?
+        .ok_or_else(|| not_found("global"))
 }
 
 /// Adapts any [`DbRead`] to a core `StateReader`.
@@ -289,10 +292,12 @@ async fn block(State(node): State<AppState>, Path(id): Path<String>) -> ApiResul
             let tx_views = b
                 .txs
                 .iter()
-                .map(|t| {
+                .enumerate()
+                .map(|(pos, t)| {
                     let mut v = tx_view(t, n);
                     v.block_height = Some(rec.header.height);
                     v.block_hash = Some(hash);
+                    v.position = Some(pos as u32);
                     v.confirmations = confirmations;
                     v.created = created_id(t);
                     v
@@ -304,7 +309,7 @@ async fn block(State(node): State<AppState>, Path(id): Path<String>) -> ApiResul
                 tx_root: rec.header.tx_root,
                 state_root: rec.header.state_root,
                 target: hex::encode(rec.header.target),
-                nonce: rec.header.nonce,
+                nonce: rec.header.nonce.to_string(),
                 confirmations,
                 subsidy: block_subsidy(node.params, rec.header.height),
                 fees,
@@ -339,6 +344,7 @@ fn find_tx(node: &Node, txid: &Hash32) -> Result<Option<TxView>, ApiErr> {
     let mut v = tx_view(tx, n);
     v.block_height = Some(height);
     v.block_hash = Some(hash);
+    v.position = Some(pos);
     v.confirmations = node.chain.tip().height - height + 1;
     v.created = created_id(tx);
     Ok(Some(v))
@@ -365,12 +371,19 @@ async fn address(State(node): State<AppState>, Path(addr): Path<String>) -> ApiR
     Ok(Json(
         blocking(&node, move |node| {
             let r = node.chain.read()?;
-            let acc: Account = read_typed(&ReaderAdapter(&r), &state::account_key(&a)).map_err(|e| ApiErr(StatusCode::INTERNAL_SERVER_ERROR, e.0))?.unwrap_or_default();
+            let acc: Account = read_typed(&ReaderAdapter(&r), &state::account_key(&a))
+                .map_err(|e| ApiErr(StatusCode::INTERNAL_SERVER_ERROR, e.0))?
+                .unwrap_or_default();
             let tip = node.chain.tip().height;
             let mut v = account_view(&a, &acc, tip, node.params.network);
             // Immature rewards: pending rewards of the last `maturity` blocks.
             let rows = r.state_prefix(&[state::PREFIX_PENDING_REWARD], 10_000)?;
-            v.immature = rows.iter().filter_map(|(_, val)| borsh::from_slice::<PendingReward>(val).ok()).filter(|p| p.miner == a).map(|p| p.amount).sum();
+            v.immature = rows
+                .iter()
+                .filter_map(|(_, val)| borsh::from_slice::<PendingReward>(val).ok())
+                .filter(|p| p.miner == a)
+                .map(|p| p.amount)
+                .sum();
             let m = node.mempool.lock();
             v.next_nonce = m.next_nonce(&a, acc.nonce);
             v.mempool_txs = m.sender_txs(&a).len();
@@ -419,6 +432,7 @@ async fn address_txs(State(node): State<AppState>, Path(addr): Path<String>, Que
                     let mut v = tx_view(tx, n);
                     v.block_height = Some(height);
                     v.block_hash = r.main_hash(height)?;
+                    v.position = Some(pos);
                     v.confirmations = tip - height + 1;
                     v.created = created_id(tx);
                     out.push(v);
@@ -456,7 +470,7 @@ async fn proposals(State(node): State<AppState>) -> ApiResult<Vec<ProposalView>>
                 .filter_map(|(_, v)| borsh::from_slice::<Proposal>(v).ok())
                 .map(|p| proposal_view(&p, tip, &g.params, g.circulating(), node.params.network))
                 .collect();
-            out.sort_by(|a, b| b.created_height.cmp(&a.created_height));
+            out.sort_by_key(|p| std::cmp::Reverse(p.created_height));
             Ok(out)
         })
         .await?,
@@ -509,7 +523,13 @@ async fn peers(State(node): State<AppState>) -> ApiResult<Vec<PeerView>> {
     Ok(Json(
         peers
             .values()
-            .map(|p| PeerView { addr: p.addr.to_string(), inbound: p.inbound, height: p.best_height(), user_agent: p.user_agent(), connected_secs: p.connected_at.elapsed().as_secs() })
+            .map(|p| PeerView {
+                addr: p.addr.to_string(),
+                inbound: p.inbound,
+                height: p.best_height(),
+                user_agent: p.user_agent(),
+                connected_secs: p.connected_at.elapsed().as_secs(),
+            })
             .collect(),
     ))
 }

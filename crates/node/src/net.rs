@@ -194,7 +194,9 @@ fn is_banned(node: &Node, addr: &SocketAddr) -> bool {
 }
 
 async fn resolve(host: &str, default_port: u16) -> Vec<SocketAddr> {
-    let target = if host.contains(':') && !host.starts_with('[') && host.matches(':').count() == 1 { host.to_string() } else if host.parse::<SocketAddr>().is_ok() { host.to_string() } else { format!("{host}:{default_port}") };
+    // "host:port", "1.2.3.4:port" and "[::1]:port" are used as-is; bare hosts get the default port.
+    let has_port = host.parse::<SocketAddr>().is_ok() || (host.matches(':').count() == 1 && !host.starts_with('['));
+    let target = if has_port { host.to_string() } else { format!("{host}:{default_port}") };
     match tokio::time::timeout(Duration::from_secs(10), tokio::net::lookup_host(target)).await {
         Ok(Ok(it)) => it.collect(),
         _ => vec![],
@@ -220,10 +222,12 @@ async fn outbound_loop(node: Arc<Node>) {
                 }
             }
         } else if outbound < node.config.p2p.max_outbound {
-            let need_seeds = node.addrman.lock().is_empty() || (outbound == 0 && last_seed_lookup.map_or(true, |t| t.elapsed() > Duration::from_secs(60)));
+            let need_seeds =
+                node.addrman.lock().is_empty() || (outbound == 0 && last_seed_lookup.is_none_or(|t| t.elapsed() > Duration::from_secs(60)));
             if need_seeds {
                 last_seed_lookup = Some(Instant::now());
-                let seeds: Vec<String> = node.params.seeds.iter().map(|s| s.to_string()).chain(node.config.p2p.seeds.iter().cloned()).collect();
+                let seeds: Vec<String> =
+                    node.params.seeds.iter().map(|s| s.to_string()).chain(node.config.p2p.seeds.iter().cloned()).collect();
                 for s in seeds {
                     for a in resolve(&s, port).await {
                         node.addrman.lock().add_trusted(a, now_secs());
@@ -291,7 +295,7 @@ async fn maintenance_loop(node: Arc<Node>) {
             }
         }
         maybe_start_sync(&node);
-        if ticks % 30 == 0 {
+        if ticks.is_multiple_of(30) {
             node.addrman.lock().save();
         }
     }
@@ -349,7 +353,7 @@ pub fn request_missing_blocks(node: &Arc<Node>, peer_id: u64, height: u64) {
     peer.update_best_height(height);
     {
         let mut info = peer.info.lock();
-        if info.last_getblocks.map_or(false, |t| t.elapsed() < Duration::from_secs(5)) {
+        if info.last_getblocks.is_some_and(|t| t.elapsed() < Duration::from_secs(5)) {
             return;
         }
         info.last_getblocks = Some(Instant::now());
@@ -407,7 +411,14 @@ async fn run_peer(node: Arc<Node>, stream: TcpStream, addr: SocketAddr, inbound:
         connected_at: Instant::now(),
         frames: frame_tx,
         magic: node.params.magic,
-        info: crate::chain::NodeMutex::new(PeerInfo { version: None, got_verack: false, misbehavior: 0, last_pong: Instant::now(), ping_nonce: 0, last_getblocks: None }),
+        info: crate::chain::NodeMutex::new(PeerInfo {
+            version: None,
+            got_verack: false,
+            misbehavior: 0,
+            last_pong: Instant::now(),
+            ping_nonce: 0,
+            last_getblocks: None,
+        }),
         known: crate::chain::NodeMutex::new(KnownSet { set: HashSet::new(), order: VecDeque::new() }),
         best_height: AtomicU64::new(0),
         closing: AtomicBool::new(false),
@@ -575,7 +586,8 @@ async fn handle_message(node: &Arc<Node>, peer: &Arc<Peer>, msg: Message, block_
         Message::NotFound(_) => {}
         Message::GetBlocks { locator, stop } => {
             let node2 = node.clone();
-            let hashes = tokio::task::spawn_blocking(move || node2.chain.hashes_after_locator(&locator, &stop, MAX_BLOCKS_PER_INV)).await??;
+            let hashes =
+                tokio::task::spawn_blocking(move || node2.chain.hashes_after_locator(&locator, &stop, MAX_BLOCKS_PER_INV)).await??;
             for h in &hashes {
                 peer.mark_known(*h);
             }
@@ -727,7 +739,7 @@ async fn block_pipeline(node: Arc<Node>, peer_id: u64, mut rx: mpsc::Receiver<Bl
             });
             (block, ok)
         }));
-        while pending.len() > parallel || pending.front().map_or(false, |h| h.is_finished()) {
+        while pending.len() > parallel || pending.front().is_some_and(|h| h.is_finished()) {
             let h = pending.pop_front().expect("non-empty");
             if !forward(&node, peer_id, h).await {
                 return;

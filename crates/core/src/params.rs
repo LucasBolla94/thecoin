@@ -145,8 +145,7 @@ impl ChainParams {
     }
 }
 
-const GENESIS_MESSAGE: &str =
-    "The Coin | the-coin.cloud | 2026-09-13 | A democratic, lightweight proof-of-work money for everyone";
+const GENESIS_MESSAGE: &str = "The Coin | the-coin.cloud | 2026-09-13 | A democratic, lightweight proof-of-work money for everyone";
 
 const MAINNET_GOV_BOUNDS: GovBounds = GovBounds {
     max_block_bytes: (250_000, MAX_BLOCK_BYTES_HARD),

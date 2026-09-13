@@ -113,7 +113,9 @@ enum Cmd {
 #[derive(Subcommand)]
 enum ContractCmd {
     /// Show a contract.
-    Show { id: String },
+    Show {
+        id: String,
+    },
     /// Escrow: lock funds for a payee; release or refund later.
     EscrowCreate {
         #[arg(long)]
@@ -126,8 +128,12 @@ enum ContractCmd {
         #[arg(long)]
         arbiter: Option<String>,
     },
-    EscrowRelease { id: String },
-    EscrowRefund { id: String },
+    EscrowRelease {
+        id: String,
+    },
+    EscrowRefund {
+        id: String,
+    },
     /// Vesting: linear release to a beneficiary.
     VestingCreate {
         #[arg(long)]
@@ -144,8 +150,12 @@ enum ContractCmd {
         #[arg(long)]
         revocable: bool,
     },
-    VestingClaim { id: String },
-    VestingRevoke { id: String },
+    VestingClaim {
+        id: String,
+    },
+    VestingRevoke {
+        id: String,
+    },
     /// Subscription: prepaid recurring payments.
     SubscriptionCreate {
         #[arg(long)]
@@ -159,8 +169,12 @@ enum ContractCmd {
         #[arg(long)]
         periods: u32,
     },
-    SubscriptionClaim { id: String },
-    SubscriptionCancel { id: String },
+    SubscriptionClaim {
+        id: String,
+    },
+    SubscriptionCancel {
+        id: String,
+    },
     /// HTLC: hash time-locked payment (atomic swaps).
     HtlcCreate {
         #[arg(long)]
@@ -178,7 +192,9 @@ enum ContractCmd {
         #[arg(long)]
         preimage: String,
     },
-    HtlcRefund { id: String },
+    HtlcRefund {
+        id: String,
+    },
     /// Multisig vault (M-of-N).
     MultisigCreate {
         /// Comma-separated signer addresses.
@@ -189,7 +205,10 @@ enum ContractCmd {
         #[arg(long, default_value = "0")]
         deposit: String,
     },
-    MultisigDeposit { id: String, amount: String },
+    MultisigDeposit {
+        id: String,
+        amount: String,
+    },
     MultisigPropose {
         id: String,
         #[arg(long)]
@@ -199,8 +218,14 @@ enum ContractCmd {
         #[arg(long, default_value = "")]
         memo: String,
     },
-    MultisigApprove { id: String, spend_id: u32 },
-    MultisigCancel { id: String, spend_id: u32 },
+    MultisigApprove {
+        id: String,
+        spend_id: u32,
+    },
+    MultisigCancel {
+        id: String,
+        spend_id: u32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -330,7 +355,9 @@ impl Ctx {
 
 fn describe(v: &TxView) -> String {
     match &v.action {
-        ActionView::Transfer { to, amount, memo_text, .. } => format!("transfer {} → {}{}", tcn(*amount), to, memo_text.as_ref().map(|m| format!(" \"{m}\"")).unwrap_or_default()),
+        ActionView::Transfer { to, amount, memo_text, .. } => {
+            format!("transfer {} → {}{}", tcn(*amount), to, memo_text.as_ref().map(|m| format!(" \"{m}\"")).unwrap_or_default())
+        }
         ActionView::BatchTransfer { outputs, total, .. } => format!("batch of {} payments, {}", outputs.len(), tcn(*total)),
         ActionView::CreateContract { spec } => format!("create contract {}", serde_json::to_string(spec).unwrap_or_default()),
         ActionView::CallContract { contract, call } => format!("call {} on {}", serde_json::to_string(call).unwrap_or_default(), contract),
@@ -349,7 +376,8 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let network = cli.network;
-    let wallet_path = cli.wallet.clone().unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".thecoin").join(format!("wallet-{network}.json")));
+    let wallet_path =
+        cli.wallet.clone().unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".thecoin").join(format!("wallet-{network}.json")));
     let node_url = cli
         .node
         .clone()
@@ -462,14 +490,27 @@ fn run() -> Result<()> {
         }
         Cmd::Request { amount: a, memo, label } => {
             let (_, keys) = ctx.unlock()?;
-            let req = PaymentRequest { address: keys.address_string(0, ctx.from, network), amount: a.map(|x| amount(&x)).transpose()?, memo, label };
+            let req = PaymentRequest {
+                address: keys.address_string(0, ctx.from, network),
+                amount: a.map(|x| amount(&x)).transpose()?,
+                memo,
+                label,
+            };
             println!("{}", req.to_uri());
         }
         Cmd::Pay { uri } => {
             let req = PaymentRequest::parse(&uri, network)?;
             let value = req.amount.ok_or_else(|| anyhow!("payment request has no amount"))?;
             let memo = req.memo.clone().unwrap_or_default();
-            ctx.send_action(builder::transfer(ctx.addr(&req.address)?, value, &memo), &format!("pay {} to {}{}", tcn(value), req.label.as_deref().unwrap_or(&req.address), if memo.is_empty() { String::new() } else { format!(" ({memo})") }))?;
+            ctx.send_action(
+                builder::transfer(ctx.addr(&req.address)?, value, &memo),
+                &format!(
+                    "pay {} to {}{}",
+                    tcn(value),
+                    req.label.as_deref().unwrap_or(&req.address),
+                    if memo.is_empty() { String::new() } else { format!(" ({memo})") }
+                ),
+            )?;
         }
         Cmd::History { limit } => {
             let (_, keys) = ctx.unlock()?;
@@ -521,7 +562,12 @@ fn contract_cmd(ctx: &Ctx, c: ContractCmd) -> Result<()> {
         ContractCmd::EscrowCreate { payee, amount: a, deadline_blocks, arbiter } => {
             let value = amount(&a)?;
             let deadline_height = ctx.tip_height()? + deadline_blocks;
-            let spec = ContractSpec::Escrow { payee: ctx.addr(&payee)?, arbiter: arbiter.as_deref().map(|x| ctx.addr(x)).transpose()?, amount: value, deadline_height };
+            let spec = ContractSpec::Escrow {
+                payee: ctx.addr(&payee)?,
+                arbiter: arbiter.as_deref().map(|x| ctx.addr(x)).transpose()?,
+                amount: value,
+                deadline_height,
+            };
             create(spec, format!("escrow {} for {payee} (deadline block {deadline_height})", tcn(value)))?;
         }
         ContractCmd::EscrowRelease { id } => call(&id, ContractCall::EscrowRelease, "release escrow")?,
@@ -529,14 +575,22 @@ fn contract_cmd(ctx: &Ctx, c: ContractCmd) -> Result<()> {
         ContractCmd::VestingCreate { beneficiary, amount: a, start_in, cliff_blocks, duration_blocks, revocable } => {
             let value = amount(&a)?;
             let start = ctx.tip_height()? + 1 + start_in;
-            let spec = ContractSpec::Vesting { beneficiary: ctx.addr(&beneficiary)?, amount: value, start_height: start, cliff_height: start + cliff_blocks, end_height: start + duration_blocks, revocable };
+            let spec = ContractSpec::Vesting {
+                beneficiary: ctx.addr(&beneficiary)?,
+                amount: value,
+                start_height: start,
+                cliff_height: start + cliff_blocks,
+                end_height: start + duration_blocks,
+                revocable,
+            };
             create(spec, format!("vesting {} to {beneficiary} over {duration_blocks} blocks", tcn(value)))?;
         }
         ContractCmd::VestingClaim { id } => call(&id, ContractCall::VestingClaim, "claim vesting")?,
         ContractCmd::VestingRevoke { id } => call(&id, ContractCall::VestingRevoke, "revoke vesting")?,
         ContractCmd::SubscriptionCreate { payee, amount: a, period_blocks, periods } => {
             let value = amount(&a)?;
-            let spec = ContractSpec::Subscription { payee: ctx.addr(&payee)?, amount_per_period: value, period_blocks, max_periods: periods };
+            let spec =
+                ContractSpec::Subscription { payee: ctx.addr(&payee)?, amount_per_period: value, period_blocks, max_periods: periods };
             create(spec, format!("subscription {} × {periods} periods of {period_blocks} blocks to {payee}", tcn(value)))?;
         }
         ContractCmd::SubscriptionClaim { id } => call(&id, ContractCall::SubscriptionClaim, "claim subscription")?,
@@ -554,7 +608,10 @@ fn contract_cmd(ctx: &Ctx, c: ContractCmd) -> Result<()> {
             };
             let timeout_height = ctx.tip_height()? + timeout_blocks;
             println!("Hash lock: {lock}");
-            create(ContractSpec::Htlc { recipient: ctx.addr(&recipient)?, amount: value, hash_lock: lock, timeout_height }, format!("HTLC {} to {recipient} (timeout block {timeout_height})", tcn(value)))?;
+            create(
+                ContractSpec::Htlc { recipient: ctx.addr(&recipient)?, amount: value, hash_lock: lock, timeout_height },
+                format!("HTLC {} to {recipient} (timeout block {timeout_height})", tcn(value)),
+            )?;
         }
         ContractCmd::HtlcRedeem { id, preimage } => {
             let pre = hex::decode(preimage.trim()).context("preimage must be hex")?;
@@ -565,7 +622,10 @@ fn contract_cmd(ctx: &Ctx, c: ContractCmd) -> Result<()> {
             let list = signers.split(',').map(|s| ctx.addr(s.trim())).collect::<Result<Vec<_>>>()?;
             let n = list.len();
             let dep = amount(&deposit)?;
-            create(ContractSpec::Multisig { signers: list, threshold, initial_deposit: dep }, format!("{threshold}-of-{n} multisig vault with {}", tcn(dep)))?;
+            create(
+                ContractSpec::Multisig { signers: list, threshold, initial_deposit: dep },
+                format!("{threshold}-of-{n} multisig vault with {}", tcn(dep)),
+            )?;
         }
         ContractCmd::MultisigDeposit { id, amount: a } => {
             let v = amount(&a)?;
@@ -573,10 +633,18 @@ fn contract_cmd(ctx: &Ctx, c: ContractCmd) -> Result<()> {
         }
         ContractCmd::MultisigPropose { id, to, amount: a, memo } => {
             let v = amount(&a)?;
-            call(&id, ContractCall::MultisigPropose { to: ctx.addr(&to)?, amount: v, memo: memo.into_bytes() }, &format!("propose spend of {} to {to}", tcn(v)))?
+            call(
+                &id,
+                ContractCall::MultisigPropose { to: ctx.addr(&to)?, amount: v, memo: memo.into_bytes() },
+                &format!("propose spend of {} to {to}", tcn(v)),
+            )?
         }
-        ContractCmd::MultisigApprove { id, spend_id } => call(&id, ContractCall::MultisigApprove { spend_id }, &format!("approve spend #{spend_id}"))?,
-        ContractCmd::MultisigCancel { id, spend_id } => call(&id, ContractCall::MultisigCancel { spend_id }, &format!("cancel spend #{spend_id}"))?,
+        ContractCmd::MultisigApprove { id, spend_id } => {
+            call(&id, ContractCall::MultisigApprove { spend_id }, &format!("approve spend #{spend_id}"))?
+        }
+        ContractCmd::MultisigCancel { id, spend_id } => {
+            call(&id, ContractCall::MultisigCancel { spend_id }, &format!("cancel spend #{spend_id}"))?
+        }
     }
     Ok(())
 }
@@ -611,13 +679,18 @@ fn gov_cmd(ctx: &Ctx, g: GovCmd) -> Result<()> {
                 let param = GovParamId::from_name(name.trim()).ok_or_else(|| anyhow!("unknown parameter '{name}'"))?;
                 ProposalAction::SetParam { param, value: value.trim().parse().context("parameter value must be an integer")? }
             } else if let Some(v) = &a.upgrade_version {
-                ProposalAction::SoftwareUpgrade { version: v.clone(), release_hash: a.release_hash.as_deref().map(hash).transpose()?.unwrap_or(Hash32::ZERO) }
+                ProposalAction::SoftwareUpgrade {
+                    version: v.clone(),
+                    release_hash: a.release_hash.as_deref().map(hash).transpose()?.unwrap_or(Hash32::ZERO),
+                }
             } else {
                 ProposalAction::Text
             };
             let deposit = ctx.client.status()?.params.proposal_deposit;
             let spec = ProposalSpec { title: a.title.clone(), url: a.url.clone(), content_hash, action };
-            if let Some(txid) = ctx.send_action(builder::propose(spec), &format!("open proposal \"{}\" (deposit {})", a.title, tcn(deposit)))? {
+            if let Some(txid) =
+                ctx.send_action(builder::propose(spec), &format!("open proposal \"{}\" (deposit {})", a.title, tcn(deposit)))?
+            {
                 if !ctx.dry_run {
                     println!("The proposal id is shown by `thecoin-wallet tx {txid}` (field \"created\").");
                 }
@@ -631,7 +704,10 @@ fn gov_cmd(ctx: &Ctx, g: GovCmd) -> Result<()> {
                 other => bail!("choice must be yes, no or abstain (got {other})"),
             };
             let w = amount(&weight)?;
-            ctx.send_action(builder::vote(hash(&id)?, choice, w), &format!("vote {choice:?} with {} (locked until the vote ends)", tcn(w)))?;
+            ctx.send_action(
+                builder::vote(hash(&id)?, choice, w),
+                &format!("vote {choice:?} with {} (locked until the vote ends)", tcn(w)),
+            )?;
         }
     }
     Ok(())

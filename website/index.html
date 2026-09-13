@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Coin — dinheiro proof-of-work leve e democrático</title>
+  <meta name="description" content="The Coin: blockchain proof-of-work leve para VPS pequenas. 50 milhões de TCN, sem pré-mineração, contratos de pagamento e governança bicameral.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
+    <nav class="nav" aria-label="Principal">
+      <a href="index.html">Início</a>
+      <a href="download.html">Instalar</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="governance.html">Governança</a>
+      <a href="docs.html">Desenvolvedores</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="wrap hero">
+    <div class="eyebrow">Versão 0.1 · rede aberta · sem pré-mineração</div>
+    <h1>O dinheiro proof-of-work que roda em qualquer VPS.</h1>
+    <p class="lead">
+      The Coin é uma blockchain escrita em Rust, feita para máquinas com poucos recursos.
+      Qualquer pessoa instala um nó com um comando, ajuda a proteger a rede e concorre às
+      recompensas — com oferta limitada a <strong>50 milhões de TCN</strong>, contratos de
+      pagamento nativos e uma governança em que nem baleias nem mineradores decidem sozinhos.
+    </p>
+    <div class="actions">
+      <a class="btn btn-primary" href="download.html">Instalar um nó</a>
+      <a class="btn" href="/whitepaper/the-coin-whitepaper-v0.1.pdf">Whitepaper (PDF)</a>
+      <a class="btn" href="explorer.html">Explorar a rede</a>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <div class="section-title">
+      <h2><span id="live-dot" class="live-dot"></span>Rede ao vivo</h2>
+      <span class="faint" id="live-updated">conectando…</span>
+    </div>
+    <div class="grid grid-4" id="stats">
+      <div class="card stat"><span class="label">Altura do bloco</span><span class="value" id="s-height">—</span><span class="sub" id="s-tip">—</span></div>
+      <div class="card stat"><span class="label">Hashrate estimado</span><span class="value" id="s-hashrate">—</span><span class="sub" id="s-difficulty">—</span></div>
+      <div class="card stat"><span class="label">TCN emitidos</span><span class="value" id="s-emitted">—</span><span class="sub" id="s-emitted-pct">—</span></div>
+      <div class="card stat"><span class="label">Em circulação</span><span class="value" id="s-circulating">—</span><span class="sub" id="s-burned">—</span></div>
+      <div class="card stat"><span class="label">Recompensa por bloco</span><span class="value" id="s-reward">—</span><span class="sub" id="s-era">—</span></div>
+      <div class="card stat"><span class="label">Próximo halving</span><span class="value" id="s-halving">—</span><span class="sub" id="s-halving-eta">—</span></div>
+      <div class="card stat"><span class="label">Peers do nó</span><span class="value" id="s-peers">—</span><span class="sub" id="s-mempool">—</span></div>
+      <div class="card stat"><span class="label">Taxa mínima</span><span class="value" id="s-fee">—</span><span class="sub">por byte · transferência ≈ 170 bytes</span></div>
+    </div>
+    <p class="faint" id="live-error" hidden></p>
+  </section>
+
+  <section class="wrap">
+    <h2>Por que The Coin</h2>
+    <div class="grid grid-3">
+      <div class="card feature">
+        <div class="icon" aria-hidden="true">⚙️</div>
+        <h3>Leve de verdade</h3>
+        <p class="muted">Roda com 1 vCPU e 1 GB de RAM. Banco de dados embarcado (redb), blocos comprimidos com zstd, modo <em>pruned</em> opcional e compromisso de estado incremental (LtHash) — sem reprocessar tudo a cada bloco.</p>
+      </div>
+      <div class="card feature">
+        <div class="icon" aria-hidden="true">⛏️</div>
+        <h3>Mineração com CPU</h3>
+        <p class="muted">O PoW <strong>CoinHash</strong> usa Argon2id com 16 MiB por hash: memory-hard, favorece CPUs comuns e reduz a vantagem de GPUs e ASICs. O minerador roda com prioridade mínima para não travar a máquina.</p>
+      </div>
+      <div class="card feature">
+        <div class="icon" aria-hidden="true">🔒</div>
+        <h3>Seguro por construção</h3>
+        <p class="muted">Assinaturas Ed25519 estritas, hashes BLAKE3 com separação de domínio, escolha da cadeia por trabalho acumulado, limite de reorganização de 720 blocos, raiz de estado em cada bloco e banimento de peers maliciosos.</p>
+      </div>
+      <div class="card feature">
+        <div class="icon" aria-hidden="true">🤝</div>
+        <h3>Contratos de pagamento</h3>
+        <p class="muted">Escrow com árbitro, vesting com cliff, assinaturas recorrentes, HTLC para swaps atômicos e cofres multisig M-de-N. Custo fixo, sem gas e sem surpresas.</p>
+      </div>
+      <div class="card feature">
+        <div class="icon" aria-hidden="true">🗳️</div>
+        <h3>Governança bicameral</h3>
+        <p class="muted">Mudanças passam só com aprovação dos <strong>detentores</strong> (voto com moedas travadas, quórum e supermaioria) <strong>e</strong> dos <strong>mineradores</strong> (sinalização nos blocos). O teto de 50M nunca pode ser alterado.</p>
+      </div>
+      <div class="card feature">
+        <div class="icon" aria-hidden="true">🌐</div>
+        <h3>Aberta e auditável</h3>
+        <p class="muted">Todo o histórico é público e consultável pela API REST de qualquer nó. Carteira de referência com padrões abertos (BIP-39, SLIP-0010) para que qualquer um crie novas carteiras.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <h2>Emissão: ciclo de estabilização de ~5 anos</h2>
+    <div class="grid grid-2">
+      <div class="card">
+        <p class="muted">Blocos a cada <strong>60 s</strong>. A recompensa começa em <strong>40 TCN</strong> e cai pela metade a cada <strong>625.000 blocos</strong> (≈ 1,19 ano). Em ≈ 4,76 anos, quatro eras emitem <strong>93,75%</strong> da oferta; depois as recompensas seguem caindo até zero e os mineradores passam a viver das taxas. A oferta total nunca ultrapassa 50.000.000 TCN.</p>
+        <div class="era-bars" role="img" aria-label="Oferta acumulada ao fim de cada era: 50%, 75%, 87,5% e 93,75% dos 50 milhões">
+          <div class="era-bar"><span>Era 1</span><div class="bar"><span style="width:50%"></span></div><span class="v">25,0 M · 50%</span></div>
+          <div class="era-bar"><span>Era 2</span><div class="bar"><span style="width:75%"></span></div><span class="v">37,5 M · 75%</span></div>
+          <div class="era-bar"><span>Era 3</span><div class="bar"><span style="width:87.5%"></span></div><span class="v">43,75 M · 87,5%</span></div>
+          <div class="era-bar"><span>Era 4</span><div class="bar"><span style="width:93.75%"></span></div><span class="v">46,875 M · 93,75%</span></div>
+        </div>
+        <p class="faint" style="margin-top:10px">Oferta acumulada ao fim de cada era (barra = % de 50 milhões).</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Era</th><th>Blocos</th><th class="num">Recompensa</th><th class="num">Emitido na era</th><th class="num">Fim ≈</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td class="mono">1 – 625.000</td><td class="num">40 TCN</td><td class="num">25.000.000</td><td class="num">1,19 ano</td></tr>
+            <tr><td>2</td><td class="mono">625.001 – 1.250.000</td><td class="num">20 TCN</td><td class="num">12.500.000</td><td class="num">2,38 anos</td></tr>
+            <tr><td>3</td><td class="mono">1.250.001 – 1.875.000</td><td class="num">10 TCN</td><td class="num">6.250.000</td><td class="num">3,57 anos</td></tr>
+            <tr><td>4</td><td class="mono">1.875.001 – 2.500.000</td><td class="num">5 TCN</td><td class="num">3.125.000</td><td class="num">4,76 anos</td></tr>
+            <tr><td>5+</td><td class="mono">2.500.001 – …</td><td class="num">2,5 → 0</td><td class="num">&lt; 3.125.000</td><td class="num">cauda</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="faint">Recompensas de mineração ficam disponíveis após 100 blocos de maturação. O bloco gênese não tem recompensa e não existe pré-mineração.</p>
+  </section>
+
+  <section class="wrap">
+    <h2>Participe em 3 passos</h2>
+    <ol class="steps">
+      <li><strong>Crie sua carteira</strong> — <code>thecoin-wallet create</code> gera 24 palavras de recuperação e seu endereço <code>tc1…</code>.</li>
+      <li><strong>Instale o nó</strong> — <code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash</code> baixa, verifica e configura o serviço.</li>
+      <li><strong>Minere e use</strong> — o nó sincroniza, começa a minerar para o seu endereço e você já pode enviar e receber TCN.</li>
+    </ol>
+    <p style="margin-top:20px"><a class="btn btn-primary" href="download.html">Guia de instalação completo</a></p>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>The Coin v0.1 · the-coin.cloud · código aberto (MIT/Apache-2.0)</span>
+    <span><a data-repo-link="" href="#">Código-fonte</a> · <a href="/whitepaper/the-coin-whitepaper-v0.1.pdf">Whitepaper</a> · <a href="docs.html">API</a></span>
+  </div>
+</footer>
+
+<script src="assets/config.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/home.js"></script>
+</body>
+</html>

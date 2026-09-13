@@ -173,7 +173,7 @@ fn worker(node: Arc<Node>) {
                 }
                 break;
             }
-            if local_hashes % 8 == 0 {
+            if local_hashes.is_multiple_of(8) {
                 node.miner.hashes.fetch_add(local_hashes, Ordering::Relaxed);
                 local_hashes = 0;
                 if node.miner.job_id.load(Ordering::Relaxed) != job.id || node.is_stopping() {

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Governança — The Coin</title>
+  <meta name="description" content="Propostas e votações on-chain da rede The Coin: detentores e mineradores decidem juntos.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
+    <nav class="nav" aria-label="Principal">
+      <a href="index.html">Início</a>
+      <a href="download.html">Instalar</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="governance.html">Governança</a>
+      <a href="docs.html">Desenvolvedores</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="view" aria-live="polite"><p class="loading">Carregando propostas…</p></div>
+
+  <h2 id="como-participar">Como participar</h2>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Duas câmaras, uma decisão</h3>
+      <p class="muted">Uma proposta só é aprovada quando, ao fim do período de votação:</p>
+      <ol class="muted">
+        <li><strong>Detentores</strong>: os votos (em TCN travados) atingem o <em>quórum</em> sobre a oferta circulante e o “sim” alcança a supermaioria de <em>sim / (sim + não)</em>;</li>
+        <li><strong>Mineradores</strong>: a fração de blocos que sinalizaram apoio durante a votação alcança o mínimo exigido.</li>
+      </ol>
+      <p class="muted">Aprovada, a mudança é ativada automaticamente depois do <em>atraso de ativação</em> — tempo para todos atualizarem. O depósito da proposta volta ao autor se houver quórum; sem quórum ele é queimado (anti-spam).</p>
+      <p class="muted" style="margin:0">A governança altera apenas parâmetros dentro de limites fixos. <strong>O teto de 50 milhões, a emissão e o algoritmo de PoW nunca podem ser mudados por votação.</strong></p>
+    </div>
+    <div class="card">
+      <h3>Comandos</h3>
+      <pre><code># listar e ver propostas
+thecoin-wallet gov list
+thecoin-wallet gov show &lt;id&gt;
+
+# votar (o peso fica travado até o fim da votação)
+thecoin-wallet gov vote &lt;id&gt; yes 150
+thecoin-wallet gov vote &lt;id&gt; no 20
+thecoin-wallet gov vote &lt;id&gt; abstain 5
+
+# propor mudança de parâmetro
+thecoin-wallet gov propose \
+  --title "Taxa mínima de 20 motes/byte" \
+  --url https://the-coin.cloud/propostas/taxa-20 \
+  --text-file proposta.md \
+  --set-param min_fee_per_byte=20
+
+# proposta de texto ou de atualização de software
+thecoin-wallet gov propose --title "Roadmap 2027" --text-file roadmap.md
+thecoin-wallet gov propose --title "Versão 0.2.0" \
+  --upgrade-version 0.2.0 --release-hash &lt;sha256&gt;</code></pre>
+      <p class="muted">Mineradores apoiam uma proposta adicionando o id em <code>thecoind.toml</code> e reiniciando o nó:</p>
+      <pre><code>[mining]
+signal = ["&lt;id da proposta&gt;"]</code></pre>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>The Coin · governança on-chain</span>
+    <span><a data-repo-link="/blob/main/docs/GOVERNANCE.md" href="#">GOVERNANCE.md</a> · <a href="explorer.html">Explorer</a></span>
+  </div>
+</footer>
+<script src="assets/config.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/governance.js"></script>
+</body>
+</html>

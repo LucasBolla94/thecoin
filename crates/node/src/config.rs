@@ -85,7 +85,15 @@ impl Default for NodeConfig {
 
 impl Default for P2pConfig {
     fn default() -> Self {
-        P2pConfig { enabled: true, listen: "0.0.0.0:7333".into(), max_inbound: 32, max_outbound: 8, seeds: vec![], connect: vec![], allow_private: false }
+        P2pConfig {
+            enabled: true,
+            listen: "0.0.0.0:7333".into(),
+            max_inbound: 32,
+            max_outbound: 8,
+            seeds: vec![],
+            connect: vec![],
+            allow_private: false,
+        }
     }
 }
 

@@ -227,7 +227,7 @@ fn escrow_release_and_refund() {
     assert_eq!(read_typed::<thecoin_core::contracts::Contract, _>(&c.state, &contract_key(&id1)).unwrap().unwrap().balance, 10 * COIN);
     c.mine(buyer.addr, vec![buyer.tx(TxAction::CallContract { contract: id1, call: ContractCall::EscrowRelease })]).unwrap();
     assert_eq!(c.account(&seller.addr).balance, 10 * COIN);
-    assert!(c.state.get(&contract_key(&id1)).is_none(), "finished contract removed");
+    assert!(!c.state.contains_key(&contract_key(&id1)), "finished contract removed");
 
     // escrow 2: arbiter refunds; seller cannot release
     let id2 = contract_id(&buyer.addr, buyer.nonce);
@@ -250,7 +250,14 @@ fn vesting_subscription_htlc_multisig() {
     // Vesting: 100 TCN from h+0 to h+10, cliff h+5
     let h = c.height + 1;
     let vid = contract_id(&alice.addr, alice.nonce);
-    let spec = ContractSpec::Vesting { beneficiary: bob.addr, amount: 100 * COIN, start_height: h, cliff_height: h + 5, end_height: h + 10, revocable: true };
+    let spec = ContractSpec::Vesting {
+        beneficiary: bob.addr,
+        amount: 100 * COIN,
+        start_height: h,
+        cliff_height: h + 5,
+        end_height: h + 10,
+        revocable: true,
+    };
     c.mine(alice.addr, vec![alice.tx(TxAction::CreateContract { spec })]).unwrap();
     let e = tx_error(c.mine(alice.addr, vec![bob.tx(TxAction::CallContract { contract: vid, call: ContractCall::VestingClaim })]));
     assert!(matches!(e, TxError::Contract(_)));
@@ -261,7 +268,7 @@ fn vesting_subscription_htlc_multisig() {
     assert!(bob_bal > 50 * COIN - COIN && bob_bal < 52 * COIN, "{bob_bal}");
     // alice revokes: bob gets vested part, alice the rest
     c.mine(alice.addr, vec![alice.tx(TxAction::CallContract { contract: vid, call: ContractCall::VestingRevoke })]).unwrap();
-    assert!(c.state.get(&contract_key(&vid)).is_none());
+    assert!(!c.state.contains_key(&contract_key(&vid)));
 
     // Subscription: 2 TCN per 3 blocks, 4 periods
     let sid = contract_id(&alice.addr, alice.nonce);
@@ -277,7 +284,7 @@ fn vesting_subscription_htlc_multisig() {
     c.mine(alice.addr, vec![cancel]).unwrap();
     // carol received the second period automatically at cancel
     assert_eq!(c.account(&carol.addr).balance, carol0 + 4 * COIN - fee);
-    assert!(c.state.get(&contract_key(&sid)).is_none());
+    assert!(!c.state.contains_key(&contract_key(&sid)));
 
     // HTLC
     let preimage = b"super secret swap preimage".to_vec();
@@ -299,12 +306,20 @@ fn vesting_subscription_htlc_multisig() {
     let spec = ContractSpec::Multisig { signers: vec![alice.addr, bob.addr, carol.addr], threshold: 2, initial_deposit: 20 * COIN };
     c.mine(alice.addr, vec![alice.tx(TxAction::CreateContract { spec })]).unwrap();
     let dest = Wallet::new(9).addr;
-    c.mine(alice.addr, vec![alice.tx(TxAction::CallContract { contract: mid, call: ContractCall::MultisigPropose { to: dest, amount: 5 * COIN, memo: vec![] } })]).unwrap();
+    c.mine(
+        alice.addr,
+        vec![alice.tx(TxAction::CallContract {
+            contract: mid,
+            call: ContractCall::MultisigPropose { to: dest, amount: 5 * COIN, memo: vec![] },
+        })],
+    )
+    .unwrap();
     assert_eq!(c.account(&dest).balance, 0);
     let dup = alice.tx(TxAction::CallContract { contract: mid, call: ContractCall::MultisigApprove { spend_id: 0 } });
     assert!(matches!(tx_error(c.mine(alice.addr, vec![dup])), TxError::Contract(_)));
     alice.nonce -= 1;
-    c.mine(alice.addr, vec![carol.tx(TxAction::CallContract { contract: mid, call: ContractCall::MultisigApprove { spend_id: 0 } })]).unwrap();
+    c.mine(alice.addr, vec![carol.tx(TxAction::CallContract { contract: mid, call: ContractCall::MultisigApprove { spend_id: 0 } })])
+        .unwrap();
     assert_eq!(c.account(&dest).balance, 5 * COIN);
     let outsider = Wallet::new(9);
     let mut outsider = outsider;
@@ -331,7 +346,8 @@ fn governance_changes_parameter_with_both_chambers() {
     let bit = g.voting[0].0;
 
     // vote with 150 TCN (locked)
-    c.mine_signal(miner.addr, vec![voter.tx(TxAction::Vote { proposal: pid, choice: VoteChoice::Yes, weight: 190 * COIN })], 1 << bit).unwrap();
+    c.mine_signal(miner.addr, vec![voter.tx(TxAction::Vote { proposal: pid, choice: VoteChoice::Yes, weight: 190 * COIN })], 1 << bit)
+        .unwrap();
     let acc = c.account(&voter.addr);
     assert_eq!(acc.locked, 190 * COIN);
     // locked coins cannot be moved

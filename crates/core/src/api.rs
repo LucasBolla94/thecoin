@@ -73,7 +73,8 @@ pub struct BlockView {
     pub tx_root: Hash32,
     pub state_root: Hash32,
     pub target: String,
-    pub nonce: u64,
+    /// Decimal string: u64 nonces exceed JavaScript's safe integer range.
+    pub nonce: String,
     pub confirmations: u64,
     pub subsidy: u64,
     pub fees: u64,
@@ -93,6 +94,9 @@ pub struct TxView {
     pub block_height: Option<u64>,
     #[serde(default)]
     pub block_hash: Option<Hash32>,
+    /// Position of the transaction inside its block (for `cursor=height:position` paging).
+    #[serde(default)]
+    pub position: Option<u32>,
     #[serde(default)]
     pub confirmations: u64,
     #[serde(default)]
@@ -141,7 +145,7 @@ pub enum ContractCallView {
     HtlcRedeem { preimage_hex: String },
     HtlcRefund,
     MultisigDeposit { amount: u64 },
-    MultisigPropose { to: String, amount: u64, memo_hex: String },
+    MultisigPropose { to: String, amount: u64, memo_hex: String, memo_text: Option<String> },
     MultisigApprove { spend_id: u32 },
     MultisigCancel { spend_id: u32 },
 }
@@ -182,11 +186,44 @@ pub struct PendingSpendView {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ContractStateView {
-    Escrow { payer: String, payee: String, arbiter: Option<String>, deadline_height: u64 },
-    Vesting { beneficiary: String, total: u64, claimed: u64, vested_now: u64, start_height: u64, cliff_height: u64, end_height: u64, revocable: bool },
-    Subscription { payer: String, payee: String, amount_per_period: u64, period_blocks: u64, max_periods: u32, start_height: u64, claimed_periods: u32, claimable_periods_now: u32 },
-    Htlc { sender: String, recipient: String, hash_lock: Hash32, timeout_height: u64 },
-    Multisig { signers: Vec<String>, threshold: u8, next_spend_id: u32, pending: Vec<PendingSpendView> },
+    Escrow {
+        payer: String,
+        payee: String,
+        arbiter: Option<String>,
+        deadline_height: u64,
+    },
+    Vesting {
+        beneficiary: String,
+        total: u64,
+        claimed: u64,
+        vested_now: u64,
+        start_height: u64,
+        cliff_height: u64,
+        end_height: u64,
+        revocable: bool,
+    },
+    Subscription {
+        payer: String,
+        payee: String,
+        amount_per_period: u64,
+        period_blocks: u64,
+        max_periods: u32,
+        start_height: u64,
+        claimed_periods: u32,
+        claimable_periods_now: u32,
+    },
+    Htlc {
+        sender: String,
+        recipient: String,
+        hash_lock: Hash32,
+        timeout_height: u64,
+    },
+    Multisig {
+        signers: Vec<String>,
+        threshold: u8,
+        next_spend_id: u32,
+        pending: Vec<PendingSpendView>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -327,7 +364,10 @@ pub fn contract_call_view(call: &ContractCall, n: Network) -> ContractCallView {
         ContractCall::HtlcRedeem { preimage } => ContractCallView::HtlcRedeem { preimage_hex: hex::encode(preimage) },
         ContractCall::HtlcRefund => ContractCallView::HtlcRefund,
         ContractCall::MultisigDeposit { amount } => ContractCallView::MultisigDeposit { amount: *amount },
-        ContractCall::MultisigPropose { to, amount, memo } => ContractCallView::MultisigPropose { to: to.encode(n), amount: *amount, memo_hex: hex::encode(memo) },
+        ContractCall::MultisigPropose { to, amount, memo } => {
+            let (memo_hex, memo_text) = memo_parts(memo);
+            ContractCallView::MultisigPropose { to: to.encode(n), amount: *amount, memo_hex, memo_text }
+        }
         ContractCall::MultisigApprove { spend_id } => ContractCallView::MultisigApprove { spend_id: *spend_id },
         ContractCall::MultisigCancel { spend_id } => ContractCallView::MultisigCancel { spend_id: *spend_id },
     }
@@ -337,7 +377,9 @@ pub fn proposal_action_view(a: &ProposalAction) -> ProposalActionView {
     match a {
         ProposalAction::Text => ProposalActionView::Text,
         ProposalAction::SetParam { param, value } => ProposalActionView::SetParam { param: param.name().to_string(), value: *value },
-        ProposalAction::SoftwareUpgrade { version, release_hash } => ProposalActionView::SoftwareUpgrade { version: version.clone(), release_hash: *release_hash },
+        ProposalAction::SoftwareUpgrade { version, release_hash } => {
+            ProposalActionView::SoftwareUpgrade { version: version.clone(), release_hash: *release_hash }
+        }
     }
 }
 
@@ -379,6 +421,7 @@ pub fn tx_view(tx: &Transaction, n: Network) -> TxView {
         action: action_view(&tx.body.action, n),
         block_height: None,
         block_hash: None,
+        position: None,
         confirmations: 0,
         in_mempool: false,
         created: None,
@@ -434,16 +477,18 @@ pub fn contract_view(c: &Contract, height: u64, n: Network) -> ContractView {
             arbiter: arbiter.map(|a| a.encode(n)),
             deadline_height: *deadline_height,
         },
-        ContractState::Vesting { beneficiary, total, claimed, start_height, cliff_height, end_height, revocable } => ContractStateView::Vesting {
-            beneficiary: beneficiary.encode(n),
-            total: *total,
-            claimed: *claimed,
-            vested_now: crate::contracts::vested_amount(*total, *start_height, *cliff_height, *end_height, next),
-            start_height: *start_height,
-            cliff_height: *cliff_height,
-            end_height: *end_height,
-            revocable: *revocable,
-        },
+        ContractState::Vesting { beneficiary, total, claimed, start_height, cliff_height, end_height, revocable } => {
+            ContractStateView::Vesting {
+                beneficiary: beneficiary.encode(n),
+                total: *total,
+                claimed: *claimed,
+                vested_now: crate::contracts::vested_amount(*total, *start_height, *cliff_height, *end_height, next),
+                start_height: *start_height,
+                cliff_height: *cliff_height,
+                end_height: *end_height,
+                revocable: *revocable,
+            }
+        }
         ContractState::Subscription { payer, payee, amount_per_period, period_blocks, max_periods, start_height, claimed_periods } => {
             let avail = crate::contracts::subscription_available_periods(*start_height, *period_blocks, *max_periods, next);
             ContractStateView::Subscription {
@@ -489,7 +534,7 @@ pub fn proposal_view(p: &Proposal, height: u64, params: &GovParams, circulating:
             quorum_progress_bp: if quorum_needed == 0 { 10_000 } else { (votes * 10_000 / quorum_needed as u128).min(10_000) as u64 },
             approval_bp: if t.yes + t.no == 0 { 0 } else { (t.yes as u128 * 10_000 / (t.yes as u128 + t.no as u128)) as u64 },
             approval_needed_bp: params.approval_bp,
-            miner_approval_bp: if t.miner_total_blocks == 0 { 0 } else { t.miner_yes_blocks * 10_000 / t.miner_total_blocks },
+            miner_approval_bp: (t.miner_yes_blocks * 10_000).checked_div(t.miner_total_blocks).unwrap_or(0),
             miner_approval_needed_bp: params.miner_approval_bp,
             blocks_left: p.end_height.saturating_sub(height),
         })

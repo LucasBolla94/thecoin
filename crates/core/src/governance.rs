@@ -384,10 +384,10 @@ pub(crate) fn end_block<R: StateReader + ?Sized>(
             let votes = p.tally.yes as u128 + p.tally.no as u128 + p.tally.abstain as u128;
             let circulating = g.circulating();
             let quorum_reached = votes * 10_000 >= g.params.quorum_bp as u128 * circulating as u128 && votes > 0;
-            let holders_approved =
-                p.tally.yes > 0 && p.tally.yes as u128 * 10_000 >= g.params.approval_bp as u128 * (p.tally.yes as u128 + p.tally.no as u128);
-            let miners_approved = p.tally.miner_yes_blocks as u128 * 10_000
-                >= g.params.miner_approval_bp as u128 * p.tally.miner_total_blocks as u128;
+            let holders_approved = p.tally.yes > 0
+                && p.tally.yes as u128 * 10_000 >= g.params.approval_bp as u128 * (p.tally.yes as u128 + p.tally.no as u128);
+            let miners_approved =
+                p.tally.miner_yes_blocks as u128 * 10_000 >= g.params.miner_approval_bp as u128 * p.tally.miner_total_blocks as u128;
             if quorum_reached {
                 let mut acc = state.account(&p.proposer)?;
                 acc.balance = acc.balance.checked_add(p.deposit).ok_or_else(|| gerr("overflow"))?;
@@ -395,7 +395,13 @@ pub(crate) fn end_block<R: StateReader + ?Sized>(
             } else {
                 g.burned = g.burned.checked_add(p.deposit).ok_or_else(|| gerr("overflow"))?;
             }
-            p.outcome = Some(Outcome { quorum_reached, holders_approved, miners_approved, circulating_at_end: circulating, deposit_refunded: quorum_reached });
+            p.outcome = Some(Outcome {
+                quorum_reached,
+                holders_approved,
+                miners_approved,
+                circulating_at_end: circulating,
+                deposit_refunded: quorum_reached,
+            });
             if quorum_reached && holders_approved && miners_approved {
                 let activation_height = height + g.params.activation_delay;
                 p.status = ProposalStatus::Approved { activation_height };

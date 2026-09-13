@@ -88,7 +88,7 @@ impl Mempool {
 
     pub fn txids(&self, limit: usize) -> Vec<Hash32> {
         let mut v: Vec<&Entry> = self.entries.values().collect();
-        v.sort_by(|a, b| b.fee_rate.cmp(&a.fee_rate));
+        v.sort_by_key(|e| std::cmp::Reverse(e.fee_rate));
         v.into_iter().take(limit).map(|e| e.txid).collect()
     }
 
@@ -183,17 +183,12 @@ impl Mempool {
         let my_pos = pending.iter().position(|t| t.txid() == txid).expect("inserted");
         if let Err(e) = &results[my_pos] {
             // Give a precise error: re-simulate the new tx alone if a predecessor failed.
-            return Err(MempoolError::Invalid(match e {
-                TxError::BadNonce { .. } if my_pos > 0 && results[..my_pos].iter().any(|r| r.is_err()) => TxError::BadNonce { expected: 0, got: tx.body.nonce },
-                _ => clone_tx_error(e),
-            }));
+            return Err(MempoolError::Invalid(e.clone()));
         }
 
         let fee_rate = tx.body.fee / size.max(1) as u64;
-        if self.bytes + size > self.max_bytes {
-            if !self.evict_for(fee_rate, size) {
-                return Err(MempoolError::Full);
-            }
+        if self.bytes + size > self.max_bytes && !self.evict_for(fee_rate, size) {
+            return Err(MempoolError::Full);
         }
         if let Some(old) = replaced {
             self.remove(&old);
@@ -318,16 +313,5 @@ impl Mempool {
             }
         }
         out
-    }
-}
-
-fn clone_tx_error(e: &TxError) -> TxError {
-    // TxError is not Clone (it wraps StateError); rebuild the common variants.
-    match e {
-        TxError::BadNonce { expected, got } => TxError::BadNonce { expected: *expected, got: *got },
-        TxError::InsufficientFunds { needed, available } => TxError::InsufficientFunds { needed: *needed, available: *available },
-        TxError::FeeTooLow { min, got } => TxError::FeeTooLow { min: *min, got: *got },
-        TxError::Expired { expiry } => TxError::Expired { expiry: *expiry },
-        other => TxError::Contract(other.to_string()),
     }
 }

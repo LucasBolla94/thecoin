@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Instalar um nó — The Coin</title>
+  <meta name="description" content="Como instalar um nó The Coin, minerar e usar a carteira.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
+    <nav class="nav" aria-label="Principal">
+      <a href="index.html">Início</a>
+      <a href="download.html">Instalar</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="governance.html">Governança</a>
+      <a href="docs.html">Desenvolvedores</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Instalar um nó</h1>
+  <p class="muted" style="max-width:760px">Cada nó valida todos os blocos, guarda o histórico, repassa transações e — se você quiser — minera para o seu endereço. Quanto mais nós independentes, mais segura e descentralizada fica a rede.</p>
+
+  <div class="grid grid-4" style="margin:24px 0">
+    <div class="card stat"><span class="label">Sistema</span><span class="value">Linux</span><span class="sub">x86_64 ou aarch64 (systemd)</span></div>
+    <div class="card stat"><span class="label">CPU</span><span class="value">1 vCPU</span><span class="sub">2+ recomendado para minerar</span></div>
+    <div class="card stat"><span class="label">Memória</span><span class="value">1 GB</span><span class="sub">16 MiB por thread de mineração</span></div>
+    <div class="card stat"><span class="label">Disco / rede</span><span class="value">5 GB</span><span class="sub">porta 7333/tcp aberta</span></div>
+  </div>
+
+  <h2>1. Instalação em um comando</h2>
+  <div class="codeblock">
+    <button class="btn btn-small" data-copy="curl -fsSL https://the-coin.cloud/install.sh | sudo bash">copiar</button>
+    <pre><code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash</code></pre>
+  </div>
+  <div class="card">
+    <h3>O que o instalador faz</h3>
+    <ul class="muted">
+      <li>Detecta a arquitetura e baixa os binários <code>thecoind</code> e <code>thecoin-wallet</code> da versão mais recente.</li>
+      <li>Confere o checksum SHA-256 antes de instalar em <code>/usr/local/bin</code>.</li>
+      <li>Cria o usuário de sistema <code>thecoin</code>, o diretório de dados e o arquivo de configuração <code>thecoind.toml</code>.</li>
+      <li>Pede o seu endereço de mineração (ou cria uma carteira nova e mostra as 24 palavras de recuperação).</li>
+      <li>Registra o serviço systemd <code>thecoind</code> com prioridade baixa e limites de memória, abre a porta 7333 no firewall (se o <code>ufw</code> estiver ativo) e inicia o nó.</li>
+    </ul>
+    <p class="faint" style="margin:0">Prefere ler antes de executar? <code>curl -fsSLO https://the-coin.cloud/install.sh &amp;&amp; less install.sh &amp;&amp; sudo bash install.sh</code></p>
+  </div>
+
+  <h2>2. Acompanhar o nó</h2>
+  <pre><code>sudo systemctl status thecoind          # estado do serviço
+sudo journalctl -u thecoind -f          # logs em tempo real
+curl -s http://127.0.0.1:7334/api/v1/status   # altura, peers, hashrate
+curl -s http://127.0.0.1:7334/api/v1/mining   # hashrate local e blocos encontrados
+sudo systemctl restart thecoind         # reiniciar após mudar a configuração</code></pre>
+  <p class="muted">A API do nó escuta apenas em <code>127.0.0.1</code> por padrão. A configuração completa (threads de mineração, modo pruned, peers, sinalização de governança) está em <code>thecoind.toml</code>; veja <a data-repo-link="/blob/main/docs/OPERATIONS.md" href="#">OPERATIONS.md</a>.</p>
+
+  <h2>3. Carteira — início rápido</h2>
+  <pre><code># criar carteira (anote as 24 palavras em papel, offline!)
+thecoin-wallet create
+
+# seu endereço para receber / minerar
+thecoin-wallet address
+thecoin-wallet address --new --label "loja"
+
+# saldo (disponível, travado em votos, recompensas maturando)
+thecoin-wallet balance
+
+# enviar 12,5 TCN com uma mensagem
+thecoin-wallet send tc1qexemplo... 12.5 --memo "Pedido 42"
+
+# cobrar: gera uma URI de pagamento (vire um QR code)
+thecoin-wallet request 3.5 --memo "Café" --label "Minha Loja"
+
+# pagar uma URI recebida
+thecoin-wallet pay "thecoin:tc1qexemplo...?amount=3.5&amp;memo=Caf%C3%A9"
+
+# histórico
+thecoin-wallet history</code></pre>
+  <p class="muted">Os valores na linha de comando usam ponto como separador decimal. A carteira conversa com o nó local (<code>http://127.0.0.1:7334</code>); use <code>--node</code> para apontar para outro nó. Contratos de pagamento: <code>thecoin-wallet contract --help</code>.</p>
+
+  <h2>Instalação manual</h2>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Binários prontos</h3>
+      <p class="muted">Baixe o pacote da sua arquitetura em <a data-repo-link="/releases" href="#">GitHub Releases</a> ou em <a href="/releases/">the-coin.cloud/releases</a>, confira o SHA-256 e extraia:</p>
+      <pre><code>sha256sum -c SHA256SUMS
+tar xzf thecoin-*-linux-x86_64.tar.gz
+sudo install -m 0755 thecoind thecoin-wallet /usr/local/bin/
+thecoind init --miner-address tc1q...
+thecoind</code></pre>
+    </div>
+    <div class="card">
+      <h3>Compilar do código-fonte</h3>
+      <p class="muted">Requer Rust estável (<a href="https://rustup.rs">rustup.rs</a>) e um compilador C.</p>
+      <pre><code>git clone https://github.com/the-coin-cloud/thecoin
+cd thecoin
+cargo build --release
+./target/release/thecoind params
+./target/release/thecoind --miner-address tc1q...</code></pre>
+      <p class="faint" style="margin:0">Em máquinas com pouca RAM, adicione swap ou use <code>cargo build --release -j1</code>.</p>
+    </div>
+  </div>
+
+  <h2>Testar sem gastar nada</h2>
+  <p class="muted">Use a <strong>testnet</strong> (<code>--network testnet</code>, endereços <code>tct1…</code>, portas 17333/17334) ou uma rede local <strong>regtest</strong> (<code>--network regtest</code>, PoW trivial, ideal para desenvolvimento).</p>
+
+  <h2>Desinstalar</h2>
+  <pre><code>curl -fsSL https://the-coin.cloud/uninstall.sh | sudo bash
+# ou manualmente:
+sudo systemctl disable --now thecoind
+sudo rm /etc/systemd/system/thecoind.service /usr/local/bin/thecoind /usr/local/bin/thecoin-wallet</code></pre>
+  <div class="notice accent">Antes de apagar dados, faça backup das palavras de recuperação da carteira. O diretório de dados do nó pode ser apagado com segurança — o histórico é baixado de novo da rede.</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>The Coin v0.1 · the-coin.cloud · código aberto (MIT/Apache-2.0)</span>
+    <span><a data-repo-link="" href="#">Código-fonte</a> · <a href="/whitepaper/the-coin-whitepaper-v0.1.pdf">Whitepaper</a> · <a href="docs.html">API</a></span>
+  </div>
+</footer>
+<script src="assets/config.js"></script>
+<script src="assets/api.js"></script>
+</body>
+</html>

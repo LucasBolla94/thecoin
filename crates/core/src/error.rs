@@ -3,7 +3,7 @@
 use crate::hash::Hash32;
 use crate::state::StateError;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum TxError {
     #[error("transaction too large ({size} bytes, max {max})")]
     TooLarge { size: usize, max: usize },

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Desenvolvedores — The Coin</title>
+  <meta name="description" content="Documentação para desenvolvedores: protocolo, API REST, carteiras e governança da The Coin.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="coin">TC</span> The Coin</a>
+    <nav class="nav" aria-label="Principal">
+      <a href="index.html">Início</a>
+      <a href="download.html">Instalar</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="governance.html">Governança</a>
+      <a href="docs.html">Desenvolvedores</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Desenvolvedores</h1>
+  <p class="muted" style="max-width:780px">The Coin é código aberto. Tudo que um nó, carteira ou explorer precisa está documentado no repositório — formatos binários canônicos (Borsh), regras de consenso, API REST e padrões de carteira. Novas carteiras e ferramentas são bem-vindas.</p>
+
+  <div class="grid grid-3" style="margin:24px 0">
+    <a class="card" data-repo-link="/blob/main/docs/PROTOCOL.md" href="#"><h3>PROTOCOL.md</h3><p class="muted" style="margin:0">Blocos, transações, CoinHash, LWMA, estado e LtHash, contratos, P2P. A especificação de consenso.</p></a>
+    <a class="card" data-repo-link="/blob/main/docs/API.md" href="#"><h3>API.md</h3><p class="muted" style="margin:0">Todos os endpoints REST <code>/api/v1</code> com exemplos de requisição e resposta JSON.</p></a>
+    <a class="card" data-repo-link="/blob/main/docs/WALLET_DEVELOPERS.md" href="#"><h3>WALLET_DEVELOPERS.md</h3><p class="muted" style="margin:0">Derivação BIP-39/SLIP-0010, endereços bech32m, assinatura, taxas, URIs <code>thecoin:</code> e vetores de teste.</p></a>
+    <a class="card" data-repo-link="/blob/main/docs/GOVERNANCE.md" href="#"><h3>GOVERNANCE.md</h3><p class="muted" style="margin:0">Ciclo de vida das propostas, quórum, aprovação bicameral, parâmetros e limites.</p></a>
+    <a class="card" data-repo-link="/blob/main/docs/OPERATIONS.md" href="#"><h3>OPERATIONS.md</h3><p class="muted" style="margin:0">Operar nós e seeds: configuração, firewall, backups, poda, monitoramento e atualização.</p></a>
+    <a class="card" href="/whitepaper/the-coin-whitepaper-v0.1.pdf"><h3>Whitepaper v0.1</h3><p class="muted" style="margin:0">Visão geral do design, economia, segurança e roadmap (PDF).</p></a>
+  </div>
+
+  <h2>API REST em resumo</h2>
+  <p class="muted">Todo nó expõe a API em <code>http://127.0.0.1:7334/api/v1</code> (mainnet). O site usa <code>https://the-coin.cloud/api/v1</code>, que encaminha para os nós seed. Respostas em JSON; valores em <strong>motes</strong> (1 TCN = 100.000.000 motes, inteiros); hashes em hexadecimal; endereços em bech32m. Erros retornam <code>{"error": "..."}</code> com status HTTP 4xx/5xx.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Método</th><th>Caminho</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td class="mono">/status</td><td>Altura, tip, dificuldade, hashrate, peers, mempool, oferta e parâmetros atuais</td></tr>
+        <tr><td>GET</td><td class="mono">/supply</td><td>Oferta máxima, emitida, queimada, circulante, recompensa e próximo halving</td></tr>
+        <tr><td>GET</td><td class="mono">/fees</td><td>Taxa mínima e sugerida por byte</td></tr>
+        <tr><td>GET</td><td class="mono">/blocks?limit=20&amp;before=H</td><td>Resumo dos blocos mais recentes (paginação por altura)</td></tr>
+        <tr><td>GET</td><td class="mono">/block/{altura|hash}</td><td>Bloco completo com transações</td></tr>
+        <tr><td>GET</td><td class="mono">/tx/{txid}</td><td>Transação confirmada ou no mempool</td></tr>
+        <tr><td>POST</td><td class="mono">/tx</td><td>Envia transação assinada: <code>{"tx": "&lt;hex borsh&gt;"}</code> → <code>{"txid": "..."}</code></td></tr>
+        <tr><td>GET</td><td class="mono">/address/{endereço}</td><td>Saldo, disponível, travado, maturando, nonce e próximo nonce</td></tr>
+        <tr><td>GET</td><td class="mono">/address/{endereço}/txs?limit=25&amp;cursor=H:P</td><td>Histórico do endereço (mais recente primeiro)</td></tr>
+        <tr><td>GET</td><td class="mono">/contract/{id}</td><td>Estado de um contrato de pagamento ativo</td></tr>
+        <tr><td>GET</td><td class="mono">/governance/proposals</td><td>Todas as propostas com apuração e projeções</td></tr>
+        <tr><td>GET</td><td class="mono">/governance/proposal/{id}</td><td>Uma proposta</td></tr>
+        <tr><td>GET</td><td class="mono">/governance/params</td><td>Parâmetros atuais e limites</td></tr>
+        <tr><td>GET</td><td class="mono">/mempool</td><td>Contagem, bytes e transações de maior taxa</td></tr>
+        <tr><td>GET</td><td class="mono">/peers</td><td>Peers conectados ao nó</td></tr>
+        <tr><td>GET</td><td class="mono">/mining</td><td>Minerador local: threads, hashrate, blocos encontrados</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Exemplos</h2>
+  <pre><code>curl -s https://the-coin.cloud/api/v1/status
+curl -s https://the-coin.cloud/api/v1/block/1000
+curl -s https://the-coin.cloud/api/v1/address/tc1q...
+curl -s -X POST https://the-coin.cloud/api/v1/tx \
+     -H 'content-type: application/json' \
+     -d '{"tx":"0100..."}'</code></pre>
+
+  <h2>Padrões usados</h2>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><td>Serialização canônica</td><td>Borsh (inteiros little-endian, vetores com prefixo u32)</td></tr>
+        <tr><td>Hash</td><td>BLAKE3 com separação de domínio <code>"TheCoin:" || tag || 0x00 || dados</code></td></tr>
+        <tr><td>Assinaturas</td><td>Ed25519 (RFC 8032), verificação estrita</td></tr>
+        <tr><td>Endereços</td><td>bech32m (BIP-350): <code>tc1</code> mainnet, <code>tct1</code> testnet, <code>tcr1</code> regtest</td></tr>
+        <tr><td>Carteiras HD</td><td>BIP-39 + SLIP-0010, caminho <code>m/44'/7333'/conta'/0'/índice'</code></td></tr>
+        <tr><td>Keystore</td><td>Argon2id + ChaCha20-Poly1305</td></tr>
+        <tr><td>Proof of work</td><td>CoinHash = Argon2id (16 MiB, t=1, p=1) sobre o cabeçalho de 180 bytes</td></tr>
+        <tr><td>Dificuldade</td><td>LWMA-1, janela de 60 blocos, alvo de 60 s</td></tr>
+        <tr><td>HTLC</td><td>SHA-256 (compatível com Bitcoin/Lightning para swaps atômicos)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Contribuir</h2>
+  <p class="muted">Leia <a data-repo-link="/blob/main/CONTRIBUTING.md" href="#">CONTRIBUTING.md</a>, rode <code>cargo test --workspace</code> e abra um pull request. Mudanças de consenso exigem proposta de governança e atualização coordenada da rede.</p>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>The Coin v0.1 · the-coin.cloud · código aberto (MIT/Apache-2.0)</span>
+    <span><a data-repo-link="" href="#">Código-fonte</a> · <a href="explorer.html">Explorer</a></span>
+  </div>
+</footer>
+<script src="assets/config.js"></script>
+<script src="assets/api.js"></script>
+</body>
+</html>

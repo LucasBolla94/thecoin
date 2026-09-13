@@ -28,8 +28,17 @@ pub struct AddrMan {
 
 pub fn is_routable(ip: &IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => !(v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_unspecified() || v4.is_broadcast() || v4.is_documentation()),
-        IpAddr::V6(v6) => !(v6.is_loopback() || v6.is_unspecified() || (v6.segments()[0] & 0xfe00) == 0xfc00 || (v6.segments()[0] & 0xffc0) == 0xfe80),
+        IpAddr::V4(v4) => {
+            !(v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_documentation())
+        }
+        IpAddr::V6(v6) => {
+            !(v6.is_loopback() || v6.is_unspecified() || (v6.segments()[0] & 0xfe00) == 0xfc00 || (v6.segments()[0] & 0xffc0) == 0xfe80)
+        }
     }
 }
 
@@ -127,7 +136,8 @@ impl AddrMan {
 
     /// Addresses to share with peers.
     pub fn sample(&self, n: usize, now: u64) -> Vec<SocketAddr> {
-        let mut v: Vec<&AddrInfo> = self.addrs.values().filter(|a| a.failures < 3 && now.saturating_sub(a.last_seen) < 7 * 86_400).collect();
+        let mut v: Vec<&AddrInfo> =
+            self.addrs.values().filter(|a| a.failures < 3 && now.saturating_sub(a.last_seen) < 7 * 86_400).collect();
         v.shuffle(&mut rand::thread_rng());
         v.into_iter().take(n).map(|a| a.addr).collect()
     }

@@ -143,7 +143,9 @@ impl WalletFile {
         }
         let cipher = ChaCha20Poly1305::new(Key::from_slice(key.as_ref()));
         let mut pt: Zeroizing<Vec<u8>> = Zeroizing::new(ct);
-        cipher.decrypt_in_place(Nonce::from_slice(&nonce), AAD, &mut *pt).map_err(|_| anyhow!("wrong password or corrupted wallet file"))?;
+        cipher
+            .decrypt_in_place(Nonce::from_slice(&nonce), AAD, &mut *pt)
+            .map_err(|_| anyhow!("wrong password or corrupted wallet file"))?;
         let secret: Secret = serde_json::from_slice(&pt)?;
         Ok((Zeroizing::new(secret.mnemonic.clone()), Zeroizing::new(secret.passphrase.clone())))
     }

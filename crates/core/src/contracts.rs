@@ -82,11 +82,42 @@ pub struct PendingSpend {
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum ContractState {
-    Escrow { payer: Address, payee: Address, arbiter: Option<Address>, deadline_height: u64 },
-    Vesting { beneficiary: Address, total: u64, claimed: u64, start_height: u64, cliff_height: u64, end_height: u64, revocable: bool },
-    Subscription { payer: Address, payee: Address, amount_per_period: u64, period_blocks: u64, max_periods: u32, start_height: u64, claimed_periods: u32 },
-    Htlc { sender: Address, recipient: Address, hash_lock: Hash32, timeout_height: u64 },
-    Multisig { signers: Vec<Address>, threshold: u8, next_spend_id: u32, pending: Vec<PendingSpend> },
+    Escrow {
+        payer: Address,
+        payee: Address,
+        arbiter: Option<Address>,
+        deadline_height: u64,
+    },
+    Vesting {
+        beneficiary: Address,
+        total: u64,
+        claimed: u64,
+        start_height: u64,
+        cliff_height: u64,
+        end_height: u64,
+        revocable: bool,
+    },
+    Subscription {
+        payer: Address,
+        payee: Address,
+        amount_per_period: u64,
+        period_blocks: u64,
+        max_periods: u32,
+        start_height: u64,
+        claimed_periods: u32,
+    },
+    Htlc {
+        sender: Address,
+        recipient: Address,
+        hash_lock: Hash32,
+        timeout_height: u64,
+    },
+    Multisig {
+        signers: Vec<Address>,
+        threshold: u8,
+        next_spend_id: u32,
+        pending: Vec<PendingSpend>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -307,7 +338,15 @@ pub(crate) fn create<R: StateReader + ?Sized>(
             if payee == creator {
                 return err("subscription payee must differ from payer");
             }
-            ContractState::Subscription { payer: creator, payee, amount_per_period, period_blocks, max_periods, start_height: height, claimed_periods: 0 }
+            ContractState::Subscription {
+                payer: creator,
+                payee,
+                amount_per_period,
+                period_blocks,
+                max_periods,
+                start_height: height,
+                claimed_periods: 0,
+            }
         }
         ContractSpec::Htlc { recipient, hash_lock, timeout_height, .. } => {
             if timeout_height <= height {
@@ -315,7 +354,9 @@ pub(crate) fn create<R: StateReader + ?Sized>(
             }
             ContractState::Htlc { sender: creator, recipient, hash_lock, timeout_height }
         }
-        ContractSpec::Multisig { signers, threshold, .. } => ContractState::Multisig { signers, threshold, next_spend_id: 0, pending: Vec::new() },
+        ContractSpec::Multisig { signers, threshold, .. } => {
+            ContractState::Multisig { signers, threshold, next_spend_id: 0, pending: Vec::new() }
+        }
     };
     let contract = Contract { id, creator, created_height: height, balance: funding, state: cstate };
     let parties = contract.parties();
@@ -351,7 +392,10 @@ pub(crate) fn call<R: StateReader + ?Sized>(
             }
             payouts.push((*payer, c.balance));
         }
-        (ContractState::Vesting { beneficiary, total, claimed, start_height, cliff_height, end_height, .. }, ContractCall::VestingClaim) => {
+        (
+            ContractState::Vesting { beneficiary, total, claimed, start_height, cliff_height, end_height, .. },
+            ContractCall::VestingClaim,
+        ) => {
             if caller != *beneficiary {
                 return err("only the beneficiary can claim");
             }
@@ -363,7 +407,10 @@ pub(crate) fn call<R: StateReader + ?Sized>(
             *claimed += amount;
             payouts.push((*beneficiary, amount));
         }
-        (ContractState::Vesting { beneficiary, total, claimed, start_height, cliff_height, end_height, revocable }, ContractCall::VestingRevoke) => {
+        (
+            ContractState::Vesting { beneficiary, total, claimed, start_height, cliff_height, end_height, revocable },
+            ContractCall::VestingRevoke,
+        ) => {
             if caller != c.creator || !*revocable {
                 return err("vesting is not revocable by caller");
             }
@@ -373,7 +420,10 @@ pub(crate) fn call<R: StateReader + ?Sized>(
             payouts.push((*beneficiary, to_beneficiary));
             payouts.push((c.creator, to_creator));
         }
-        (ContractState::Subscription { payee, amount_per_period, period_blocks, max_periods, start_height, claimed_periods, .. }, ContractCall::SubscriptionClaim) => {
+        (
+            ContractState::Subscription { payee, amount_per_period, period_blocks, max_periods, start_height, claimed_periods, .. },
+            ContractCall::SubscriptionClaim,
+        ) => {
             if caller != *payee {
                 return err("only the payee can claim");
             }
@@ -385,7 +435,10 @@ pub(crate) fn call<R: StateReader + ?Sized>(
             *claimed_periods += periods;
             payouts.push((*payee, *amount_per_period * periods as u64));
         }
-        (ContractState::Subscription { payer, payee, amount_per_period, period_blocks, max_periods, start_height, claimed_periods }, ContractCall::SubscriptionCancel) => {
+        (
+            ContractState::Subscription { payer, payee, amount_per_period, period_blocks, max_periods, start_height, claimed_periods },
+            ContractCall::SubscriptionCancel,
+        ) => {
             if caller != *payer {
                 return err("only the payer can cancel");
             }
@@ -420,7 +473,14 @@ pub(crate) fn call<R: StateReader + ?Sized>(
             if pending.len() >= MAX_PENDING_SPENDS {
                 return err("too many pending spends");
             }
-            let spend = PendingSpend { id: *next_spend_id, to: *to, amount: *amount, memo: memo.clone(), approvals: vec![caller], created_height: height };
+            let spend = PendingSpend {
+                id: *next_spend_id,
+                to: *to,
+                amount: *amount,
+                memo: memo.clone(),
+                approvals: vec![caller],
+                created_height: height,
+            };
             *next_spend_id = next_spend_id.checked_add(1).ok_or(TxError::Overflow)?;
             if *threshold <= 1 {
                 if *amount > c.balance {

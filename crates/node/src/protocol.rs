@@ -96,7 +96,10 @@ pub enum Message {
     GetData(Vec<InvItem>),
     NotFound(Vec<InvItem>),
     /// Asks for up to 500 main-chain block hashes after the first known locator hash.
-    GetBlocks { locator: Vec<Hash32>, stop: Hash32 },
+    GetBlocks {
+        locator: Vec<Hash32>,
+        stop: Hash32,
+    },
     Block(Box<Block>),
     Tx(Box<Transaction>),
     /// Asks for an `Inv` of the peer's mempool.

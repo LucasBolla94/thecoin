@@ -77,6 +77,8 @@ enum Command {
     },
     /// Print network parameters (supply, emission, ports, genesis).
     Params,
+    /// Compact the database file to reclaim disk space (stop the node first).
+    Compact,
 }
 
 fn build_config(cli: &Cli) -> Result<NodeConfig> {
@@ -141,7 +143,11 @@ fn print_params(network: Network) {
     println!("  halving interval    {} blocks", p.halving_interval);
     for era in 1..=4u64 {
         let h = era * p.halving_interval;
-        println!("  after era {era}         {} TCN emitted (~{:.2} years)", format_amount(cumulative_emission(p, h)), h as f64 * p.target_block_time as f64 / 31_557_600.0);
+        println!(
+            "  after era {era}         {} TCN emitted (~{:.2} years)",
+            format_amount(cumulative_emission(p, h)),
+            h as f64 * p.target_block_time as f64 / 31_557_600.0
+        );
     }
     println!("  coinbase maturity   {} blocks", p.coinbase_maturity);
     println!("  PoW                 CoinHash (Argon2id, {} MiB, t={})", p.pow.mem_kib / 1024, p.pow.iterations);
@@ -172,13 +178,29 @@ fn main() -> Result<()> {
             println!("wrote {}", path.display());
             return Ok(());
         }
+        Some(Command::Compact) => {
+            let cfg = build_config(&cli)?;
+            let path = cfg.db_path();
+            let before = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let mut db = thecoin_storage::ChainDb::open(&path, &Default::default())?;
+            db.compact()?;
+            drop(db);
+            let after = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            println!("compacted {}: {} MB -> {} MB", path.display(), before / 1_048_576, after / 1_048_576);
+            return Ok(());
+        }
         Some(Command::Run) | None => {}
     }
 
     let cfg = build_config(&cli)?;
     // Small, fixed runtime: networking and API are I/O bound; CPU work runs on
     // dedicated threads (block processor, miners) and the blocking pool.
-    let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).max_blocking_threads(16).enable_all().thread_name("thecoind").build()?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .max_blocking_threads(16)
+        .enable_all()
+        .thread_name("thecoind")
+        .build()?;
     runtime.block_on(async move {
         let node = Node::start(cfg).await?;
         wait_for_signal().await;

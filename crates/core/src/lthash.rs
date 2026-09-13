@@ -42,7 +42,7 @@ fn element(key: &[u8], value: &[u8]) -> [u16; LTHASH_LEN] {
     let mut bytes = [0u8; LTHASH_LEN * 2];
     reader.fill(&mut bytes);
     let mut out = [0u16; LTHASH_LEN];
-    for (i, chunk) in bytes.chunks_exact(2).enumerate() {
+    for (i, chunk) in bytes.as_chunks::<2>().0.iter().enumerate() {
         out[i] = u16::from_le_bytes([chunk[0], chunk[1]]);
     }
     out
@@ -76,7 +76,7 @@ impl LtHash {
             return None;
         }
         let mut out = LtHash::default();
-        for (i, chunk) in b.chunks_exact(2).enumerate() {
+        for (i, chunk) in b.as_chunks::<2>().0.iter().enumerate() {
             out.0[i] = u16::from_le_bytes([chunk[0], chunk[1]]);
         }
         Some(out)

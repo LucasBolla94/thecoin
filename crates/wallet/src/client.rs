@@ -14,7 +14,10 @@ pub struct NodeClient {
 
 impl NodeClient {
     pub fn new(base_url: &str) -> NodeClient {
-        let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(30)).user_agent(&format!("thecoin-wallet/{}", thecoin_core::VERSION)).build();
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(30))
+            .user_agent(&format!("thecoin-wallet/{}", thecoin_core::VERSION))
+            .build();
         NodeClient { base: base_url.trim_end_matches('/').to_string(), agent }
     }
 

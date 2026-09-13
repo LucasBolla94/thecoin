@@ -145,6 +145,11 @@ impl ChainDb {
         Ok(ChainDb { db })
     }
 
+    /// Rewrites the database file to reclaim free pages. Requires exclusive access.
+    pub fn compact(&mut self) -> Result<bool> {
+        Ok(self.db.compact()?)
+    }
+
     pub fn read(&self) -> Result<ReadTx> {
         Ok(ReadTx { tx: self.db.begin_read()? })
     }
@@ -160,7 +165,13 @@ pub trait DbRead {
     fn get_by_height(&self, table: TableDefinition<u64, &[u8]>, height: u64) -> Result<Option<Vec<u8>>>;
     fn get_meta(&self, key: &str) -> Result<Option<Vec<u8>>>;
     fn scan_prefix(&self, table: TableDefinition<&[u8], &[u8]>, prefix: &[u8], limit: usize) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
-    fn scan_prefix_rev(&self, table: TableDefinition<&[u8], &[u8]>, prefix: &[u8], before: Option<&[u8]>, limit: usize) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
+    fn scan_prefix_rev(
+        &self,
+        table: TableDefinition<&[u8], &[u8]>,
+        prefix: &[u8],
+        before: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
 
     fn header(&self, hash: &Hash32) -> Result<Option<HeaderRecord>> {
         match self.get_bytes(HEADERS, &hash.0)? {
@@ -172,7 +183,11 @@ pub trait DbRead {
     fn block_txs(&self, hash: &Hash32) -> Result<Option<Vec<Transaction>>> {
         match self.get_bytes(BLOCKS, &hash.0)? {
             Some(b) => Ok(Some(Vec::<Transaction>::try_from_slice(&decompress(&b)?)?)),
-            None => Ok(None),
+            // Empty bodies are not stored (see `WriteTx::put_block_txs`).
+            None => match self.header(hash)? {
+                Some(h) if h.has_body && h.tx_count == 0 => Ok(Some(Vec::new())),
+                _ => Ok(None),
+            },
         }
     }
 
@@ -359,7 +374,12 @@ impl WriteTx {
         Ok(())
     }
 
+    /// Stores a block body. Empty bodies are implied by `HeaderRecord::tx_count == 0`
+    /// and take no space.
     pub fn put_block_txs(&self, hash: &Hash32, txs: &[Transaction]) -> Result<()> {
+        if txs.is_empty() {
+            return Ok(());
+        }
         let raw = borsh::to_vec(&txs.to_vec())?;
         let mut t = self.tx.open_table(BLOCKS)?;
         t.insert(hash.0.as_slice(), compress(&raw)?.as_slice())?;
@@ -500,16 +520,32 @@ mod tests {
         let g = genesis_block(&REGTEST);
         let hash = g.hash();
         let w = db.write().unwrap();
-        w.put_header(&hash, &HeaderRecord { header: g.header.clone(), chainwork: [0; 32], status: BlockStatus::Valid, has_body: true, tx_count: 0, size: 184 }).unwrap();
+        w.put_header(
+            &hash,
+            &HeaderRecord {
+                header: g.header.clone(),
+                chainwork: [0; 32],
+                status: BlockStatus::Valid,
+                has_body: true,
+                tx_count: 0,
+                size: 184,
+            },
+        )
+        .unwrap();
         w.put_block_txs(&hash, &g.txs).unwrap();
         w.set_main(0, &hash).unwrap();
         w.set_tip(&hash).unwrap();
-        w.apply_state_changes(&[StateChange { key: vec![1, 2], old: None, new: Some(vec![9]) }, StateChange { key: vec![1, 3], old: None, new: Some(vec![8]) }]).unwrap();
+        w.apply_state_changes(&[
+            StateChange { key: vec![1, 2], old: None, new: Some(vec![9]) },
+            StateChange { key: vec![1, 3], old: None, new: Some(vec![8]) },
+        ])
+        .unwrap();
         let addr = Address([7; 20]);
         for h in 0..5u64 {
             w.index_address(&addr, h, 0, &Hash32([h as u8; 32])).unwrap();
         }
-        w.put_undo(3, &BlockUndo { changes: vec![StateChange { key: vec![5], old: Some(vec![1]), new: None }], addr_index: vec![] }).unwrap();
+        w.put_undo(3, &BlockUndo { changes: vec![StateChange { key: vec![5], old: Some(vec![1]), new: None }], addr_index: vec![] })
+            .unwrap();
         w.commit().unwrap();
 
         let r = db.read().unwrap();

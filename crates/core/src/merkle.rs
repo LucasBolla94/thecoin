@@ -36,7 +36,7 @@ pub fn merkle_proof(leaves: &[Hash32], index: usize) -> Option<Vec<(bool, Hash32
     let mut level: Vec<Hash32> = leaves.iter().map(|l| tagged_hash(tags::MERKLE_LEAF, &[&l.0])).collect();
     let mut idx = index;
     while level.len() > 1 {
-        let sibling = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+        let sibling = if idx.is_multiple_of(2) { idx + 1 } else { idx - 1 };
         if sibling < level.len() {
             // (sibling_is_left, hash)
             proof.push((sibling < idx, level[sibling]));

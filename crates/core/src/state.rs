@@ -119,7 +119,7 @@ impl ChainGlobal {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 #[error("state backend error: {0}")]
 pub struct StateError(pub String);
 

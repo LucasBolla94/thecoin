@@ -126,7 +126,9 @@ pub fn apply_tx<R: StateReader + ?Sized>(
 
     let debit_amount: u64 = match &body.action {
         TxAction::Transfer { amount, .. } => *amount,
-        TxAction::BatchTransfer { outputs, .. } => outputs.iter().try_fold(0u64, |a, o| a.checked_add(o.amount)).ok_or(TxError::Overflow)?,
+        TxAction::BatchTransfer { outputs, .. } => {
+            outputs.iter().try_fold(0u64, |a, o| a.checked_add(o.amount)).ok_or(TxError::Overflow)?
+        }
         TxAction::CreateContract { spec } => spec.funding().ok_or(TxError::Overflow)?,
         TxAction::CallContract { call, .. } => call.deposit_amount(),
         TxAction::Propose { .. } => g.params.proposal_deposit,

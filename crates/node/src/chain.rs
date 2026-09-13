@@ -87,7 +87,10 @@ pub enum ProcessResult {
     /// Valid-looking block stored on a side chain with less work.
     SideChain,
     /// The active chain changed.
-    NewTip { disconnected: Vec<Block>, connected: Vec<Block> },
+    NewTip {
+        disconnected: Vec<Block>,
+        connected: Vec<Block>,
+    },
     Invalid(BlockError),
 }
 
@@ -152,7 +155,14 @@ impl Chain {
                 let work = work_for_target(&genesis.header.target_u256());
                 w.put_header(
                     &ghash,
-                    &HeaderRecord { header: genesis.header.clone(), chainwork: u256_to_bytes(&work), status: BlockStatus::Valid, has_body: true, tx_count: 0, size: genesis.serialized_size() as u32 },
+                    &HeaderRecord {
+                        header: genesis.header.clone(),
+                        chainwork: u256_to_bytes(&work),
+                        status: BlockStatus::Valid,
+                        has_body: true,
+                        tx_count: 0,
+                        size: genesis.serialized_size() as u32,
+                    },
                 )?;
                 w.put_block_txs(&ghash, &genesis.txs)?;
                 w.set_main(0, &ghash)?;
@@ -181,7 +191,13 @@ impl Chain {
         let tip = TipInfo { hash: tip_hash, height: rec.header.height, chainwork: u256_from_bytes(&rec.chainwork), header: rec.header };
         drop(r);
         info!(height = tip.height, tip = %tip.hash, "chain loaded");
-        Ok(Chain { params, db, opts, inner: Mutex::new(Inner { lthash, hasher: PowHasher::new(params.pow), orphans: Vec::new() }), tip: RwLock::new(tip) })
+        Ok(Chain {
+            params,
+            db,
+            opts,
+            inner: Mutex::new(Inner { lthash, hasher: PowHasher::new(params.pow), orphans: Vec::new() }),
+            tip: RwLock::new(tip),
+        })
     }
 
     pub fn tip(&self) -> TipInfo {
@@ -224,7 +240,8 @@ impl Chain {
     fn expected_target<R: DbRead>(&self, r: &R, parent: &HeaderRecord) -> Result<(U256, u64)> {
         let need = difficulty::required_ancestors(self.params).max(MTP_WINDOW);
         let hdrs = Self::branch_headers(r, parent, need)?;
-        let infos: Vec<BlockTimeInfo> = hdrs.iter().map(|h| BlockTimeInfo { timestamp: h.header.timestamp, target: h.header.target_u256() }).collect();
+        let infos: Vec<BlockTimeInfo> =
+            hdrs.iter().map(|h| BlockTimeInfo { timestamp: h.header.timestamp, target: h.header.target_u256() }).collect();
         let target = difficulty::next_target(self.params, parent.header.height + 1, &infos);
         let ts: Vec<u64> = hdrs.iter().map(|h| h.header.timestamp).collect();
         let mtp = difficulty::median_time_past(&ts);
@@ -298,7 +315,11 @@ impl Chain {
                     merged_conn.extend(connected);
                 }
             }
-            return Ok(if changed { ProcessResult::NewTip { disconnected: merged_disc, connected: merged_conn } } else { ProcessResult::SideChain });
+            return Ok(if changed {
+                ProcessResult::NewTip { disconnected: merged_disc, connected: merged_conn }
+            } else {
+                ProcessResult::SideChain
+            });
         }
         Ok(first)
     }
@@ -412,7 +433,11 @@ impl Chain {
                 let txs = w.block_txs(&bhash)?.ok_or_else(|| anyhow!("missing body of branch block {bhash}"))?;
                 Block { header: rec.header.clone(), txs }
             };
-            let result = if rec.status == BlockStatus::Invalid { Err(Fail::Invalid(BlockError::InvalidAncestor)) } else { self.connect_block(&w, &blk, rec, &mut lthash) };
+            let result = if rec.status == BlockStatus::Invalid {
+                Err(Fail::Invalid(BlockError::InvalidAncestor))
+            } else {
+                self.connect_block(&w, &blk, rec, &mut lthash)
+            };
             if let Err(fail) = result {
                 w.abort()?;
                 if let Fail::Invalid(e) = &fail {

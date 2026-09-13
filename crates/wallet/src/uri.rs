@@ -103,7 +103,10 @@ mod tests {
     #[test]
     fn roundtrip() {
         let addr = Address::from_public_key(&[3; 32]).encode(Network::Mainnet);
-        let r = PaymentRequest { address: addr, amount: Some(1_250_000_000), memo: Some("Pedido #123 ção".into()), label: Some("Loja".into()) };
+        let r =
+            PaymentRequest {
+                address: addr, amount: Some(1_250_000_000), memo: Some("Pedido #123 ção".into()), label: Some("Loja".into())
+            };
         let uri = r.to_uri();
         assert!(uri.contains("amount=12.5"));
         assert_eq!(PaymentRequest::parse(&uri, Network::Mainnet).unwrap(), r);

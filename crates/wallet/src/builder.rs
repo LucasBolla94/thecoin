@@ -22,7 +22,10 @@ pub fn transfer(to: Address, amount: u64, memo: &str) -> TxAction {
 }
 
 pub fn batch(outputs: Vec<(Address, u64)>, memo: &str) -> TxAction {
-    TxAction::BatchTransfer { outputs: outputs.into_iter().map(|(to, amount)| TransferOutput { to, amount }).collect(), memo: memo.as_bytes().to_vec() }
+    TxAction::BatchTransfer {
+        outputs: outputs.into_iter().map(|(to, amount)| TransferOutput { to, amount }).collect(),
+        memo: memo.as_bytes().to_vec(),
+    }
 }
 
 pub fn create_contract(spec: ContractSpec) -> TxAction {
