@@ -86,7 +86,13 @@ pub enum RingError {
 
 /// Signs `msg` with the secret key of `ring[index]`.
 /// Returns `(signature, key_image)`; the signature is `32 × (n + 1)` bytes.
-pub fn sign<R: rand::RngCore + rand::CryptoRng>(msg: &[u8], ring: &[[u8; 32]], index: usize, secret: &[u8; 32], rng: &mut R) -> Result<(Vec<u8>, [u8; 32]), RingError> {
+pub fn sign<R: rand::RngCore + rand::CryptoRng>(
+    msg: &[u8],
+    ring: &[[u8; 32]],
+    index: usize,
+    secret: &[u8; 32],
+    rng: &mut R,
+) -> Result<(Vec<u8>, [u8; 32]), RingError> {
     let n = ring.len();
     if n == 0 || n > crate::vm::MAX_RING_SIZE {
         return Err(RingError::BadRingSize);

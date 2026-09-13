@@ -283,7 +283,10 @@ fn escrow_with_refundable_deposit() {
     let contract: thecoin_core::contracts::Contract = read_typed(&c.state, &contract_key(&id1)).unwrap().unwrap();
     assert_eq!(contract.balance, 10 * COIN);
     let without_deposit = thecoin_core::contracts::Contract { deposit: 0, ..contract.clone() };
-    assert_eq!(contract.deposit, storage_deposit(borsh::to_vec(&without_deposit).unwrap().len() as u64 + 33, REGTEST.gov_defaults.storage_deposit_per_kb));
+    assert_eq!(
+        contract.deposit,
+        storage_deposit(borsh::to_vec(&without_deposit).unwrap().len() as u64 + 33, REGTEST.gov_defaults.storage_deposit_per_kb)
+    );
     assert!(contract.deposit > 0);
     assert_eq!(c.account(&buyer.addr).balance, before - 10 * COIN - fee - contract.deposit);
 
@@ -313,7 +316,14 @@ fn vesting_subscription_htlc_multisig() {
     // Vesting: 100 TCN from h+0 to h+10, cliff h+5
     let h = c.height + 1;
     let vid = contract_id(&alice.addr, alice.nonce);
-    let spec = ContractSpec::Vesting { beneficiary: bob.addr, amount: 100 * COIN, start_height: h, cliff_height: h + 5, end_height: h + 10, revocable: true };
+    let spec = ContractSpec::Vesting {
+        beneficiary: bob.addr,
+        amount: 100 * COIN,
+        start_height: h,
+        cliff_height: h + 5,
+        end_height: h + 10,
+        revocable: true,
+    };
     c.mine(miner, vec![alice.tx(TxAction::CreateContract { spec })]).unwrap();
     let e = tx_error(c.mine(miner, vec![bob.tx(TxAction::CallContract { contract: vid, call: ContractCall::VestingClaim })]));
     assert!(matches!(e, TxError::Contract(_)));
@@ -359,8 +369,14 @@ fn vesting_subscription_htlc_multisig() {
     let spec = ContractSpec::Multisig { signers: vec![alice.addr, bob.addr, carol.addr], threshold: 2, initial_deposit: 5 * COIN };
     c.mine(miner, vec![alice.tx(TxAction::CreateContract { spec })]).unwrap();
     let dest = Wallet::new(9).addr;
-    c.mine(miner, vec![alice.tx(TxAction::CallContract { contract: mid, call: ContractCall::MultisigPropose { to: dest, amount: 5 * COIN, memo: vec![] } })])
-        .unwrap();
+    c.mine(
+        miner,
+        vec![alice.tx(TxAction::CallContract {
+            contract: mid,
+            call: ContractCall::MultisigPropose { to: dest, amount: 5 * COIN, memo: vec![] },
+        })],
+    )
+    .unwrap();
     let dup = alice.tx(TxAction::CallContract { contract: mid, call: ContractCall::MultisigApprove { spend_id: 0 } });
     assert!(matches!(tx_error(c.mine(miner, vec![dup])), TxError::Contract(_)));
     alice.nonce -= 1;
@@ -395,7 +411,8 @@ fn governance_changes_parameter_with_both_chambers() {
     assert_eq!(g.voting.len(), 1);
     let bit = g.voting[0].0;
 
-    c.mine_signal(miner.addr, vec![voter.tx(TxAction::Vote { proposal: pid, choice: VoteChoice::Yes, weight: 390 * COIN })], 1 << bit).unwrap();
+    c.mine_signal(miner.addr, vec![voter.tx(TxAction::Vote { proposal: pid, choice: VoteChoice::Yes, weight: 390 * COIN })], 1 << bit)
+        .unwrap();
     assert_eq!(c.account(&voter.addr).locked, 390 * COIN);
     let spend = voter.pay(&miner.addr, 100 * COIN);
     assert!(matches!(tx_error(c.mine_signal(miner.addr, vec![spend], 1 << bit)), TxError::InsufficientFunds { .. }));
@@ -437,7 +454,8 @@ fn governance_without_quorum_burns_deposit() {
 #[test]
 fn vote_in_same_block_as_proposal() {
     let (mut c, mut miner) = funded();
-    let spec = ProposalSpec { title: "Same-block vote".into(), url: String::new(), content_hash: Hash32::ZERO, action: ProposalAction::Text };
+    let spec =
+        ProposalSpec { title: "Same-block vote".into(), url: String::new(), content_hash: Hash32::ZERO, action: ProposalAction::Text };
     let pid = proposal_id(&miner.addr, miner.nonce);
     let propose = miner.tx(TxAction::Propose { proposal: spec });
     let vote = miner.tx(TxAction::Vote { proposal: pid, choice: VoteChoice::Yes, weight: COIN });
@@ -580,7 +598,8 @@ fn tccl_compile_errors_and_limits() {
     let hog = "contract Hog\nstate data: list[bytes]\naction fill():\n    for i in range(0, 50):\n        data.push(0x00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff)\n";
     let addr = program_address(&dev.addr, dev.nonce);
     c.mine(miner, vec![deploy_tx(&mut dev, hog)]).unwrap();
-    let tight = dev.tx(TxAction::Invoke { contract: addr, function: "fill".into(), args: vec![], value: 0, max_fuel: 500_000, max_deposit: 1 });
+    let tight =
+        dev.tx(TxAction::Invoke { contract: addr, function: "fill".into(), args: vec![], value: 0, max_fuel: 500_000, max_deposit: 1 });
     let r = c.mine(miner, vec![tight]).unwrap();
     assert!(r.txs[0].error.as_ref().unwrap().contains("exceeds max_deposit"), "{:?}", r.txs[0].error);
 

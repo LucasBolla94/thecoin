@@ -28,7 +28,8 @@ pub fn parse_arg(s: &str, t: &Type) -> Result<Value, String> {
         }
         Type::Address => parse_address(s).map(Value::Address),
         Type::List(inner) => {
-            let body = s.strip_prefix('[').and_then(|x| x.strip_suffix(']')).ok_or_else(|| format!("list must look like [a, b], got '{s}'"))?;
+            let body =
+                s.strip_prefix('[').and_then(|x| x.strip_suffix(']')).ok_or_else(|| format!("list must look like [a, b], got '{s}'"))?;
             let mut items = Vec::new();
             for part in split_top_level(body) {
                 if part.trim().is_empty() {
@@ -54,8 +55,10 @@ fn parse_int(s: &str) -> Result<i128, String> {
         if frac.len() > 8 || int_part.is_empty() && frac.is_empty() {
             return Err(format!("invalid TCN amount '{s}'"));
         }
-        let int_v: i128 = if int_part.is_empty() { 0 } else { int_part.replace('_', "").parse().map_err(|_| format!("invalid TCN amount '{s}'"))? };
-        let frac_v: i128 = if frac.is_empty() { 0 } else { format!("{frac:0<8}").parse().map_err(|_| format!("invalid TCN amount '{s}'"))? };
+        let int_v: i128 =
+            if int_part.is_empty() { 0 } else { int_part.replace('_', "").parse().map_err(|_| format!("invalid TCN amount '{s}'"))? };
+        let frac_v: i128 =
+            if frac.is_empty() { 0 } else { format!("{frac:0<8}").parse().map_err(|_| format!("invalid TCN amount '{s}'"))? };
         let v = int_v.checked_mul(100_000_000).and_then(|v| v.checked_add(frac_v)).ok_or("amount overflow")?;
         return Ok(if neg { -v } else { v });
     }
@@ -144,5 +147,9 @@ mod tests {
         assert_eq!(parse_arg(&addr, &Type::Address).unwrap(), Value::Address([7u8; 20]));
         assert!(parse_arg("1.2.3tcn", &Type::Int).is_err());
         assert!(parse_arg("abc", &Type::Bytes).is_err());
+        for t in ["int", "list[bytes]", "map[address, list[int]]", "list[list[text]]"] {
+            let parsed: Type = t.parse().unwrap();
+            assert_eq!(parsed.to_string(), t);
+        }
     }
 }

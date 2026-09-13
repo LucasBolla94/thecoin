@@ -96,6 +96,15 @@ impl HdKeys {
         Address::from_public_key(&self.secret_key(account, index).public_key())
     }
 
+    /// Ring-signature key pair for privacy pools: `m/44'/7333'/0'/7'/index'`.
+    /// Returns `(secret, public)`; the public key is what you deposit.
+    pub fn ring_keypair(&self, index: u32) -> ([u8; 32], [u8; 32]) {
+        let mut seed = derive_ed25519(&self.seed, &[44, COIN_TYPE, 0, 7, index]);
+        let pair = thecoin_core::tccl::ring::keypair_from_seed(&seed);
+        seed.zeroize();
+        pair
+    }
+
     pub fn address_string(&self, account: u32, index: u32, network: Network) -> String {
         self.address(account, index).encode(network)
     }

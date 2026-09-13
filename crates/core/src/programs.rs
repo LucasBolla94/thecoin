@@ -242,12 +242,18 @@ fn run<R: StateReader + ?Sized>(
             let extra = required.saturating_sub(meta.deposit);
             if extra > call.max_deposit {
                 return Ok(Err(ProgramOutcome::failed(
-                    format!("storage deposit of {extra} motes exceeds max_deposit {} (contract state: {new_bytes} bytes)", call.max_deposit),
+                    format!(
+                        "storage deposit of {extra} motes exceeds max_deposit {} (contract state: {new_bytes} bytes)",
+                        call.max_deposit
+                    ),
                     out.fuel_used,
                 )));
             }
             if let Debit::Insufficient { needed, available } = debit(child, &call.sender, extra, call.height)? {
-                return Ok(Err(ProgramOutcome::failed(format!("insufficient funds for storage deposit: need {needed}, spendable {available}"), out.fuel_used)));
+                return Ok(Err(ProgramOutcome::failed(
+                    format!("insufficient funds for storage deposit: need {needed}, spendable {available}"),
+                    out.fuel_used,
+                )));
             }
             meta.deposit += extra;
         } else if new_bytes < old_bytes && old_bytes > 0 && meta.deposit > 0 {
@@ -297,7 +303,10 @@ pub fn deploy<R: StateReader + ?Sized>(
     };
     let code = program.to_bytes();
     if code.len() > MAX_PROGRAM_BYTES {
-        return Ok(ProgramOutcome::failed(format!("compiled program too large ({} bytes, max {MAX_PROGRAM_BYTES})", code.len()), compile_fuel));
+        return Ok(ProgramOutcome::failed(
+            format!("compiled program too large ({} bytes, max {MAX_PROGRAM_BYTES})", code.len()),
+            compile_fuel,
+        ));
     }
     let addr = program_address(&call.sender, nonce);
     if state.program_meta(&addr)?.is_some() || state.account(&addr)?.nonce > 0 {
@@ -346,7 +355,13 @@ fn load_program<R: StateReader + ?Sized>(state: &Overlay<'_, R>, addr: &Address)
 }
 
 /// Calls an action of a deployed contract.
-pub fn invoke<R: StateReader + ?Sized>(state: &mut Overlay<'_, R>, call: &ProgramCall, contract: &Address, function: &str, args: Vec<Value>) -> Result<ProgramOutcome, TxError> {
+pub fn invoke<R: StateReader + ?Sized>(
+    state: &mut Overlay<'_, R>,
+    call: &ProgramCall,
+    contract: &Address,
+    function: &str,
+    args: Vec<Value>,
+) -> Result<ProgramOutcome, TxError> {
     let Some((meta, program, code_len)) = load_program(state, contract)? else {
         return Ok(ProgramOutcome::failed(format!("no contract at {}", contract.to_hex()), 0));
     };
@@ -373,13 +388,21 @@ pub fn invoke<R: StateReader + ?Sized>(state: &mut Overlay<'_, R>, call: &Progra
 }
 
 /// Read-only call of a `view`. Nothing is written.
-pub fn view<R: StateReader + ?Sized>(base: &R, height: u64, contract: &Address, function: &str, args: Vec<Value>, fuel_limit: u64) -> Result<(Result<Value, String>, u64), TxError> {
+pub fn view<R: StateReader + ?Sized>(
+    base: &R,
+    height: u64,
+    contract: &Address,
+    function: &str,
+    args: Vec<Value>,
+    fuel_limit: u64,
+) -> Result<(Result<Value, String>, u64), TxError> {
     let mut ov = Overlay::new(base);
     let Some((meta, program, _)) = load_program(&ov, contract)? else {
         return Ok((Err(format!("no contract at {}", contract.to_hex())), 0));
     };
     let ctx = CallContext { caller: [0u8; 20], value: 0, height, self_address: contract.0 };
-    let mut host = ChainHost { state: &mut ov, addr: *contract, meta, logs: Vec::new(), touched: Vec::new(), destroy_to: None, fatal: None };
+    let mut host =
+        ChainHost { state: &mut ov, addr: *contract, meta, logs: Vec::new(), touched: Vec::new(), destroy_to: None, fatal: None };
     let out = vm::execute(&program, Mode::View, function, args, &ctx, &mut host, fuel_limit);
     if let Some(e) = host.fatal {
         return Err(TxError::State(e));

@@ -36,6 +36,46 @@ impl Type {
     }
 }
 
+impl std::str::FromStr for Type {
+    type Err = String;
+
+    /// Parses the textual form produced by `Display` (`int`, `list[bytes]`, `map[address, int]`).
+    fn from_str(s: &str) -> Result<Type, String> {
+        let s = s.trim();
+        Ok(match s {
+            "int" => Type::Int,
+            "bool" => Type::Bool,
+            "text" => Type::Text,
+            "bytes" => Type::Bytes,
+            "address" => Type::Address,
+            "nothing" => Type::Unit,
+            _ => {
+                if let Some(inner) = s.strip_prefix("list[").and_then(|x| x.strip_suffix(']')) {
+                    Type::List(Box::new(inner.parse()?))
+                } else if let Some(inner) = s.strip_prefix("map[").and_then(|x| x.strip_suffix(']')) {
+                    let mut depth = 0;
+                    let split = inner
+                        .char_indices()
+                        .find(|(_, c)| {
+                            match c {
+                                '[' => depth += 1,
+                                ']' => depth -= 1,
+                                ',' if depth == 0 => return true,
+                                _ => {}
+                            }
+                            false
+                        })
+                        .map(|(i, _)| i)
+                        .ok_or_else(|| format!("invalid map type '{s}'"))?;
+                    Type::Map(Box::new(inner[..split].parse()?), Box::new(inner[split + 1..].parse()?))
+                } else {
+                    return Err(format!("unknown type '{s}'"));
+                }
+            }
+        })
+    }
+}
+
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

@@ -125,7 +125,15 @@ struct Vm<'a, H: Host> {
 /// Runs `function` of `program`.
 ///
 /// In [`Mode::Deploy`] the function name is ignored and `init` is used.
-pub fn execute<H: Host>(program: &Program, mode: Mode, function: &str, args: Vec<Value>, ctx: &CallContext, host: &mut H, fuel_limit: u64) -> Outcome {
+pub fn execute<H: Host>(
+    program: &Program,
+    mode: Mode,
+    function: &str,
+    args: Vec<Value>,
+    ctx: &CallContext,
+    host: &mut H,
+    fuel_limit: u64,
+) -> Outcome {
     let mut vm = Vm { program, host, ctx, fuel_left: fuel_limit, depth: 0, read_only: mode == Mode::View };
     let result = vm.run(mode, function, args);
     Outcome { result, fuel_used: fuel_limit - vm.fuel_left }

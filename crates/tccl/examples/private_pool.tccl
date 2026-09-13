@@ -44,8 +44,16 @@ action withdraw(to: address, relayer: address, fee: int, members: list[int], sig
         send(relayer, fee)
     emit Withdrawn(len(members))
 
+# Standard privacy pool interface (TCCL-PRIV-1) used by wallets:
+# denomination, deposits, key_at, is_withdrawn, message_for, deposit, withdraw.
+view denomination() -> int:
+    return DENOMINATION
+
 view deposits() -> int:
     return len(keys)
+
+view is_withdrawn(key_image: bytes) -> bool:
+    return used.has(key_image)
 
 view key_at(index: int) -> bytes:
     return keys[index]

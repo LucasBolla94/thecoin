@@ -147,6 +147,9 @@ impl Chain {
     pub fn open(params: &'static ChainParams, path: &Path, mut opts: ChainOptions) -> Result<Chain> {
         if let Some(k) = opts.prune_keep {
             opts.prune_keep = Some(k.max(MIN_PRUNE_KEEP));
+            // The address history index would point to pruned bodies; pruned
+            // nodes do not maintain it (explorers use archive nodes).
+            opts.address_index = false;
         }
         let db = ChainDb::open(path, &opts.db)?;
         let genesis = genesis_block(params);
@@ -505,9 +508,10 @@ impl Chain {
         let mut addr_index = Vec::new();
         for (pos, r) in receipt.txs.iter().enumerate() {
             w.index_tx(&r.txid, height, pos as u32)?;
+            w.put_receipt(r)?;
             if self.opts.address_index {
                 for a in &r.touched {
-                    w.index_address(a, height, pos as u32, &r.txid)?;
+                    w.index_address(a, height, pos as u32)?;
                     addr_index.push((*a, pos as u32));
                 }
             }
@@ -532,6 +536,16 @@ impl Chain {
                 if let Some(old_hash) = w.main_hash(old)? {
                     if let Some(mut old_rec) = w.header(&old_hash)? {
                         if old_rec.has_body && old > 0 {
+                            // Pruning removes everything derived from the body too:
+                            // its transaction index entries and receipts. Headers and
+                            // the state are always kept.
+                            if let Some(txs) = w.block_txs(&old_hash)? {
+                                for tx in &txs {
+                                    let txid = tx.txid();
+                                    w.unindex_tx(&txid)?;
+                                    w.delete_receipt(&txid)?;
+                                }
+                            }
                             old_rec.has_body = false;
                             w.put_header(&old_hash, &old_rec)?;
                             w.delete_block_txs(&old_hash)?;
@@ -549,9 +563,10 @@ impl Chain {
         let undo = w.undo(height)?.context("cannot reorganize: undo data missing")?;
         revert_changes_from_lthash(lthash, &undo.changes);
         w.revert_state_changes(&undo.changes)?;
-        for (pos, tx) in block.txs.iter().enumerate() {
-            let _ = pos;
-            w.unindex_tx(&tx.txid())?;
+        for tx in &block.txs {
+            let txid = tx.txid();
+            w.unindex_tx(&txid)?;
+            w.delete_receipt(&txid)?;
         }
         for (addr, pos) in &undo.addr_index {
             w.unindex_address(addr, height, *pos)?;

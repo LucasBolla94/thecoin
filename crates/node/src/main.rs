@@ -202,6 +202,8 @@ fn main() -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .max_blocking_threads(16)
+        // Contract execution (mempool checks, API views) runs on these threads.
+        .thread_stack_size(16 * 1024 * 1024)
         .enable_all()
         .thread_name("thecoind")
         .build()?;

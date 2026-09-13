@@ -76,7 +76,17 @@ pub struct PeerInfo {
     pub last_pong: Instant,
     pub ping_nonce: u64,
     pub last_getblocks: Option<Instant>,
+    /// Compact blocks waiting for missing transactions.
+    pub pending_compact: Vec<PendingCompact>,
 }
+
+pub struct PendingCompact {
+    pub hash: Hash32,
+    pub header: thecoin_core::BlockHeader,
+    pub slots: Vec<Option<thecoin_core::Transaction>>,
+}
+
+const MAX_PENDING_COMPACT: usize = 8;
 
 pub struct Peer {
     pub id: u64,
@@ -450,6 +460,7 @@ async fn run_peer(node: Arc<Node>, stream: TcpStream, addr: SocketAddr, inbound:
             last_pong: Instant::now(),
             ping_nonce: 0,
             last_getblocks: None,
+            pending_compact: Vec::new(),
         }),
         known: crate::chain::NodeMutex::new(KnownSet { set: HashSet::new(), order: VecDeque::new() }),
         best_height: AtomicU64::new(0),
@@ -649,6 +660,90 @@ async fn handle_message(node: &Arc<Node>, peer: &Arc<Peer>, msg: Message, block_
                 misbehave(node, peer.id, 10, "transaction with bad signature");
             }
         }
+        Message::CompactBlock(c) => {
+            let hash = c.header.hash();
+            peer.mark_known(hash);
+            let node2 = node.clone();
+            let known = tokio::task::spawn_blocking(move || -> Result<bool> { Ok(node2.chain.read()?.header(&hash)?.is_some()) }).await??;
+            if known {
+                return Ok(());
+            }
+            let n = c.short_ids.len();
+            let mut slots: Vec<Option<thecoin_core::Transaction>> = vec![None; n];
+            for (i, tx) in c.prefilled {
+                if (i as usize) < n {
+                    slots[i as usize] = Some(tx);
+                }
+            }
+            node.mempool.lock().fill_compact(&hash, &c.short_ids, &mut slots);
+            let missing: Vec<u32> = slots.iter().enumerate().filter(|(_, s)| s.is_none()).map(|(i, _)| i as u32).collect();
+            if missing.is_empty() {
+                finish_compact(node, peer, c.header, slots, block_tx).await?;
+            } else {
+                {
+                    let mut info = peer.info.lock();
+                    if info.pending_compact.len() >= MAX_PENDING_COMPACT {
+                        info.pending_compact.remove(0);
+                    }
+                    info.pending_compact.push(PendingCompact { hash, header: c.header, slots });
+                }
+                peer.send(&Message::GetBlockTxs { block: hash, indexes: missing });
+            }
+        }
+        Message::GetBlockTxs { block, indexes } => {
+            let node2 = node.clone();
+            let found = tokio::task::spawn_blocking(move || -> Result<Option<Vec<thecoin_core::Transaction>>> {
+                node2.chain.read()?.block_txs(&block)
+            })
+            .await??;
+            match found {
+                Some(txs) => {
+                    let mut out = Vec::with_capacity(indexes.len());
+                    for i in indexes {
+                        match txs.get(i as usize) {
+                            Some(t) => out.push(t.clone()),
+                            None => bail!("getblocktxs index out of range"),
+                        }
+                    }
+                    peer.send(&Message::BlockTxs { block, txs: out });
+                }
+                None => peer.send(&Message::NotFound(vec![InvItem { kind: InvKind::Block, hash: block }])),
+            }
+        }
+        Message::BlockTxs { block, txs } => {
+            let pending = {
+                let mut info = peer.info.lock();
+                info.pending_compact.iter().position(|p| p.hash == block).map(|i| info.pending_compact.remove(i))
+            };
+            let Some(mut pending) = pending else { return Ok(()) };
+            let mut it = txs.into_iter();
+            for slot in pending.slots.iter_mut() {
+                if slot.is_none() {
+                    *slot = it.next();
+                }
+            }
+            if it.next().is_some() || pending.slots.iter().any(|s| s.is_none()) {
+                // Mismatch: fall back to downloading the full block.
+                peer.send(&Message::GetData(vec![InvItem { kind: InvKind::Block, hash: block }]));
+                return Ok(());
+            }
+            finish_compact(node, peer, pending.header, pending.slots, block_tx).await?;
+        }
+        Message::DoubleSpend { first, second } => {
+            let valid = first.sender() == second.sender()
+                && first.body.nonce == second.body.nonce
+                && first.txid() != second.txid()
+                && thecoin_core::execution::check_tx_stateless(node.params, &first).is_ok()
+                && thecoin_core::execution::check_tx_stateless(node.params, &second).is_ok();
+            if !valid {
+                bail!("invalid double-spend report");
+            }
+            let new = node.mempool.lock().record_conflict(&first, &second);
+            if new {
+                warn!(sender = %first.sender().encode(node.params.network), nonce = first.body.nonce, "double spend attempt reported by peer");
+                node.broadcast_double_spend(&first, &second, Some(peer.id));
+            }
+        }
         Message::GetMempool => {
             let ids = node.mempool.lock().txids(MAX_INV_ITEMS);
             if !ids.is_empty() {
@@ -658,6 +753,27 @@ async fn handle_message(node: &Arc<Node>, peer: &Arc<Peer>, msg: Message, block_
                 peer.send(&Message::Inv(ids.into_iter().map(|hash| InvItem { kind: InvKind::Tx, hash }).collect()));
             }
         }
+    }
+    Ok(())
+}
+
+/// Completes a reconstructed compact block and sends it to the verification pipeline.
+async fn finish_compact(
+    _node: &Arc<Node>,
+    peer: &Arc<Peer>,
+    header: thecoin_core::BlockHeader,
+    slots: Vec<Option<thecoin_core::Transaction>>,
+    block_tx: &mpsc::Sender<Block>,
+) -> Result<()> {
+    let txs: Vec<thecoin_core::Transaction> = slots.into_iter().map(|s| s.expect("all slots filled")).collect();
+    let block = Block { header, txs };
+    if block.compute_tx_root() != block.header.tx_root {
+        // Short-id collision or wrong transactions: download the full block.
+        peer.send(&Message::GetData(vec![InvItem { kind: InvKind::Block, hash: block.hash() }]));
+        return Ok(());
+    }
+    if block_tx.send(block).await.is_err() {
+        bail!("block pipeline closed");
     }
     Ok(())
 }

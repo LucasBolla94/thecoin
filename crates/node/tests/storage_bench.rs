@@ -6,7 +6,7 @@ use thecoin_core::amount::COIN;
 use thecoin_core::crypto::SecretKey;
 use thecoin_core::{Address, Network};
 use thecoin_node::chain::{Chain, ChainOptions, ProcessResult};
-use thecoin_wallet::builder::{build_tx, transfer};
+use thecoin_wallet::builder::{build_tx, transfer, FeePolicy};
 
 fn dir_size(p: &std::path::Path) -> u64 {
     std::fs::read_dir(p).unwrap().map(|e| e.unwrap().metadata().unwrap().len()).sum()
@@ -73,7 +73,15 @@ fn bench_chain_growth() {
                     })
                     .public_key(),
                 );
-                let tx = build_tx(&key, Network::Regtest, nonce, 1, 0, transfer(to, COIN / 100, ""));
+                let tx = build_tx(
+                    &key,
+                    Network::Regtest,
+                    nonce,
+                    &FeePolicy { base_fee: 100, fee_per_kb: 1_000, fee_per_kfuel: 100, congestion_bp: 10_000, priority_bp: 20_000 },
+                    0,
+                    0,
+                    transfer(to, COIN / 100, ""),
+                );
                 nonce += 1;
                 tx
             })

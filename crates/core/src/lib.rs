@@ -47,8 +47,8 @@ pub use error::{BlockError, TxError};
 pub use hash::Hash32;
 pub use params::{ChainParams, Network};
 pub use primitive_types::{U256, U512};
-pub use tx::{Transaction, TxAction, TxBody};
 pub use tccl;
+pub use tx::{Transaction, TxAction, TxBody};
 
 /// Software version string reported by nodes and wallets.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

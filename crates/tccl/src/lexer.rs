@@ -182,7 +182,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, CompileError> {
                         i += 1;
                     }
                     let digits: String = chars[start..i].iter().filter(|c| **c != '_').collect();
-                    if digits.len() % 2 != 0 {
+                    if !digits.len().is_multiple_of(2) {
                         return Err(CompileError::new(pos, "hex bytes literal must have an even number of digits"));
                     }
                     let bytes = hex::decode(&digits).map_err(|_| CompileError::new(pos, "invalid hex literal"))?;

@@ -7,7 +7,7 @@ use thecoin_core::amount::COIN;
 use thecoin_core::crypto::SecretKey;
 use thecoin_core::{Address, Network, Transaction};
 use thecoin_node::chain::{Chain, ChainOptions, ProcessResult};
-use thecoin_wallet::builder::{build_tx, transfer};
+use thecoin_wallet::builder::{build_tx, transfer, FeePolicy};
 
 fn env(name: &str, default: u64) -> u64 {
     std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
@@ -40,7 +40,15 @@ fn build(opts: ChainOptions, blocks: u64, per_block: u64, memo: &str) -> (u64, u
                 let mut seed = [3u8; 32];
                 seed[..8].copy_from_slice(&(i * per_block + j).to_le_bytes());
                 let to = Address::from_public_key(&SecretKey::from_bytes(&seed).public_key());
-                let tx = build_tx(&funder, Network::Regtest, nonce, 1, 0, transfer(to, COIN / 1000, memo));
+                let tx = build_tx(
+                    &funder,
+                    Network::Regtest,
+                    nonce,
+                    &FeePolicy { base_fee: 100, fee_per_kb: 1_000, fee_per_kfuel: 100, congestion_bp: 10_000, priority_bp: 20_000 },
+                    0,
+                    0,
+                    transfer(to, COIN / 1000, memo),
+                );
                 nonce += 1;
                 tx
             })
@@ -52,7 +60,14 @@ fn build(opts: ChainOptions, blocks: u64, per_block: u64, memo: &str) -> (u64, u
     }
     let (stored, meta, _) = chain.space_stats().unwrap();
     drop(chain);
-    (stored + meta, std::fs::metadata(&path).unwrap().len())
+    use std::os::unix::fs::MetadataExt;
+    let md = std::fs::metadata(&path).unwrap();
+    println!(
+        "    apparent file size {:.1} MB, blocks actually allocated on disk {:.1} MB",
+        md.len() as f64 / 1e6,
+        (md.blocks() * 512) as f64 / 1e6
+    );
+    (stored + meta, md.blocks() * 512)
 }
 
 #[test]
@@ -71,7 +86,7 @@ fn storage_growth() {
         let t = Instant::now();
         let (used, file) = build(opts, blocks, per_block, memo);
         println!(
-            "{label}: {} txs in {:.0}s — used {:.1} MB (file {:.1} MB) → {:.0} bytes/tx of data, {:.0} bytes/tx of file",
+            "{label}: {} txs in {:.0}s — used {:.1} MB (file {:.1} MB) → {:.0} bytes/tx of data, {:.0} bytes/tx of real disk",
             blocks * per_block,
             t.elapsed().as_secs_f64(),
             used as f64 / 1e6,

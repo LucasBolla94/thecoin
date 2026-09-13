@@ -1560,6 +1560,7 @@ dependencies = [
  "primitive-types",
  "serde",
  "sha2",
+ "tccl",
  "thiserror 2.0.20",
 ]
 

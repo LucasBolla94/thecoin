@@ -2,30 +2,43 @@
 //!
 //! * Every transaction is fully validated before admission by simulating the
 //!   sender's pending transactions (in nonce order) on top of the current state.
+//!   Contract calls that would fail are refused (they would cost the user a fee).
+//! * **Priority:** transactions are ordered by fee per weight unit
+//!   (`bytes + max_fuel / 100`); paying above the minimum confirms sooner.
+//! * **Replacement ("fee bump")** is only allowed when the original transaction
+//!   set `FLAG_REPLACEABLE` and the new fee is at least 25% higher. Any other
+//!   second transaction with the same sender and nonce is recorded as a
+//!   **double-spend attempt** and reported to peers and the API, so merchants
+//!   accepting unconfirmed payments are warned immediately.
 //! * Bounded memory: total size limit, per-sender limit, 72 h expiry.
-//! * Ordering for blocks by fee rate while respecting nonce order per sender.
-//! * Replace-by-fee: same sender + nonce with at least 25% higher fee.
+//! * When congestion raises the minimum fee, underpriced transactions stay in
+//!   the pool (they become valid again when congestion falls) instead of being
+//!   dropped.
 
-use crate::chain::Chain;
+use crate::chain::{now_secs, Chain};
 use anyhow::Result;
-use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
+use thecoin_core::api::{DoubleSpendView, PriorityView};
 use thecoin_core::error::TxError;
-use thecoin_core::execution::{apply_tx, check_tx_stateless};
+use thecoin_core::execution::{apply_tx, check_tx_stateless, TxReceipt};
 use thecoin_core::hash::Hash32;
 use thecoin_core::state::{Overlay, StateReader};
-use thecoin_core::{Address, Transaction};
+use thecoin_core::{Address, Network, Transaction};
 
 pub const MAX_PER_SENDER: usize = 32;
 pub const EXPIRY: Duration = Duration::from_secs(72 * 3600);
+const MAX_CONFLICTS: usize = 512;
 
 #[derive(Debug)]
 pub enum MempoolError {
     AlreadyKnown,
     Invalid(TxError),
+    ContractWouldFail(String),
     SenderLimit,
     Full,
     ReplacementFeeTooLow,
+    NotReplaceable { existing: Hash32 },
     Storage(String),
 }
 
@@ -36,9 +49,13 @@ impl std::fmt::Display for MempoolError {
         match self {
             MempoolError::AlreadyKnown => write!(f, "transaction already in mempool"),
             MempoolError::Invalid(e) => write!(f, "invalid transaction: {e}"),
+            MempoolError::ContractWouldFail(e) => write!(f, "contract call would fail: {e}"),
             MempoolError::SenderLimit => write!(f, "too many pending transactions from this sender"),
             MempoolError::Full => write!(f, "mempool full and fee rate too low"),
             MempoolError::ReplacementFeeTooLow => write!(f, "replacement needs a fee at least 25% higher"),
+            MempoolError::NotReplaceable { existing } => {
+                write!(f, "a transaction with this nonce is already pending ({existing}) and it is not replaceable — double spend attempt recorded")
+            }
             MempoolError::Storage(e) => write!(f, "storage error: {e}"),
         }
     }
@@ -49,9 +66,19 @@ pub struct Entry {
     pub tx: Transaction,
     pub txid: Hash32,
     pub size: usize,
+    pub weight: u64,
     pub fee_rate: u64,
     pub sender: Address,
     pub added: Instant,
+}
+
+#[derive(Clone, Debug)]
+pub struct Conflict {
+    pub sender: Address,
+    pub nonce: u64,
+    pub first: Hash32,
+    pub second: Hash32,
+    pub seen_at: u64,
 }
 
 pub struct Mempool {
@@ -59,11 +86,23 @@ pub struct Mempool {
     by_sender: HashMap<Address, BTreeMap<u64, Hash32>>,
     bytes: usize,
     max_bytes: usize,
+    conflicts: VecDeque<Conflict>,
+    conflict_of: HashMap<Hash32, Hash32>,
 }
+
+/// Result of simulating one transaction.
+pub type SimResult = Result<TxReceipt, TxError>;
 
 impl Mempool {
     pub fn new(max_bytes: usize) -> Self {
-        Mempool { entries: HashMap::new(), by_sender: HashMap::new(), bytes: 0, max_bytes }
+        Mempool {
+            entries: HashMap::new(),
+            by_sender: HashMap::new(),
+            bytes: 0,
+            max_bytes,
+            conflicts: VecDeque::new(),
+            conflict_of: HashMap::new(),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -99,7 +138,7 @@ impl Mempool {
             .unwrap_or_default()
     }
 
-    /// Transactions (in the pool) that involve `addr` as sender.
+    /// Next nonce to use, counting pending transactions.
     pub fn next_nonce(&self, sender: &Address, account_nonce: u64) -> u64 {
         let mut n = account_nonce;
         if let Some(m) = self.by_sender.get(sender) {
@@ -110,20 +149,86 @@ impl Mempool {
         n
     }
 
-    /// Suggested fee rate: the minimum, raised when the pool is filling up.
-    pub fn suggested_fee_rate(&self, min: u64) -> u64 {
-        let fill = self.bytes as f64 / self.max_bytes.max(1) as f64;
-        if fill < 0.1 {
-            return min;
+    /// Fills the empty slots of a compact block with matching pool transactions.
+    pub fn fill_compact(&self, block: &Hash32, short_ids: &[[u8; 6]], slots: &mut [Option<Transaction>]) {
+        let mut wanted: HashMap<[u8; 6], Vec<usize>> = HashMap::new();
+        for (i, sid) in short_ids.iter().enumerate() {
+            if slots[i].is_none() {
+                wanted.entry(*sid).or_default().push(i);
+            }
         }
-        let mut rates: Vec<u64> = self.entries.values().map(|e| e.fee_rate).collect();
-        rates.sort_unstable();
-        let idx = ((rates.len() as f64) * 0.5) as usize;
-        rates.get(idx).copied().unwrap_or(min).max(min)
+        if wanted.is_empty() {
+            return;
+        }
+        for e in self.entries.values() {
+            if let Some(idxs) = wanted.get(&crate::protocol::short_id(block, &e.txid)) {
+                for i in idxs {
+                    slots[*i] = Some(e.tx.clone());
+                }
+            }
+        }
+    }
+
+    /// Double-spend attempt involving this transaction, if any.
+    pub fn conflict_for(&self, txid: &Hash32) -> Option<Hash32> {
+        self.conflict_of.get(txid).copied()
+    }
+
+    pub fn conflicts(&self, n: Network) -> Vec<DoubleSpendView> {
+        self.conflicts
+            .iter()
+            .rev()
+            .map(|c| DoubleSpendView { sender: c.sender.encode(n), nonce: c.nonce, first: c.first, second: c.second, seen_at: c.seen_at })
+            .collect()
+    }
+
+    /// Records two different transactions with the same sender and nonce.
+    /// Returns true if it is new (worth relaying).
+    pub fn record_conflict(&mut self, first: &Transaction, second: &Transaction) -> bool {
+        let (a, b) = (first.txid(), second.txid());
+        if a == b || first.sender() != second.sender() || first.body.nonce != second.body.nonce {
+            return false;
+        }
+        if self.conflict_of.get(&a) == Some(&b) || self.conflict_of.get(&b) == Some(&a) {
+            return false;
+        }
+        if self.conflicts.len() >= MAX_CONFLICTS {
+            if let Some(old) = self.conflicts.pop_front() {
+                self.conflict_of.remove(&old.first);
+                self.conflict_of.remove(&old.second);
+            }
+        }
+        self.conflict_of.insert(a, b);
+        self.conflict_of.insert(b, a);
+        self.conflicts.push_back(Conflict { sender: first.sender(), nonce: first.body.nonce, first: a, second: b, seen_at: now_secs() });
+        true
+    }
+
+    /// Fee multipliers for the priority levels, from the current pool.
+    pub fn priority_levels(&self, block_weight: u64, min_rate_for_typical: u64) -> PriorityView {
+        let mut rates: Vec<(u64, u64)> = self.entries.values().map(|e| (e.fee_rate, e.weight)).collect();
+        rates.sort_by_key(|r| std::cmp::Reverse(r.0));
+        // Fee rate needed to be within the first `share`% of a block.
+        let cutoff = |share: u64| -> u64 {
+            let cap = block_weight * share / 100;
+            let mut acc = 0u64;
+            for (rate, w) in &rates {
+                acc += w;
+                if acc >= cap {
+                    return *rate;
+                }
+            }
+            0
+        };
+        let min = min_rate_for_typical.max(1);
+        let to_bp = |rate: u64| -> u64 { (rate as u128 * 10_000 / min as u128).min(u64::MAX as u128) as u64 };
+        let high = to_bp(cutoff(100)).saturating_add(1_000).max(20_000);
+        let urgent = to_bp(cutoff(25)).saturating_add(2_500).max(high.saturating_mul(2));
+        PriorityView { low_bp: 10_000, normal_bp: 12_500, high_bp: high, urgent_bp: urgent }
     }
 
     /// Simulates `txs` (one sender, nonce order) on the tip state.
-    fn simulate<R: StateReader + ?Sized>(chain: &Chain, reader: &R, height: u64, txs: &[&Transaction]) -> Vec<Result<(), TxError>> {
+    fn simulate<R: StateReader + ?Sized>(chain: &Chain, reader: &R, height: u64, txs: &[&Transaction]) -> Vec<SimResult> {
         let mut ov = Overlay::new(reader);
         let mut out = Vec::with_capacity(txs.len());
         let mut failed = false;
@@ -135,12 +240,12 @@ impl Mempool {
             let size = tx.size();
             let res = {
                 let mut child = Overlay::new(&ov);
-                apply_tx(chain.params, &mut child, height, tx, size).map(|_| child.into_changes())
+                apply_tx(chain.params, &mut child, height, tx, size).map(|r| (r, child.into_changes()))
             };
             match res {
-                Ok(changes) => {
+                Ok((receipt, changes)) => {
                     ov.absorb(changes);
-                    out.push(Ok(()));
+                    out.push(Ok(receipt));
                 }
                 Err(e) => {
                     failed = true;
@@ -149,6 +254,18 @@ impl Mempool {
             }
         }
         out
+    }
+
+    /// Simulates a transaction as if it were included in the next block after
+    /// this sender's pending transactions (for the API).
+    pub fn simulate_one(&self, chain: &Chain, tx: &Transaction) -> Result<SimResult> {
+        let (reader, tip_height) = chain.read_at_tip()?;
+        let sender = tx.sender();
+        let mut pending: Vec<Transaction> = self.sender_txs(&sender).into_iter().filter(|t| t.body.nonce < tx.body.nonce).collect();
+        pending.push(tx.clone());
+        let refs: Vec<&Transaction> = pending.iter().collect();
+        let mut results = Self::simulate(chain, &reader, tip_height + 1, &refs);
+        Ok(results.pop().expect("one result per tx"))
     }
 
     /// Validates and inserts a transaction.
@@ -165,7 +282,11 @@ impl Mempool {
         let mut pending: Vec<Transaction> = self.sender_txs(&sender);
         let mut replaced: Option<Hash32> = None;
         if let Some(pos) = pending.iter().position(|p| p.body.nonce == tx.body.nonce) {
-            let old = &pending[pos];
+            let old = pending[pos].clone();
+            if !old.is_replaceable() {
+                self.record_conflict(&old, &tx);
+                return Err(MempoolError::NotReplaceable { existing: old.txid() });
+            }
             if tx.body.fee < old.body.fee.saturating_add(old.body.fee / 4).max(old.body.fee + 1) {
                 return Err(MempoolError::ReplacementFeeTooLow);
             }
@@ -181,12 +302,15 @@ impl Mempool {
         let refs: Vec<&Transaction> = pending.iter().collect();
         let results = Self::simulate(chain, &reader, height, &refs);
         let my_pos = pending.iter().position(|t| t.txid() == txid).expect("inserted");
-        if let Err(e) = &results[my_pos] {
-            // Give a precise error: re-simulate the new tx alone if a predecessor failed.
-            return Err(MempoolError::Invalid(e.clone()));
+        match &results[my_pos] {
+            Err(e) => return Err(MempoolError::Invalid(e.clone())),
+            Ok(r) if !r.success => return Err(MempoolError::ContractWouldFail(r.error.clone().unwrap_or_default())),
+            Ok(_) => {}
         }
+        drop(reader);
 
-        let fee_rate = tx.body.fee / size.max(1) as u64;
+        let weight = tx.weight();
+        let fee_rate = tx.body.fee / weight.max(1);
         if self.bytes + size > self.max_bytes && !self.evict_for(fee_rate, size) {
             return Err(MempoolError::Full);
         }
@@ -195,14 +319,13 @@ impl Mempool {
         }
         self.bytes += size;
         self.by_sender.entry(sender).or_default().insert(tx.body.nonce, txid);
-        self.entries.insert(txid, Entry { tx, txid, size, fee_rate, sender, added: Instant::now() });
+        self.entries.insert(txid, Entry { tx, txid, size, weight, fee_rate, sender, added: Instant::now() });
         Ok(txid)
     }
 
     /// Evicts lowest fee-rate tail transactions until `size` bytes fit.
     fn evict_for(&mut self, fee_rate: u64, size: usize) -> bool {
         while self.bytes + size > self.max_bytes {
-            // candidates: the highest-nonce tx of each sender (evicting it leaves no gap)
             let victim = self
                 .by_sender
                 .values()
@@ -232,9 +355,10 @@ impl Mempool {
         Some(e)
     }
 
-    /// Re-validates the whole pool against the new tip: removes confirmed,
-    /// conflicting and expired transactions, and re-adds transactions from
-    /// disconnected blocks.
+    /// Re-validates the pool against the new tip: removes confirmed,
+    /// conflicting, failing and expired transactions, keeps transactions that
+    /// are only underpriced because of congestion, and re-adds transactions
+    /// from disconnected blocks.
     pub fn on_new_tip(&mut self, chain: &Chain, disconnected: &[thecoin_core::Block], connected: &[thecoin_core::Block]) -> Result<()> {
         let confirmed: HashSet<Hash32> = connected.iter().flat_map(|b| b.txs.iter().map(|t| t.txid())).collect();
         for id in &confirmed {
@@ -253,9 +377,17 @@ impl Mempool {
             let txs = self.sender_txs(&sender);
             let refs: Vec<&Transaction> = txs.iter().collect();
             let results = Self::simulate(chain, &reader, height, &refs);
+            let mut keep_rest = false;
             for (tx, r) in txs.iter().zip(results) {
-                if r.is_err() {
-                    self.remove(&tx.txid());
+                if keep_rest {
+                    continue;
+                }
+                match r {
+                    Ok(receipt) if receipt.success => {}
+                    Err(TxError::FeeTooLow { .. }) => keep_rest = true,
+                    _ => {
+                        self.remove(&tx.txid());
+                    }
                 }
             }
         }

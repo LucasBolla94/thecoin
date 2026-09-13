@@ -17,7 +17,7 @@ use anyhow::{anyhow, bail, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use thecoin_core::hash::{tagged_hash, tags, Hash32};
-use thecoin_core::{Block, Transaction};
+use thecoin_core::{Block, BlockHeader, Transaction};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -104,6 +104,54 @@ pub enum Message {
     Tx(Box<Transaction>),
     /// Asks for an `Inv` of the peer's mempool.
     GetMempool,
+    /// New block announced as header + short transaction ids (BIP-152 style).
+    CompactBlock(Box<CompactBlock>),
+    /// Asks for the transactions of a compact block the receiver is missing.
+    GetBlockTxs {
+        block: Hash32,
+        indexes: Vec<u32>,
+    },
+    BlockTxs {
+        block: Hash32,
+        txs: Vec<Transaction>,
+    },
+    /// Two different transactions with the same sender and nonce (double spend attempt).
+    DoubleSpend {
+        first: Box<Transaction>,
+        second: Box<Transaction>,
+    },
+}
+
+/// Maximum transactions a compact block may reference.
+pub const MAX_COMPACT_TXS: usize = 65_536;
+
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+pub struct CompactBlock {
+    pub header: BlockHeader,
+    /// `short_id(block hash, txid)` of every transaction, in block order.
+    pub short_ids: Vec<[u8; 6]>,
+    /// Transactions sent in full: `(index, tx)`.
+    pub prefilled: Vec<(u32, Transaction)>,
+}
+
+/// 6-byte transaction id salted with the block hash (collisions cannot be
+/// precomputed by an attacker).
+pub fn short_id(block: &Hash32, txid: &Hash32) -> [u8; 6] {
+    let h = tagged_hash("short-id", &[&block.0, &txid.0]);
+    let mut out = [0u8; 6];
+    out.copy_from_slice(&h.0[..6]);
+    out
+}
+
+impl CompactBlock {
+    pub fn from_block(b: &Block) -> CompactBlock {
+        let hash = b.hash();
+        CompactBlock {
+            header: b.header.clone(),
+            short_ids: b.txs.iter().map(|t| short_id(&hash, &t.txid())).collect(),
+            prefilled: Vec::new(),
+        }
+    }
 }
 
 impl Message {
@@ -122,6 +170,10 @@ impl Message {
             Message::Block(_) => "block",
             Message::Tx(_) => "tx",
             Message::GetMempool => "getmempool",
+            Message::CompactBlock(_) => "cmpctblock",
+            Message::GetBlockTxs { .. } => "getblocktxs",
+            Message::BlockTxs { .. } => "blocktxs",
+            Message::DoubleSpend { .. } => "doublespend",
         }
     }
 
@@ -129,6 +181,10 @@ impl Message {
     pub fn check_limits(&self) -> Result<()> {
         match self {
             Message::Addr(a) if a.len() > MAX_ADDRS => bail!("too many addrs"),
+            Message::CompactBlock(c) if c.short_ids.len() > MAX_COMPACT_TXS || c.prefilled.len() > c.short_ids.len() => {
+                bail!("compact block too large")
+            }
+            Message::GetBlockTxs { indexes, .. } if indexes.len() > MAX_COMPACT_TXS => bail!("too many indexes"),
             Message::Inv(i) | Message::GetData(i) | Message::NotFound(i) if i.len() > MAX_INV_ITEMS => bail!("too many inv items"),
             Message::GetBlocks { locator, .. } if locator.len() > MAX_LOCATOR => bail!("locator too long"),
             Message::Version(v) if v.user_agent.len() > 256 => bail!("user agent too long"),

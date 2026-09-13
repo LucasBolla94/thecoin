@@ -302,7 +302,14 @@ pub fn apply_tx<R: StateReader + ?Sized>(
             governance::vote(state, height, sender, proposal, *choice, *weight)?;
         }
         TxAction::Deploy { source, init_args, value, max_fuel, max_deposit } => {
-            let call = programs::ProgramCall { sender, height, value: *value, max_fuel: *max_fuel, max_deposit: *max_deposit, deposit_per_kb: g.params.storage_deposit_per_kb };
+            let call = programs::ProgramCall {
+                sender,
+                height,
+                value: *value,
+                max_fuel: *max_fuel,
+                max_deposit: *max_deposit,
+                deposit_per_kb: g.params.storage_deposit_per_kb,
+            };
             let out = programs::deploy(p, state, &call, body.nonce, receipt.txid, source, init_args.clone())?;
             if out.success {
                 g_increment_contracts(state)?;
@@ -310,7 +317,14 @@ pub fn apply_tx<R: StateReader + ?Sized>(
             out.fill(&mut receipt);
         }
         TxAction::Invoke { contract, function, args, value, max_fuel, max_deposit } => {
-            let call = programs::ProgramCall { sender, height, value: *value, max_fuel: *max_fuel, max_deposit: *max_deposit, deposit_per_kb: g.params.storage_deposit_per_kb };
+            let call = programs::ProgramCall {
+                sender,
+                height,
+                value: *value,
+                max_fuel: *max_fuel,
+                max_deposit: *max_deposit,
+                deposit_per_kb: g.params.storage_deposit_per_kb,
+            };
             let out = programs::invoke(state, &call, contract, function, args.clone())?;
             out.fill(&mut receipt);
         }
@@ -401,7 +415,12 @@ pub fn allowed_signal_mask<R: StateReader + ?Sized>(state: &Overlay<'_, R>) -> R
 ///
 /// `verified_sigs`: set to `true` only if every transaction signature was
 /// already verified (e.g. by the mempool or a parallel pre-check).
-pub fn apply_block<R: StateReader + ?Sized>(p: &ChainParams, state: &mut Overlay<'_, R>, block: &Block, verified_sigs: bool) -> Result<BlockReceipt, BlockError> {
+pub fn apply_block<R: StateReader + ?Sized>(
+    p: &ChainParams,
+    state: &mut Overlay<'_, R>,
+    block: &Block,
+    verified_sigs: bool,
+) -> Result<BlockReceipt, BlockError> {
     let h = &block.header;
     let height = h.height;
     let g = state.global()?;

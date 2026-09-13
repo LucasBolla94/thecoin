@@ -42,8 +42,33 @@ fn err<T>(pos: Pos, msg: impl Into<String>) -> CResult<T> {
 }
 
 const RESERVED: &[&str] = &[
-    "caller", "value", "balance", "height", "self", "TCN", "int", "bool", "text", "bytes", "address", "list", "map", "len", "sha256",
-    "blake3", "to_bytes", "to_text", "to_int", "min", "max", "abs", "slice", "verify_ed25519", "ring_verify", "address_of", "zero_address",
+    "caller",
+    "value",
+    "balance",
+    "height",
+    "self",
+    "TCN",
+    "int",
+    "bool",
+    "text",
+    "bytes",
+    "address",
+    "list",
+    "map",
+    "len",
+    "sha256",
+    "blake3",
+    "to_bytes",
+    "to_text",
+    "to_int",
+    "min",
+    "max",
+    "abs",
+    "slice",
+    "verify_ed25519",
+    "ring_verify",
+    "address_of",
+    "zero_address",
     "range",
 ];
 
@@ -95,7 +120,10 @@ impl<'o> Checker<'o> {
         if RESERVED.contains(&name) {
             return err(pos, format!("'{name}' is a reserved name"));
         }
-        if self.consts.contains_key(name) || self.state_index.contains_key(name) || self.event_index.contains_key(name) || self.fn_index.contains_key(name)
+        if self.consts.contains_key(name)
+            || self.state_index.contains_key(name)
+            || self.event_index.contains_key(name)
+            || self.fn_index.contains_key(name)
         {
             return err(pos, format!("'{name}' is already declared"));
         }
@@ -181,7 +209,10 @@ impl<'o> Checker<'o> {
                     let mut params = Vec::new();
                     let mut seen = BTreeSet::new();
                     for p in &f.params {
-                        if RESERVED.contains(&p.name.as_str()) || self.consts.contains_key(&p.name) || self.state_index.contains_key(&p.name) {
+                        if RESERVED.contains(&p.name.as_str())
+                            || self.consts.contains_key(&p.name)
+                            || self.state_index.contains_key(&p.name)
+                        {
                             return err(p.pos, format!("parameter name '{}' is reserved or already declared", p.name));
                         }
                         if !seen.insert(p.name.clone()) {
@@ -233,7 +264,10 @@ impl<'o> Checker<'o> {
         }
         for (f, decl) in functions.iter().zip(&decls) {
             if f.kind == FnKind::View && f.mutates {
-                return err(decl.pos, format!("view '{}' changes state, sends TCN or emits events (directly or through a fn it calls)", f.name));
+                return err(
+                    decl.pos,
+                    format!("view '{}' changes state, sends TCN or emits events (directly or through a fn it calls)", f.name),
+                );
             }
         }
 
@@ -287,9 +321,10 @@ impl<'o> Checker<'o> {
         let [ast::Expr::Text(s, _)] = args else {
             return err(pos, "address(...) takes one text literal, e.g. address(\"tc1...\")");
         };
-        let checked = bech32::primitives::decode::CheckedHrpstring::new::<bech32::Bech32m>(s).map_err(|_| CompileError::new(pos, "invalid address literal"))?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<bech32::Bech32m>(s)
+            .map_err(|_| CompileError::new(pos, "invalid address literal"))?;
         let hrp = checked.hrp().to_lowercase();
-        if !self.opts.address_prefixes.iter().any(|p| *p == hrp) {
+        if !self.opts.address_prefixes.contains(&hrp) {
             return err(pos, format!("address prefix '{hrp}' is not valid on this network"));
         }
         let bytes: Vec<u8> = checked.byte_iter().collect();
@@ -340,7 +375,15 @@ impl<'o> Checker<'o> {
 
     fn function(&self, f: &ast::FuncDecl) -> CResult<(Function, BTreeSet<u16>)> {
         let sig = &self.sigs[self.fn_index[&f.name] as usize];
-        let mut ctx = FnCtx { kind: f.kind, ret: sig.ret.clone(), scopes: vec![BTreeMap::new()], next_slot: 0, loop_depth: 0, mutates: false, calls: BTreeSet::new() };
+        let mut ctx = FnCtx {
+            kind: f.kind,
+            ret: sig.ret.clone(),
+            scopes: vec![BTreeMap::new()],
+            next_slot: 0,
+            loop_depth: 0,
+            mutates: false,
+            calls: BTreeSet::new(),
+        };
         for (p, t) in f.params.iter().zip(&sig.params) {
             self.declare_local(&mut ctx, &p.name, t.clone(), p.pos)?;
         }
@@ -356,7 +399,16 @@ impl<'o> Checker<'o> {
         };
         let params = f.params.iter().zip(&sig.params).map(|(p, t)| (p.name.clone(), t.clone())).collect();
         Ok((
-            Function { name: f.name.clone(), kind, payable: f.payable, params, ret: sig.ret.clone(), locals: ctx.next_slot as u16, mutates: ctx.mutates, body },
+            Function {
+                name: f.name.clone(),
+                kind,
+                payable: f.payable,
+                params,
+                ret: sig.ret.clone(),
+                locals: ctx.next_slot as u16,
+                mutates: ctx.mutates,
+                body,
+            },
             ctx.calls,
         ))
     }
@@ -365,7 +417,11 @@ impl<'o> Checker<'o> {
         if RESERVED.contains(&name) {
             return err(pos, format!("'{name}' is a reserved name"));
         }
-        if self.consts.contains_key(name) || self.state_index.contains_key(name) || self.fn_index.contains_key(name) || self.event_index.contains_key(name) {
+        if self.consts.contains_key(name)
+            || self.state_index.contains_key(name)
+            || self.fn_index.contains_key(name)
+            || self.event_index.contains_key(name)
+        {
             return err(pos, format!("'{name}' is already declared at contract level"));
         }
         if ctx.scopes.iter().any(|s| s.contains_key(name)) {
@@ -788,7 +844,9 @@ impl<'o> Checker<'o> {
                 }
                 let (b, bt) = self.expr(ctx, base)?;
                 match (m.as_str(), &bt, args.is_empty()) {
-                    ("len", Type::List(_) | Type::Text | Type::Bytes, true) => Ok((Expr::Builtin { f: Builtin::Len, args: vec![b] }, Type::Int)),
+                    ("len", Type::List(_) | Type::Text | Type::Bytes, true) => {
+                        Ok((Expr::Builtin { f: Builtin::Len, args: vec![b] }, Type::Int))
+                    }
                     _ => err(pos, format!("{bt} has no method '{m}' usable here")),
                 }
             }

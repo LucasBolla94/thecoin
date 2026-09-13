@@ -20,10 +20,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use thecoin_core::api::*;
 use thecoin_core::emission::{block_subsidy, era};
+use thecoin_core::execution::required_fee;
 use thecoin_core::governance::{Proposal, ProposalAction, ProposalStatus};
 use thecoin_core::hash::Hash32;
 use thecoin_core::params::MAX_SUPPLY;
 use thecoin_core::pow::difficulty_from_target;
+use thecoin_core::programs::program_address;
 use thecoin_core::state::{self, read_typed, Account, ChainGlobal, PendingReward};
 use thecoin_core::{Address, Transaction};
 use thecoin_storage::DbRead;
@@ -93,8 +95,13 @@ pub fn router(node: AppState) -> Router {
         .route("/api/v1/mempool", get(mempool))
         .route("/api/v1/peers", get(peers))
         .route("/api/v1/mining", get(mining))
+        .route("/api/v1/tx/simulate", post(simulate_tx))
+        .route("/api/v1/program/{addr}", get(program))
+        .route("/api/v1/program/{addr}/view", post(program_view))
+        .route("/api/v1/security", get(security))
+        .route("/api/v1/alerts", get(alerts))
         .layer(cors)
-        .layer(RequestBodyLimitLayer::new(64 * 1024))
+        .layer(RequestBodyLimitLayer::new(256 * 1024))
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(20)))
         .layer(ConcurrencyLimitLayer::new(node.config.rpc.max_concurrency.max(1)))
         .with_state(node)
@@ -207,6 +214,7 @@ async fn status(State(node): State<AppState>) -> ApiResult<StatusView> {
             syncing: node.is_syncing(),
             supply: supply_view(node, &g, tip.height),
             params: g.params,
+            congestion_bp: g.congestion_bp,
             software_upgrade_required: required_upgrade(&r),
         })
     })
@@ -226,10 +234,37 @@ async fn supply(State(node): State<AppState>) -> ApiResult<SupplyView> {
     ))
 }
 
+/// Size of a typical transfer used to express fee levels.
+const TYPICAL_TRANSFER_BYTES: usize = 160;
+
 async fn fees(State(node): State<AppState>) -> ApiResult<FeeView> {
-    let min = node.chain.global()?.params.min_fee_per_byte;
-    let suggested = node.mempool.lock().suggested_fee_rate(min);
-    Ok(Json(FeeView { min_fee_per_byte: min, suggested_fee_per_byte: suggested, typical_transfer_bytes: 170 }))
+    let g = node.chain.global()?;
+    let (typical, _) = required_fee(&g.params, g.congestion_bp, TYPICAL_TRANSFER_BYTES, 0);
+    let m = node.mempool.lock();
+    let min_rate = typical / TYPICAL_TRANSFER_BYTES as u64;
+    let priority = m.priority_levels(g.params.max_block_bytes, min_rate);
+    Ok(Json(FeeView {
+        base_fee: g.params.base_fee,
+        fee_per_kb: g.params.fee_per_kb,
+        fee_per_kfuel: g.params.fee_per_kfuel,
+        storage_deposit_per_kb: g.params.storage_deposit_per_kb,
+        congestion_bp: g.congestion_bp,
+        typical_transfer_fee: typical,
+        priority,
+        mempool_txs: m.len(),
+        mempool_bytes: m.bytes(),
+    }))
+}
+
+/// Adds receipt data (execution result, logs) and double-spend info to a view.
+fn decorate(node: &Node, r: &impl DbRead, v: &mut TxView) -> Result<(), ApiErr> {
+    if v.block_height.is_some() {
+        if let Some(receipt) = r.receipt(&v.txid)? {
+            apply_receipt(v, &receipt, node.params.network);
+        }
+    }
+    v.conflict = node.mempool.lock().conflict_for(&v.txid);
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -289,20 +324,17 @@ async fn block(State(node): State<AppState>, Path(id): Path<String>) -> ApiResul
             let on_main = r.main_hash(rec.header.height)? == Some(hash);
             let confirmations = if on_main { tip - rec.header.height + 1 } else { 0 };
             let fees: u64 = b.txs.iter().map(|t| t.body.fee).sum();
-            let tx_views = b
-                .txs
-                .iter()
-                .enumerate()
-                .map(|(pos, t)| {
-                    let mut v = tx_view(t, n);
-                    v.block_height = Some(rec.header.height);
-                    v.block_hash = Some(hash);
-                    v.position = Some(pos as u32);
-                    v.confirmations = confirmations;
-                    v.created = created_id(t);
-                    v
-                })
-                .collect();
+            let mut tx_views = Vec::with_capacity(b.txs.len());
+            for (pos, t) in b.txs.iter().enumerate() {
+                let mut v = tx_view(t, n);
+                v.block_height = Some(rec.header.height);
+                v.block_hash = Some(hash);
+                v.position = Some(pos as u32);
+                v.confirmations = confirmations;
+                v.created = created_id(t);
+                decorate(node, &r, &mut v)?;
+                tx_views.push(v);
+            }
             Ok(BlockView {
                 summary: block_summary_view(&b, n),
                 version: rec.header.version,
@@ -328,12 +360,22 @@ fn created_id(t: &Transaction) -> Option<Hash32> {
     }
 }
 
+fn created_program(t: &Transaction) -> Option<Address> {
+    match &t.body.action {
+        thecoin_core::TxAction::Deploy { .. } => Some(program_address(&t.sender(), t.body.nonce)),
+        _ => None,
+    }
+}
+
 fn find_tx(node: &Node, txid: &Hash32) -> Result<Option<TxView>, ApiErr> {
     let n = node.params.network;
-    if let Some(tx) = node.mempool.lock().get(txid) {
-        let mut v = tx_view(tx, n);
+    let pending = node.mempool.lock().get(txid).cloned();
+    if let Some(tx) = pending {
+        let mut v = tx_view(&tx, n);
         v.in_mempool = true;
-        v.created = created_id(tx);
+        v.created = created_id(&tx);
+        v.program = created_program(&tx).map(|a| a.encode(n));
+        v.conflict = node.mempool.lock().conflict_for(txid);
         return Ok(Some(v));
     }
     let r = node.chain.read()?;
@@ -347,6 +389,7 @@ fn find_tx(node: &Node, txid: &Hash32) -> Result<Option<TxView>, ApiErr> {
     v.position = Some(pos);
     v.confirmations = node.chain.tip().height - height + 1;
     v.created = created_id(tx);
+    decorate(node, &r, &mut v)?;
     Ok(Some(v))
 }
 
@@ -360,6 +403,173 @@ async fn submit_tx(State(node): State<AppState>, Json(req): Json<SubmitTxRequest
     let tx = Transaction::from_bytes(&bytes).map_err(|e| bad(format!("malformed transaction: {e}")))?;
     let txid = blocking(&node, move |node| node.submit_tx(tx, None).map_err(|e| bad(e.to_string()))).await?;
     Ok(Json(SubmitTxResponse { txid }))
+}
+
+async fn simulate_tx(State(node): State<AppState>, Json(req): Json<SubmitTxRequest>) -> ApiResult<SimulateResponse> {
+    let bytes = hex::decode(req.tx.trim()).map_err(|_| bad("tx must be hex"))?;
+    let tx = Transaction::from_bytes(&bytes).map_err(|e| bad(format!("malformed transaction: {e}")))?;
+    Ok(Json(
+        blocking(&node, move |node| {
+            let n = node.params.network;
+            let g = node.chain.global()?;
+            let (required, _) = required_fee(&g.params, g.congestion_bp, tx.size(), tx.max_fuel());
+            // Signature and structure first.
+            if let Err(e) = thecoin_core::execution::check_tx_stateless(node.params, &tx) {
+                return Ok(SimulateResponse {
+                    valid: false,
+                    invalid_reason: Some(e.to_string()),
+                    success: false,
+                    error: None,
+                    fuel_used: 0,
+                    required_fee: required,
+                    logs: vec![],
+                    return_value: None,
+                    program: None,
+                });
+            }
+            let result = node.mempool.lock().simulate_one(&node.chain, &tx)?;
+            Ok(match result {
+                Ok(r) => SimulateResponse {
+                    valid: true,
+                    invalid_reason: None,
+                    success: r.success,
+                    error: r.error.clone(),
+                    fuel_used: r.fuel_used,
+                    required_fee: required,
+                    logs: r.logs.iter().map(|l| log_view(l, n)).collect(),
+                    return_value: r.return_value.as_ref().map(|v| thecoin_core::tccl::abi::display(v, n.hrp())),
+                    program: r.program.map(|a| a.encode(n)),
+                },
+                Err(e) => SimulateResponse {
+                    valid: false,
+                    invalid_reason: Some(e.to_string()),
+                    success: false,
+                    error: None,
+                    fuel_used: 0,
+                    required_fee: required,
+                    logs: vec![],
+                    return_value: None,
+                    program: None,
+                },
+            })
+        })
+        .await?,
+    ))
+}
+
+async fn program(State(node): State<AppState>, Path(addr): Path<String>) -> ApiResult<ProgramView> {
+    let a = parse_addr(&node, &addr)?;
+    Ok(Json(
+        blocking(&node, move |node| {
+            let r = node.chain.read()?;
+            let reader = ReaderAdapter(&r);
+            let (meta, prog) = thecoin_core::programs::describe(&reader, &a)
+                .map_err(|e| ApiErr(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                .ok_or_else(|| not_found("no contract at this address (it may have been destroyed)"))?;
+            let acc: Account = read_typed(&reader, &state::account_key(&a))
+                .map_err(|e| ApiErr(StatusCode::INTERNAL_SERVER_ERROR, e.0))?
+                .unwrap_or_default();
+            let n = node.params.network;
+            Ok(ProgramView {
+                address: a.encode(n),
+                name: meta.name,
+                creator: meta.creator.encode(n),
+                created_height: meta.created_height,
+                deploy_txid: meta.deploy_txid,
+                source_hash: meta.source_hash,
+                balance: acc.balance,
+                state_bytes: meta.state_bytes,
+                storage_items: meta.storage_items,
+                deposit: meta.deposit,
+                functions: prog
+                    .abi()
+                    .into_iter()
+                    .map(|f| ProgramFunctionView {
+                        name: f.name,
+                        kind: format!("{:?}", f.kind).to_lowercase(),
+                        payable: f.payable,
+                        params: f.params,
+                        returns: f.returns,
+                    })
+                    .collect(),
+            })
+        })
+        .await?,
+    ))
+}
+
+/// Fuel limit for read-only contract queries through the API.
+const VIEW_FUEL: u64 = 2_000_000;
+
+async fn program_view(
+    State(node): State<AppState>,
+    Path(addr): Path<String>,
+    Json(req): Json<ViewCallRequest>,
+) -> ApiResult<ViewCallResponse> {
+    let a = parse_addr(&node, &addr)?;
+    Ok(Json(
+        blocking(&node, move |node| {
+            let r = node.chain.read()?;
+            let reader = ReaderAdapter(&r);
+            let (_, prog) = thecoin_core::programs::describe(&reader, &a)
+                .map_err(|e| ApiErr(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                .ok_or_else(|| not_found("no contract at this address"))?;
+            let (_, f) = prog.find(&req.function).ok_or_else(|| bad(format!("unknown function '{}'", req.function)))?;
+            if req.args.len() != f.params.len() {
+                return Err(bad(format!("{} expects {} argument(s)", f.name, f.params.len())));
+            }
+            let mut args = Vec::new();
+            for (raw, (name, t)) in req.args.iter().zip(&f.params) {
+                args.push(thecoin_core::tccl::abi::parse_arg(raw, t).map_err(|e| bad(format!("argument '{name}': {e}")))?);
+            }
+            let height = node.chain.tip().height + 1;
+            let (result, fuel_used) = thecoin_core::programs::view(&reader, height, &a, &req.function, args, VIEW_FUEL)
+                .map_err(|e| ApiErr(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            let hrp = node.params.network.hrp();
+            Ok(match result {
+                Ok(v) => ViewCallResponse { result: Some(thecoin_core::tccl::abi::display(&v, hrp)), error: None, fuel_used },
+                Err(e) => ViewCallResponse { result: None, error: Some(e), fuel_used },
+            })
+        })
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct SecurityQuery {
+    /// Amount in motes.
+    amount: u64,
+}
+
+/// Recommended confirmations: an attacker rewriting N blocks gives up about N
+/// block rewards (and must out-mine the network for that long). We recommend N
+/// such that the rewards at stake are at least twice the payment, never less
+/// than 1 and never more than the maximum reorganization depth.
+async fn security(State(node): State<AppState>, Query(q): Query<SecurityQuery>) -> ApiResult<SecurityView> {
+    let tip = node.chain.tip();
+    let p = node.params;
+    let per_block = block_subsidy(p, tip.height + 1).max(1);
+    let wanted = (q.amount as u128 * 2).div_ceil(per_block as u128) as u64;
+    let confirmations = wanted.clamp(1, p.max_reorg_depth);
+    let hashrate = node.chain.network_hashrate(120).unwrap_or(0.0);
+    let explanation = format!(
+        "Reversing {confirmations} block(s) means redoing their proof of work and giving up about {} TCN of rewards. \
+         For larger amounts wait for more confirmations; beyond {} blocks the chain never reorganizes.",
+        thecoin_core::amount::format_amount(per_block.saturating_mul(confirmations)),
+        p.max_reorg_depth
+    );
+    Ok(Json(SecurityView {
+        amount: q.amount,
+        confirmations,
+        minutes: confirmations * p.target_block_time / 60,
+        value_per_block: per_block,
+        network_hashrate: hashrate,
+        explanation,
+    }))
+}
+
+async fn alerts(State(node): State<AppState>) -> ApiResult<Vec<DoubleSpendView>> {
+    Ok(Json(node.mempool.lock().conflicts(node.params.network)))
 }
 
 fn parse_addr(node: &Node, s: &str) -> Result<Address, ApiErr> {
@@ -376,13 +586,13 @@ async fn address(State(node): State<AppState>, Path(addr): Path<String>) -> ApiR
                 .unwrap_or_default();
             let tip = node.chain.tip().height;
             let mut v = account_view(&a, &acc, tip, node.params.network);
-            // Immature rewards: pending rewards of the last `maturity` blocks.
-            let rows = r.state_prefix(&[state::PREFIX_PENDING_REWARD], 10_000)?;
+            // Rewards still in cooldown.
+            let rows = r.state_prefix(&[state::PREFIX_PENDING_REWARD], 100_000)?;
             v.immature = rows
                 .iter()
                 .filter_map(|(_, val)| borsh::from_slice::<PendingReward>(val).ok())
                 .filter(|p| p.miner == a)
-                .map(|p| p.amount)
+                .map(|p| p.locked())
                 .sum();
             let m = node.mempool.lock();
             v.next_nonce = m.next_nonce(&a, acc.nonce);
@@ -421,7 +631,7 @@ async fn address_txs(State(node): State<AppState>, Path(addr): Path<String>, Que
             let tip = node.chain.tip().height;
             let rows = r.address_txs(&a, cursor, limit)?;
             let mut cache: Option<(u64, Vec<Transaction>)> = None;
-            for (height, pos, _txid) in rows {
+            for (height, pos) in rows {
                 if cache.as_ref().map(|c| c.0) != Some(height) {
                     let Some(hash) = r.main_hash(height)? else { continue };
                     let Some(txs) = r.block_txs(&hash)? else { continue };
@@ -435,6 +645,7 @@ async fn address_txs(State(node): State<AppState>, Path(addr): Path<String>, Que
                     v.position = Some(pos);
                     v.confirmations = tip - height + 1;
                     v.created = created_id(tx);
+                    decorate(node, &r, &mut v)?;
                     out.push(v);
                 }
             }

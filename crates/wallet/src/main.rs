@@ -2,16 +2,23 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
+use rand::seq::SliceRandom;
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use thecoin_core::amount::{format_amount, parse_amount, TICKER};
 use thecoin_core::api::{ActionView, TxView};
 use thecoin_core::contracts::{ContractCall, ContractSpec};
+use thecoin_core::crypto::SecretKey;
 use thecoin_core::governance::{GovParamId, ProposalAction, ProposalSpec, VoteChoice};
 use thecoin_core::hash::Hash32;
+use thecoin_core::params::MAX_TX_FUEL;
+use thecoin_core::programs::program_address;
+use thecoin_core::tccl::abi::parse_arg;
+use thecoin_core::tccl::{Type, Value};
+use thecoin_core::tx::FLAG_REPLACEABLE;
 use thecoin_core::{Address, Network, Transaction, TxAction};
-use thecoin_wallet::builder::{self, build_tx};
+use thecoin_wallet::builder::{self, build_tx, FeePolicy, Priority};
 use thecoin_wallet::client::NodeClient;
 use thecoin_wallet::keys::{generate_mnemonic, parse_mnemonic, HdKeys};
 use thecoin_wallet::keystore::{AccountEntry, WalletFile};
@@ -35,6 +42,15 @@ struct Cli {
     /// Address index inside the wallet to use.
     #[arg(long, default_value_t = 0, global = true)]
     from: u32,
+
+    /// Fee priority: pay more to be confirmed sooner.
+    #[arg(long, value_enum, default_value_t = Priority::Normal, global = true)]
+    priority: Priority,
+
+    /// Allow replacing this transaction later with a higher fee (`bump-fee`).
+    /// Receivers see it as replaceable, so they may wait for a confirmation.
+    #[arg(long, global = true)]
+    replaceable: bool,
 
     /// Skip confirmation prompts.
     #[arg(short, long, global = true)]
@@ -91,6 +107,14 @@ enum Cmd {
     },
     /// Pay a `thecoin:` payment request URI.
     Pay { uri: String },
+    /// Raise the fee of a pending transaction sent with --replaceable.
+    BumpFee { txid: String },
+    /// Fees right now (minimum, congestion and priority levels).
+    Fees,
+    /// Recommended confirmations before trusting a payment of this amount.
+    Confirmations { amount: String },
+    /// Double-spend attempts seen by the node.
+    Alerts,
     /// Transaction history of --from.
     History {
         #[arg(long, default_value_t = 20)]
@@ -100,9 +124,12 @@ enum Cmd {
     Tx { txid: String },
     /// Node status.
     Status,
-    /// Payment contracts.
+    /// Payment contracts and TCCL smart contracts.
     #[command(subcommand)]
     Contract(ContractCmd),
+    /// Private payments through TCCL privacy pools (TCCL-PRIV-1 interface).
+    #[command(subcommand)]
+    Privacy(PrivacyCmd),
     /// Governance: proposals and voting.
     #[command(subcommand)]
     Gov(GovCmd),
@@ -110,9 +137,22 @@ enum Cmd {
     ShowMnemonic,
 }
 
+#[derive(Args, Clone)]
+struct ProgramTxArgs {
+    /// TCN sent to the contract with the call.
+    #[arg(long)]
+    value: Option<String>,
+    /// Fuel limit; by default it is measured by simulating the call (+30%).
+    #[arg(long)]
+    max_fuel: Option<u64>,
+    /// Most TCN you accept to lock as refundable storage deposit.
+    #[arg(long, default_value = "1")]
+    max_deposit: String,
+}
+
 #[derive(Subcommand)]
 enum ContractCmd {
-    /// Show a contract.
+    /// Show a native payment contract.
     Show {
         id: String,
     },
@@ -226,6 +266,73 @@ enum ContractCmd {
         id: String,
         spend_id: u32,
     },
+    /// Close an empty multisig and refund its storage deposit to the creator.
+    MultisigClose {
+        id: String,
+    },
+    /// Deploy a TCCL smart contract: `deploy file.tccl [init args...]`.
+    Deploy {
+        file: PathBuf,
+        args: Vec<String>,
+        #[command(flatten)]
+        opts: ProgramTxArgs,
+    },
+    /// Call an action of a TCCL contract: `invoke <address> <function> [args...]`.
+    Invoke {
+        address: String,
+        function: String,
+        args: Vec<String>,
+        #[command(flatten)]
+        opts: ProgramTxArgs,
+    },
+    /// Query a view of a TCCL contract (free, no transaction).
+    View {
+        address: String,
+        function: String,
+        args: Vec<String>,
+    },
+    /// Show a TCCL contract: balance, storage, deposit and functions.
+    Program {
+        address: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PrivacyCmd {
+    /// Show the ring public key for a key index (deposit it into a pool).
+    Keygen {
+        #[arg(long, default_value_t = 0)]
+        key: u32,
+    },
+    /// Deposit the pool denomination with the ring key `--key`.
+    Deposit {
+        pool: String,
+        #[arg(long, default_value_t = 0)]
+        key: u32,
+    },
+    /// Withdraw a deposit to any address, hidden among `--ring-size` deposits.
+    Withdraw {
+        pool: String,
+        /// Destination address (use a fresh address).
+        #[arg(long)]
+        to: String,
+        #[arg(long, default_value_t = 0)]
+        key: u32,
+        #[arg(long, default_value_t = 16)]
+        ring_size: usize,
+        /// Address that submits the transaction and receives `--fee` (default: --from).
+        #[arg(long)]
+        relayer: Option<String>,
+        /// Relayer fee in TCN taken from the withdrawal.
+        #[arg(long, default_value = "0")]
+        fee: String,
+    },
+    /// Show whether the deposit of `--key` is in the pool and still unspent.
+    Status {
+        pool: String,
+        #[arg(long, default_value_t = 0)]
+        key: u32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -250,10 +357,10 @@ struct ProposeArgs {
     /// File with the full text; its SHA-256 is recorded on-chain.
     #[arg(long)]
     text_file: Option<PathBuf>,
-    /// Parameter change, e.g. `min_fee_per_byte=20`.
+    /// Parameter change, e.g. `fee_per_kb=20000`.
     #[arg(long)]
     set_param: Option<String>,
-    /// Software upgrade version, e.g. `0.2.0`.
+    /// Software upgrade version, e.g. `0.3.0`.
     #[arg(long)]
     upgrade_version: Option<String>,
     /// SHA-256 of the release artifact (hex), used with --upgrade-version.
@@ -266,6 +373,8 @@ struct Ctx {
     wallet_path: PathBuf,
     client: NodeClient,
     from: u32,
+    priority: Priority,
+    replaceable: bool,
     yes: bool,
     dry_run: bool,
 }
@@ -300,6 +409,20 @@ fn hash(s: &str) -> Result<Hash32> {
     Hash32::from_hex(s).map_err(|_| anyhow!("invalid id/hash '{s}' (expected 64 hex chars)"))
 }
 
+/// Signing key of one wallet address.
+struct Signer {
+    key: SecretKey,
+    address: Address,
+    index: u32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SentRecord {
+    txid: Hash32,
+    from_index: u32,
+    tx: String,
+}
+
 impl Ctx {
     fn addr(&self, s: &str) -> Result<Address> {
         Address::decode(s, self.network).map_err(|e| anyhow!("invalid address '{s}': {e}"))
@@ -319,23 +442,59 @@ impl Ctx {
         Ok((w, keys))
     }
 
-    /// Signs and broadcasts an action from address index `self.from`.
-    fn send_action(&self, action: TxAction, summary: &str) -> Result<Option<Hash32>> {
-        let (_, keys) = self.unlock()?;
-        let sk = keys.secret_key(0, self.from);
-        let from = Address::from_public_key(&sk.public_key()).encode(self.network);
-        let account = self.client.account(&from)?;
-        let fees = self.client.fees()?;
-        let tx: Transaction = build_tx(&sk, self.network, account.next_nonce, fees.suggested_fee_per_byte, 0, action);
-        let mut debit = tx.max_debit();
-        if let TxAction::Propose { .. } = &tx.body.action {
-            debit = debit.saturating_add(self.client.status()?.params.proposal_deposit);
+    fn signer(&self, keys: &HdKeys, index: u32) -> Signer {
+        let key = keys.secret_key(0, index);
+        let address = Address::from_public_key(&key.public_key());
+        Signer { key, address, index }
+    }
+
+    fn flags(&self) -> u8 {
+        if self.replaceable {
+            FLAG_REPLACEABLE
+        } else {
+            0
         }
-        println!("From:   {from}");
-        println!("Action: {summary}");
-        println!("Fee:    {} ({} bytes)", tcn(tx.body.fee), tx.size());
+    }
+
+    fn sent_log(&self) -> PathBuf {
+        self.wallet_path.with_extension("sent.jsonl")
+    }
+
+    fn record_sent(&self, signer: &Signer, tx: &Transaction) -> Result<()> {
+        let rec = SentRecord { txid: tx.txid(), from_index: signer.index, tx: hex::encode(tx.to_bytes()) };
+        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(self.sent_log())?;
+        writeln!(f, "{}", serde_json::to_string(&rec)?)?;
+        Ok(())
+    }
+
+    fn build(&self, signer: &Signer, nonce: u64, action: TxAction) -> Result<Transaction> {
+        let fees = self.client.fees()?;
+        let policy = FeePolicy::from_fees(&fees, self.priority);
+        Ok(build_tx(&signer.key, self.network, nonce, &policy, self.flags(), 0, action))
+    }
+
+    /// Signs, shows and broadcasts an action.
+    fn send_with(&self, signer: &Signer, action: TxAction, summary: &str) -> Result<Option<Hash32>> {
+        let from = signer.address.encode(self.network);
+        let account = self.client.account(&from)?;
+        let tx = self.build(signer, account.next_nonce, action)?;
+        let mut debit = tx.max_debit();
+        match &tx.body.action {
+            TxAction::Propose { .. } => debit = debit.saturating_add(self.client.status()?.params.proposal_deposit),
+            TxAction::CreateContract { .. } => debit = debit.saturating_add(self.client.fees()?.storage_deposit_per_kb),
+            _ => {}
+        }
+        println!("From:     {from}");
+        println!("Action:   {summary}");
+        println!(
+            "Fee:      {} ({} bytes, priority {:?}{})",
+            tcn(tx.body.fee),
+            tx.size(),
+            self.priority,
+            if self.replaceable { ", replaceable" } else { "" }
+        );
         if debit > account.spendable {
-            bail!("insufficient spendable balance: need {}, have {}", tcn(debit), tcn(account.spendable));
+            bail!("insufficient spendable balance: need up to {}, have {}", tcn(debit), tcn(account.spendable));
         }
         if self.dry_run {
             println!("Signed transaction (not broadcast):\n{}", hex::encode(tx.to_bytes()));
@@ -347,17 +506,92 @@ impl Ctx {
             return Ok(None);
         }
         let txid = self.client.submit(&tx)?;
+        self.record_sent(signer, &tx)?;
         println!("Broadcast OK. txid: {txid}");
         Ok(Some(txid))
+    }
+
+    fn send_action(&self, action: TxAction, summary: &str) -> Result<Option<Hash32>> {
+        let (_, keys) = self.unlock()?;
+        let signer = self.signer(&keys, self.from);
+        self.send_with(&signer, action, summary)
     }
 
     fn tip_height(&self) -> Result<u64> {
         Ok(self.client.status()?.height)
     }
+
+    /// Measures fuel by simulation and returns the action with a safe `max_fuel`.
+    fn with_measured_fuel(&self, signer: &Signer, make: impl Fn(u64) -> TxAction, fixed: Option<u64>) -> Result<TxAction> {
+        if let Some(f) = fixed {
+            return Ok(make(f));
+        }
+        let from = signer.address.encode(self.network);
+        let nonce = self.client.account(&from)?.next_nonce;
+        let probe = self.build(signer, nonce, make(2_000_000))?;
+        let sim = self.client.simulate(&probe)?;
+        if !sim.valid {
+            bail!("transaction would be rejected: {}", sim.invalid_reason.unwrap_or_default());
+        }
+        if !sim.success {
+            bail!("contract call would fail: {} (nothing was sent)", sim.error.unwrap_or_default());
+        }
+        let fuel = (sim.fuel_used.saturating_mul(13) / 10 + 5_000).min(MAX_TX_FUEL);
+        println!("Fuel:     {} measured, limit {fuel}", sim.fuel_used);
+        if let Some(r) = &sim.return_value {
+            println!("Returns:  {r}");
+        }
+        for l in &sim.logs {
+            println!("Event:    {}({})", l.event, l.fields.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(", "));
+        }
+        Ok(make(fuel))
+    }
+
+    /// Parses text arguments with the types of a contract function from the node.
+    fn program_args(&self, address: &str, function: &str, raw: &[String]) -> Result<(Vec<Value>, bool)> {
+        let info = self.client.program(address)?;
+        let f = info.functions.iter().find(|f| f.name == function).ok_or_else(|| {
+            anyhow!(
+                "contract {} has no function '{function}'. Functions: {}",
+                info.name,
+                info.functions.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(", ")
+            )
+        })?;
+        if raw.len() != f.params.len() {
+            bail!(
+                "{function} expects {} argument(s): {}",
+                f.params.len(),
+                f.params.iter().map(|(n, t)| format!("{n}: {t}")).collect::<Vec<_>>().join(", ")
+            );
+        }
+        let mut out = Vec::new();
+        for (a, (name, t)) in raw.iter().zip(&f.params) {
+            let ty: Type = t.parse().map_err(|e: String| anyhow!(e))?;
+            out.push(parse_arg(a, &ty).map_err(|e| anyhow!("argument '{name}': {e}"))?);
+        }
+        Ok((out, f.payable))
+    }
+
+    /// Calls a view and parses the result with its declared return type.
+    fn view_value(&self, address: &str, function: &str, args: &[String]) -> Result<Value> {
+        let info = self.client.program(address)?;
+        let f = info
+            .functions
+            .iter()
+            .find(|f| f.name == function)
+            .ok_or_else(|| anyhow!("pool contract has no view '{function}' (not a TCCL-PRIV-1 pool)"))?;
+        let ret: Type = f.returns.parse().map_err(|e: String| anyhow!(e))?;
+        let resp = self.client.view(address, function, args)?;
+        if let Some(e) = resp.error {
+            bail!("{function}: {e}");
+        }
+        let text = resp.result.unwrap_or_default();
+        parse_arg(&text, &ret).map_err(|e| anyhow!("unexpected {function} result '{text}': {e}"))
+    }
 }
 
 fn describe(v: &TxView) -> String {
-    match &v.action {
+    let base = match &v.action {
         ActionView::Transfer { to, amount, memo_text, .. } => {
             format!("transfer {} → {}{}", tcn(*amount), to, memo_text.as_ref().map(|m| format!(" \"{m}\"")).unwrap_or_default())
         }
@@ -366,6 +600,23 @@ fn describe(v: &TxView) -> String {
         ActionView::CallContract { contract, call } => format!("call {} on {}", serde_json::to_string(call).unwrap_or_default(), contract),
         ActionView::Propose { title, .. } => format!("proposal \"{title}\""),
         ActionView::Vote { proposal, choice, weight } => format!("vote {:?} with {} on {}", choice, tcn(*weight), proposal),
+        ActionView::Deploy { source_hash, value, .. } => format!(
+            "deploy TCCL contract (source {}…){}",
+            &source_hash.to_hex()[..12],
+            if *value > 0 { format!(" with {}", tcn(*value)) } else { String::new() }
+        ),
+        ActionView::Invoke { contract, function, args, value, .. } => {
+            format!(
+                "{function}({}) on {contract}{}",
+                args.join(", "),
+                if *value > 0 { format!(" with {}", tcn(*value)) } else { String::new() }
+            )
+        }
+    };
+    if v.success {
+        base
+    } else {
+        format!("{base} — FAILED: {}", v.error.clone().unwrap_or_default())
     }
 }
 
@@ -386,7 +637,16 @@ fn run() -> Result<()> {
         .clone()
         .or_else(|| WalletFile::load(&wallet_path).ok().and_then(|w| w.node_url))
         .unwrap_or_else(|| format!("http://127.0.0.1:{}", network.params().default_rpc_port));
-    let ctx = Ctx { network, wallet_path, client: NodeClient::new(&node_url), from: cli.from, yes: cli.yes, dry_run: cli.dry_run };
+    let ctx = Ctx {
+        network,
+        wallet_path,
+        client: NodeClient::new(&node_url),
+        from: cli.from,
+        priority: cli.priority,
+        replaceable: cli.replaceable,
+        yes: cli.yes,
+        dry_run: cli.dry_run,
+    };
 
     match cli.cmd {
         Cmd::Create { words } => {
@@ -465,7 +725,7 @@ fn run() -> Result<()> {
                 println!("Locked:    {} (governance vote, until block {})", tcn(v.locked), v.locked_until);
             }
             if v.immature > 0 {
-                println!("Immature:  {} (mining rewards maturing)", tcn(v.immature));
+                println!("Immature:  {} (mining rewards in cooldown)", tcn(v.immature));
             }
             if v.mempool_txs > 0 {
                 println!("Pending:   {} transaction(s) in mempool", v.mempool_txs);
@@ -515,6 +775,35 @@ fn run() -> Result<()> {
                 ),
             )?;
         }
+        Cmd::BumpFee { txid } => bump_fee(&ctx, &hash(&txid)?)?,
+        Cmd::Fees => {
+            let f = ctx.client.fees()?;
+            let policy = |p| FeePolicy::from_fees(&f, p);
+            println!("Congestion: {:.2}× (the surcharge above 1× is burned)", f.congestion_bp as f64 / 10_000.0);
+            println!("Minimum:    base {} + {} per kB + {} per 1000 fuel", tcn(f.base_fee), tcn(f.fee_per_kb), tcn(f.fee_per_kfuel));
+            println!("Storage:    {} per kB of contract state (refundable)", tcn(f.storage_deposit_per_kb));
+            println!("Mempool:    {} transaction(s), {} bytes", f.mempool_txs, f.mempool_bytes);
+            println!("Typical 160-byte transfer:");
+            for (name, p) in [("low", Priority::Low), ("normal", Priority::Normal), ("high", Priority::High), ("urgent", Priority::Urgent)]
+            {
+                println!("  --priority {name:<7} {}", tcn(policy(p).fee(160, 0)));
+            }
+        }
+        Cmd::Confirmations { amount: a } => {
+            let value = amount(&a)?;
+            let s = ctx.client.security(value)?;
+            println!("For {}: wait {} confirmation(s) (~{} min).", tcn(value), s.confirmations, s.minutes.max(1));
+            println!("{}", s.explanation);
+        }
+        Cmd::Alerts => {
+            let list = ctx.client.alerts()?;
+            if list.is_empty() {
+                println!("No double-spend attempts seen by this node.");
+            }
+            for a in list {
+                println!("sender {} nonce {}: {} vs {} (seen at {})", a.sender, a.nonce, a.first, a.second, a.seen_at);
+            }
+        }
         Cmd::History { limit } => {
             let (_, keys) = ctx.unlock()?;
             let addr = keys.address_string(0, ctx.from, network);
@@ -523,7 +812,8 @@ fn run() -> Result<()> {
                     Some(h) => format!("block {h}"),
                     None => "mempool".into(),
                 };
-                println!("{:<12} {}  {}", when, &v.txid.to_hex()[..16], describe(&v));
+                let warn = if v.conflict.is_some() { "  ⚠ double spend attempt" } else { "" };
+                println!("{:<12} {}  {}{warn}", when, &v.txid.to_hex()[..16], describe(&v));
             }
         }
         Cmd::Tx { txid } => {
@@ -540,8 +830,46 @@ fn run() -> Result<()> {
             println!("{}", m.as_str());
         }
         Cmd::Contract(c) => contract_cmd(&ctx, c)?,
+        Cmd::Privacy(p) => privacy_cmd(&ctx, p)?,
         Cmd::Gov(g) => gov_cmd(&ctx, g)?,
     }
+    Ok(())
+}
+
+fn bump_fee(ctx: &Ctx, txid: &Hash32) -> Result<()> {
+    let log = std::fs::read_to_string(ctx.sent_log()).map_err(|_| anyhow!("no transactions sent from this wallet yet"))?;
+    let rec = log
+        .lines()
+        .filter_map(|l| serde_json::from_str::<SentRecord>(l).ok())
+        .find(|r| r.txid == *txid)
+        .ok_or_else(|| anyhow!("transaction {txid} was not sent from this wallet"))?;
+    let tx = Transaction::from_bytes(&hex::decode(&rec.tx)?)?;
+    if !tx.is_replaceable() {
+        bail!("this transaction was not sent with --replaceable, so the network will not accept a replacement");
+    }
+    let view = ctx.client.tx(txid)?;
+    if !view.in_mempool {
+        bail!("transaction is not pending anymore (already confirmed or dropped)");
+    }
+    let (_, keys) = ctx.unlock()?;
+    let signer = ctx.signer(&keys, rec.from_index);
+    let fees = ctx.client.fees()?;
+    let wanted = FeePolicy::from_fees(&fees, if ctx.priority == Priority::Normal { Priority::High } else { ctx.priority })
+        .fee(tx.size(), tx.max_fuel());
+    let new_fee = wanted.max(tx.body.fee.saturating_add(tx.body.fee / 4).saturating_add(1));
+    let bumped = builder::with_fee(&signer.key, &tx, new_fee);
+    println!("Old fee:  {}", tcn(tx.body.fee));
+    println!("New fee:  {}", tcn(new_fee));
+    if ctx.dry_run {
+        println!("{}", hex::encode(bumped.to_bytes()));
+        return Ok(());
+    }
+    if !confirm(ctx, "Replace the pending transaction?")? {
+        return Ok(());
+    }
+    let new_id = ctx.client.submit(&bumped)?;
+    ctx.record_sent(&signer, &bumped)?;
+    println!("Replacement broadcast. New txid: {new_id}");
     Ok(())
 }
 
@@ -553,6 +881,7 @@ fn contract_cmd(ctx: &Ctx, c: ContractCmd) -> Result<()> {
         if let Some(txid) = ctx.send_action(builder::create_contract(spec), &what)? {
             if !ctx.dry_run {
                 println!("The contract id is shown by `thecoin-wallet tx {txid}` (field \"created\") once confirmed.");
+                println!("A small refundable storage deposit is locked until the contract finishes.");
             }
         }
         Ok(())
@@ -648,6 +977,200 @@ fn contract_cmd(ctx: &Ctx, c: ContractCmd) -> Result<()> {
         ContractCmd::MultisigCancel { id, spend_id } => {
             call(&id, ContractCall::MultisigCancel { spend_id }, &format!("cancel spend #{spend_id}"))?
         }
+        ContractCmd::MultisigClose { id } => call(&id, ContractCall::MultisigClose, "close multisig")?,
+        ContractCmd::Deploy { file, args, opts } => {
+            let source = std::fs::read_to_string(&file).with_context(|| format!("cannot read {}", file.display()))?;
+            let compile_opts = thecoin_core::tccl::CompileOptions { address_prefixes: vec![ctx.network.hrp().to_string()] };
+            let program = thecoin_core::tccl::compile(&source, &compile_opts).map_err(|e| anyhow!("{}:{e}", file.display()))?;
+            let init_params = program.find("init").map(|(_, f)| f.params.clone()).unwrap_or_default();
+            if args.len() != init_params.len() {
+                bail!(
+                    "init expects {} argument(s): {}",
+                    init_params.len(),
+                    init_params.iter().map(|(n, t)| format!("{n}: {t}")).collect::<Vec<_>>().join(", ")
+                );
+            }
+            let init_args = args
+                .iter()
+                .zip(&init_params)
+                .map(|(a, (n, t))| parse_arg(a, t).map_err(|e| anyhow!("argument '{n}': {e}")))
+                .collect::<Result<Vec<_>>>()?;
+            let value = opts.value.as_deref().map(amount).transpose()?.unwrap_or(0);
+            let max_deposit = amount(&opts.max_deposit)?;
+            let (_, keys) = ctx.unlock()?;
+            let signer = ctx.signer(&keys, ctx.from);
+            let action = ctx.with_measured_fuel(
+                &signer,
+                |fuel| builder::deploy(&source, init_args.clone(), value, fuel, max_deposit),
+                opts.max_fuel,
+            )?;
+            let nonce = ctx.client.account(&signer.address.encode(ctx.network))?.next_nonce;
+            let address = program_address(&signer.address, nonce).encode(ctx.network);
+            if ctx.send_with(&signer, action, &format!("deploy contract {} ({} bytes of TCCL)", program.name, source.len()))?.is_some() {
+                println!("Contract address: {address}");
+            }
+        }
+        ContractCmd::Invoke { address, function, args, opts } => {
+            let contract = ctx.addr(&address)?;
+            let (values, payable) = ctx.program_args(&address, &function, &args)?;
+            let value = opts.value.as_deref().map(amount).transpose()?.unwrap_or(0);
+            if value > 0 && !payable {
+                bail!("{function} is not payable; remove --value");
+            }
+            let max_deposit = amount(&opts.max_deposit)?;
+            let (_, keys) = ctx.unlock()?;
+            let signer = ctx.signer(&keys, ctx.from);
+            let action = ctx.with_measured_fuel(
+                &signer,
+                |fuel| builder::invoke(contract, &function, values.clone(), value, fuel, max_deposit),
+                opts.max_fuel,
+            )?;
+            ctx.send_with(&signer, action, &format!("{function}({}) on {address}", args.join(", ")))?;
+        }
+        ContractCmd::View { address, function, args } => {
+            let resp = ctx.client.view(&address, &function, &args)?;
+            match (resp.result, resp.error) {
+                (Some(r), _) => println!("{r}"),
+                (None, Some(e)) => bail!("{e}"),
+                _ => {}
+            }
+        }
+        ContractCmd::Program { address } => {
+            let p = ctx.client.program(&address)?;
+            println!("Contract:  {} at {}", p.name, p.address);
+            println!("Creator:   {} (block {}, tx {})", p.creator, p.created_height, p.deploy_txid);
+            println!("Balance:   {}", tcn(p.balance));
+            println!("Storage:   {} bytes in {} entries · deposit {}", p.state_bytes, p.storage_items, tcn(p.deposit));
+            for f in p.functions {
+                let params = f.params.iter().map(|(n, t)| format!("{n}: {t}")).collect::<Vec<_>>().join(", ");
+                let ret = if f.returns == "nothing" { String::new() } else { format!(" -> {}", f.returns) };
+                println!("  {} {}({params}){ret}{}", f.kind, f.name, if f.payable { " payable" } else { "" });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn privacy_cmd(ctx: &Ctx, p: PrivacyCmd) -> Result<()> {
+    let int_of = |v: Value| -> Result<i128> {
+        match v {
+            Value::Int(i) => Ok(i),
+            other => bail!("expected int, got {other:?}"),
+        }
+    };
+    let bytes_of = |v: Value| -> Result<Vec<u8>> {
+        match v {
+            Value::Bytes(b) => Ok(b),
+            other => bail!("expected bytes, got {other:?}"),
+        }
+    };
+    // Finds the pool index of our deposit.
+    let find_index = |pool: &str, public: &[u8; 32]| -> Result<Option<i128>> {
+        let count = int_of(ctx.view_value(pool, "deposits", &[])?)?;
+        for i in 0..count {
+            let k = bytes_of(ctx.view_value(pool, "key_at", &[i.to_string()])?)?;
+            if k.as_slice() == public {
+                return Ok(Some(i));
+            }
+        }
+        Ok(None)
+    };
+    match p {
+        PrivacyCmd::Keygen { key } => {
+            let (_, keys) = ctx.unlock()?;
+            let (_, public) = keys.ring_keypair(key);
+            println!("0x{}", hex::encode(public));
+        }
+        PrivacyCmd::Deposit { pool, key } => {
+            let contract = ctx.addr(&pool)?;
+            let denomination = int_of(ctx.view_value(&pool, "denomination", &[])?)?;
+            let (_, keys) = ctx.unlock()?;
+            let (_, public) = keys.ring_keypair(key);
+            if find_index(&pool, &public)?.is_some() {
+                bail!("ring key #{key} is already deposited in this pool; use another --key");
+            }
+            let signer = ctx.signer(&keys, ctx.from);
+            let value = u64::try_from(denomination).map_err(|_| anyhow!("invalid pool denomination"))?;
+            let args = vec![Value::Bytes(public.to_vec())];
+            let action = ctx.with_measured_fuel(
+                &signer,
+                |fuel| builder::invoke(contract, "deposit", args.clone(), value, fuel, parse_amount("1").unwrap_or(0)),
+                None,
+            )?;
+            ctx.send_with(&signer, action, &format!("private deposit of {} into pool {pool} (ring key #{key})", tcn(value)))?;
+            println!("Keep your recovery phrase: it is the only way to withdraw (key index #{key}).");
+        }
+        PrivacyCmd::Status { pool, key } => {
+            let (_, keys) = ctx.unlock()?;
+            let (secret, public) = keys.ring_keypair(key);
+            let image = thecoin_core::tccl::ring::key_image(&secret).ok_or_else(|| anyhow!("invalid ring key"))?;
+            match find_index(&pool, &public)? {
+                None => println!("Ring key #{key} has no deposit in this pool."),
+                Some(i) => {
+                    let spent = matches!(ctx.view_value(&pool, "is_withdrawn", &[format!("0x{}", hex::encode(image))])?, Value::Bool(true));
+                    let total = int_of(ctx.view_value(&pool, "deposits", &[])?)?;
+                    println!("Deposit #{i} of {total} in the pool — {}", if spent { "already withdrawn" } else { "available to withdraw" });
+                }
+            }
+        }
+        PrivacyCmd::Withdraw { pool, to, key, ring_size, relayer, fee } => {
+            let contract = ctx.addr(&pool)?;
+            let to_addr = ctx.addr(&to)?;
+            let fee_motes = amount(&fee)?;
+            let (_, keys) = ctx.unlock()?;
+            let signer = ctx.signer(&keys, ctx.from);
+            let relayer_addr = match relayer {
+                Some(r) => ctx.addr(&r)?,
+                None => signer.address,
+            };
+            let (secret, public) = keys.ring_keypair(key);
+            let my_index = find_index(&pool, &public)?.ok_or_else(|| anyhow!("ring key #{key} has no deposit in this pool"))?;
+            let image = thecoin_core::tccl::ring::key_image(&secret).ok_or_else(|| anyhow!("invalid ring key"))?;
+            if matches!(ctx.view_value(&pool, "is_withdrawn", &[format!("0x{}", hex::encode(image))])?, Value::Bool(true)) {
+                bail!("this deposit was already withdrawn");
+            }
+            let total = int_of(ctx.view_value(&pool, "deposits", &[])?)?;
+            let size = ring_size.clamp(2, 32).min(total as usize);
+            if size < 2 {
+                bail!("the pool needs at least 2 deposits before anyone can withdraw privately");
+            }
+            // Random ring that includes our deposit, in random order.
+            let mut others: Vec<i128> = (0..total).filter(|i| *i != my_index).collect();
+            others.shuffle(&mut rand::thread_rng());
+            let mut members: Vec<i128> = others.into_iter().take(size - 1).collect();
+            members.push(my_index);
+            members.shuffle(&mut rand::thread_rng());
+            let mut ring = Vec::with_capacity(size);
+            for m in &members {
+                let k = bytes_of(ctx.view_value(&pool, "key_at", &[m.to_string()])?)?;
+                ring.push(<[u8; 32]>::try_from(k.as_slice()).map_err(|_| anyhow!("pool key #{m} is not 32 bytes"))?);
+            }
+            let position = members.iter().position(|m| *m == my_index).expect("included");
+            let message = bytes_of(ctx.view_value(
+                &pool,
+                "message_for",
+                &[to_addr.encode(ctx.network), relayer_addr.encode(ctx.network), fee_motes.to_string()],
+            )?)?;
+            let (signature, key_image) = thecoin_core::tccl::ring::sign(&message, &ring, position, &secret, &mut rand::rngs::OsRng)
+                .map_err(|e| anyhow!("ring signature: {e}"))?;
+            let args = vec![
+                Value::Address(to_addr.0),
+                Value::Address(relayer_addr.0),
+                Value::Int(fee_motes as i128),
+                Value::List(members.iter().map(|m| Value::Int(*m)).collect()),
+                Value::Bytes(signature),
+                Value::Bytes(key_image.to_vec()),
+            ];
+            let action = ctx.with_measured_fuel(
+                &signer,
+                |fuel| builder::invoke(contract, "withdraw", args.clone(), 0, fuel, parse_amount("1").unwrap_or(0)),
+                None,
+            )?;
+            ctx.send_with(&signer, action, &format!("private withdrawal to {to} hidden among {size} deposits"))?;
+            if relayer_addr == signer.address {
+                println!("Note: this transaction was sent from your own address {}. For stronger privacy, send it from an unrelated address or a relayer.", signer.address.encode(ctx.network));
+            }
+        }
     }
     Ok(())
 }
@@ -679,7 +1202,12 @@ fn gov_cmd(ctx: &Ctx, g: GovCmd) -> Result<()> {
             };
             let action = if let Some(sp) = &a.set_param {
                 let (name, value) = sp.split_once('=').ok_or_else(|| anyhow!("--set-param must be name=value"))?;
-                let param = GovParamId::from_name(name.trim()).ok_or_else(|| anyhow!("unknown parameter '{name}'"))?;
+                let param = GovParamId::from_name(name.trim()).ok_or_else(|| {
+                    anyhow!(
+                        "unknown parameter '{name}'. Parameters: {}",
+                        GovParamId::ALL.iter().map(|p| p.name()).collect::<Vec<_>>().join(", ")
+                    )
+                })?;
                 ProposalAction::SetParam { param, value: value.trim().parse().context("parameter value must be an integer")? }
             } else if let Some(v) = &a.upgrade_version {
                 ProposalAction::SoftwareUpgrade {

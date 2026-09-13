@@ -63,10 +63,7 @@ fn tip_jar_payments_and_permissions() {
     let owner_before = sim.balance_of(&account("owner"));
     sim.call(&c, account("owner"), "withdraw", vec![int(2 * TCN as i128)], 0).unwrap().result.unwrap();
     assert_eq!(sim.balance_of(&account("owner")), owner_before + 2 * TCN);
-    assert_eq!(
-        sim.view(&c, "stats", vec![]).unwrap().result.unwrap(),
-        Value::List(vec![int(3 * TCN as i128), int(1), int(TCN as i128)])
-    );
+    assert_eq!(sim.view(&c, "stats", vec![]).unwrap().result.unwrap(), Value::List(vec![int(3 * TCN as i128), int(1), int(TCN as i128)]));
 }
 
 #[test]
@@ -130,7 +127,9 @@ fn private_pool_hides_depositor_and_blocks_double_withdraw() {
     let dest = account("fresh-destination");
     let relayer = account("relayer");
     let fee: i128 = TCN as i128 / 10;
-    let Value::Bytes(msg) = sim.view(&pool, "message_for", vec![Value::Address(dest), Value::Address(relayer), int(fee)]).unwrap().result.unwrap() else {
+    let Value::Bytes(msg) =
+        sim.view(&pool, "message_for", vec![Value::Address(dest), Value::Address(relayer), int(fee)]).unwrap().result.unwrap()
+    else {
         panic!()
     };
     let members: Vec<usize> = vec![0, 1, 2, 3, 4];

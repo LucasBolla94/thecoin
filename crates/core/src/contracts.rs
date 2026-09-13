@@ -62,12 +62,24 @@ pub enum ContractCall {
     VestingRevoke,
     SubscriptionClaim,
     SubscriptionCancel,
-    HtlcRedeem { preimage: Vec<u8> },
+    HtlcRedeem {
+        preimage: Vec<u8>,
+    },
     HtlcRefund,
-    MultisigDeposit { amount: u64 },
-    MultisigPropose { to: Address, amount: u64, memo: Vec<u8> },
-    MultisigApprove { spend_id: u32 },
-    MultisigCancel { spend_id: u32 },
+    MultisigDeposit {
+        amount: u64,
+    },
+    MultisigPropose {
+        to: Address,
+        amount: u64,
+        memo: Vec<u8>,
+    },
+    MultisigApprove {
+        spend_id: u32,
+    },
+    MultisigCancel {
+        spend_id: u32,
+    },
     /// Deletes an empty multisig (no balance, no pending spends) and refunds
     /// the storage deposit to its creator. Any signer may call it.
     MultisigClose,

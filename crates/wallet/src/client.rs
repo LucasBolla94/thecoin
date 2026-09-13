@@ -66,6 +66,37 @@ impl NodeClient {
         self.get(&format!("/api/v1/governance/proposal/{id}"))
     }
 
+    pub fn program(&self, address: &str) -> Result<ProgramView> {
+        self.get(&format!("/api/v1/program/{address}"))
+    }
+
+    pub fn security(&self, amount: u64) -> Result<SecurityView> {
+        self.get(&format!("/api/v1/security?amount={amount}"))
+    }
+
+    pub fn alerts(&self) -> Result<Vec<DoubleSpendView>> {
+        self.get("/api/v1/alerts")
+    }
+
+    fn post<B: serde::Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
+        let url = format!("{}{}", self.base, path);
+        match self.agent.post(&url).send_json(body) {
+            Ok(resp) => Ok(resp.into_json()?),
+            Err(ureq::Error::Status(code, resp)) => Err(api_error(code, resp)),
+            Err(e) => Err(anyhow!("cannot reach node at {}: {e}", self.base)),
+        }
+    }
+
+    /// Read-only contract call; arguments are text parsed by the node with the ABI.
+    pub fn view(&self, address: &str, function: &str, args: &[String]) -> Result<ViewCallResponse> {
+        self.post(&format!("/api/v1/program/{address}/view"), &ViewCallRequest { function: function.to_string(), args: args.to_vec() })
+    }
+
+    /// Dry-runs a signed transaction on top of the node's state.
+    pub fn simulate(&self, tx: &Transaction) -> Result<SimulateResponse> {
+        self.post("/api/v1/tx/simulate", &SubmitTxRequest { tx: hex::encode(tx.to_bytes()) })
+    }
+
     pub fn submit(&self, tx: &Transaction) -> Result<Hash32> {
         let url = format!("{}/api/v1/tx", self.base);
         let body = SubmitTxRequest { tx: hex::encode(tx.to_bytes()) };

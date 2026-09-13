@@ -157,10 +157,47 @@ impl Node {
 
     /// Validates a transaction, adds it to the mempool and relays it.
     pub fn submit_tx(&self, tx: Transaction, source: Option<u64>) -> std::result::Result<Hash32, MempoolError> {
-        let txid = self.mempool.lock().add(&self.chain, tx)?;
+        let result = self.mempool.lock().add(&self.chain, tx.clone());
+        let txid = match result {
+            Ok(id) => id,
+            Err(MempoolError::NotReplaceable { existing }) => {
+                // Warn the network: merchants watching unconfirmed payments see it at once.
+                let first = self.mempool.lock().get(&existing).cloned();
+                if let Some(first) = first {
+                    warn!(sender = %tx.sender().encode(self.params.network), nonce = tx.body.nonce, "double spend attempt");
+                    self.broadcast_double_spend(&first, &tx, source);
+                }
+                return Err(MempoolError::NotReplaceable { existing });
+            }
+            Err(e) => return Err(e),
+        };
         self.mempool_changed.notify_waiters();
         self.broadcast_inv(InvItem { kind: InvKind::Tx, hash: txid }, source);
         Ok(txid)
+    }
+
+    pub fn broadcast_double_spend(&self, first: &Transaction, second: &Transaction, except: Option<u64>) {
+        let msg = Message::DoubleSpend { first: Box::new(first.clone()), second: Box::new(second.clone()) };
+        let peers: Vec<Arc<Peer>> = self.peers.read().values().cloned().collect();
+        for p in peers {
+            if Some(p.id) != except && p.is_ready() {
+                p.send(&msg);
+            }
+        }
+    }
+
+    /// Announces a new block as a compact block to peers that do not have it.
+    pub fn broadcast_block(&self, block: &Block, except: Option<u64>) {
+        let hash = block.hash();
+        let msg = Message::CompactBlock(Box::new(crate::protocol::CompactBlock::from_block(block)));
+        let peers: Vec<Arc<Peer>> = self.peers.read().values().cloned().collect();
+        for p in peers {
+            if Some(p.id) == except || !p.is_ready() || p.knows(&hash) {
+                continue;
+            }
+            p.mark_known(hash);
+            p.send(&msg);
+        }
     }
 
     /// Sends an inventory announcement to every connected peer except `except`
@@ -180,6 +217,7 @@ impl Node {
 fn spawn_block_processor(node: Arc<Node>, mut rx: mpsc::Receiver<BlockJob>) {
     std::thread::Builder::new()
         .name("block-processor".into())
+        .stack_size(16 * 1024 * 1024)
         .spawn(move || {
             let mut last_log = Instant::now();
             while let Some(job) = rx.blocking_recv() {
@@ -207,7 +245,10 @@ fn spawn_block_processor(node: Arc<Node>, mut rx: mpsc::Receiver<BlockJob>) {
                             node.miner.blocks_found.fetch_add(1, Ordering::Relaxed);
                         }
                         if recent || local {
-                            node.broadcast_inv(InvItem { kind: InvKind::Block, hash: tip.hash }, job.source);
+                            match connected.last() {
+                                Some(b) if b.hash() == tip.hash => node.broadcast_block(b, job.source),
+                                _ => node.broadcast_inv(InvItem { kind: InvKind::Block, hash: tip.hash }, job.source),
+                            }
                         }
                         if let Some(src) = job.source {
                             if let Some(p) = node.peers.read().get(&src) {

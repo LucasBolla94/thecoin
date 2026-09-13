@@ -72,7 +72,14 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             let src = read_source(path)?;
             let p = compile(&src, &CompileOptions::default()).map_err(|e| format!("{path}:{e}"))?;
             println!("✔ {} compiles ({} bytes of source, {} bytes compiled)", p.name, src.len(), p.to_bytes().len());
-            println!("  state: {}", if p.states.is_empty() { "-".into() } else { p.states.iter().map(|s| format!("{}: {}", s.name, s.ty)).collect::<Vec<_>>().join(", ") });
+            println!(
+                "  state: {}",
+                if p.states.is_empty() {
+                    "-".into()
+                } else {
+                    p.states.iter().map(|s| format!("{}: {}", s.name, s.ty)).collect::<Vec<_>>().join(", ")
+                }
+            );
             for f in p.abi() {
                 let params = f.params.iter().map(|(n, t)| format!("{n}: {t}")).collect::<Vec<_>>().join(", ");
                 let kind = match f.kind {
@@ -101,7 +108,11 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
 fn parse_call_args(program: &tccl::Program, function: &str, raw: &[String]) -> Result<Vec<Value>, String> {
     let (_, f) = program.find(function).ok_or_else(|| format!("contract has no function '{function}'"))?;
     if raw.len() != f.params.len() {
-        return Err(format!("{function} expects {} argument(s): {}", f.params.len(), f.params.iter().map(|(n, t)| format!("{n}: {t}")).collect::<Vec<_>>().join(", ")));
+        return Err(format!(
+            "{function} expects {} argument(s): {}",
+            f.params.len(),
+            f.params.iter().map(|(n, t)| format!("{n}: {t}")).collect::<Vec<_>>().join(", ")
+        ));
     }
     f.params
         .iter()
@@ -224,8 +235,11 @@ fn ring_cmd(mut args: Vec<String>) -> Result<(), String> {
         }
         "sign" => {
             let secret = hex32(&take_opt(&mut args, "--secret").ok_or("--secret required")?, "secret")?;
-            let ring: Vec<[u8; 32]> =
-                take_opt(&mut args, "--ring").ok_or("--ring required")?.split(',').map(|k| hex32(k, "ring key")).collect::<Result<_, _>>()?;
+            let ring: Vec<[u8; 32]> = take_opt(&mut args, "--ring")
+                .ok_or("--ring required")?
+                .split(',')
+                .map(|k| hex32(k, "ring key"))
+                .collect::<Result<_, _>>()?;
             let index: usize = take_opt(&mut args, "--index").ok_or("--index required")?.parse().map_err(|_| "invalid --index")?;
             let msg_hex = take_opt(&mut args, "--message").ok_or("--message required")?;
             let msg = hex::decode(msg_hex.trim_start_matches("0x")).map_err(|_| "--message must be hex")?;

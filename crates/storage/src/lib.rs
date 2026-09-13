@@ -12,7 +12,8 @@
 //! | `state`     | state key                        | state record (see `thecoin_core::state`)|
 //! | `undo`      | height                           | zstd(borsh(BlockUndo))                  |
 //! | `txindex`   | txid                             | height (8 LE) + position (4 LE)         |
-//! | `addrindex` | address + height BE + position BE| txid                                    |
+//! | `addrindex` | address + height BE + position BE| (empty — the txid is in the block)      |
+//! | `receipts`  | txid                             | zstd(borsh(TxReceipt))                  |
 //! | `meta`      | name                             | bytes                                   |
 //!
 //! Everything a block changes (state, undo, indexes, tip, state commitment) is
@@ -37,9 +38,10 @@ const STATE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("state");
 const UNDO: TableDefinition<u64, &[u8]> = TableDefinition::new("undo");
 const TXINDEX: TableDefinition<&[u8], &[u8]> = TableDefinition::new("txindex");
 const ADDRINDEX: TableDefinition<&[u8], &[u8]> = TableDefinition::new("addrindex");
+const RECEIPTS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("receipts");
 const META: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 const ZSTD_LEVEL: i32 = 3;
 
 pub const META_TIP: &str = "tip";
@@ -131,6 +133,7 @@ impl ChainDb {
             w.open_table(UNDO)?;
             w.open_table(TXINDEX)?;
             w.open_table(ADDRINDEX)?;
+            w.open_table(RECEIPTS)?;
             let mut meta = w.open_table(META)?;
             let existing = meta.get(META_SCHEMA)?.map(|g| g.value().to_vec());
             match existing {
@@ -245,20 +248,26 @@ pub trait DbRead {
         }))
     }
 
-    /// Transactions touching `addr`, newest first: `(height, position, txid)`.
-    fn address_txs(&self, addr: &Address, before: Option<(u64, u32)>, limit: usize) -> Result<Vec<(u64, u32, Hash32)>> {
+    /// Transactions touching `addr`, newest first: `(height, position)`.
+    fn address_txs(&self, addr: &Address, before: Option<(u64, u32)>, limit: usize) -> Result<Vec<(u64, u32)>> {
         let before_key = before.map(|(h, p)| addr_index_key(addr, h, p));
         let rows = self.scan_prefix_rev(ADDRINDEX, &addr.0, before_key.as_deref(), limit)?;
         Ok(rows
             .into_iter()
-            .map(|(k, v)| {
+            .map(|(k, _)| {
                 let height = u64::from_be_bytes(k[20..28].try_into().expect("8"));
                 let pos = u32::from_be_bytes(k[28..32].try_into().expect("4"));
-                let mut h = [0u8; 32];
-                h.copy_from_slice(&v);
-                (height, pos, Hash32(h))
+                (height, pos)
             })
             .collect())
+    }
+
+    /// Execution receipt of a confirmed transaction.
+    fn receipt(&self, txid: &Hash32) -> Result<Option<thecoin_core::execution::TxReceipt>> {
+        match self.get_bytes(RECEIPTS, &txid.0)? {
+            Some(b) => Ok(Some(thecoin_core::execution::TxReceipt::try_from_slice(&decompress(&b)?)?)),
+            None => Ok(None),
+        }
     }
 
     fn state_prefix(&self, prefix: &[u8], limit: usize) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
@@ -489,9 +498,22 @@ impl WriteTx {
         Ok(())
     }
 
-    pub fn index_address(&self, addr: &Address, height: u64, pos: u32, txid: &Hash32) -> Result<()> {
+    pub fn index_address(&self, addr: &Address, height: u64, pos: u32) -> Result<()> {
         let mut t = self.tx.open_table(ADDRINDEX)?;
-        t.insert(addr_index_key(addr, height, pos).as_slice(), txid.0.as_slice())?;
+        t.insert(addr_index_key(addr, height, pos).as_slice(), [].as_slice())?;
+        Ok(())
+    }
+
+    pub fn put_receipt(&self, r: &thecoin_core::execution::TxReceipt) -> Result<()> {
+        let raw = borsh::to_vec(r)?;
+        let mut t = self.tx.open_table(RECEIPTS)?;
+        t.insert(r.txid.0.as_slice(), compress(&raw)?.as_slice())?;
+        Ok(())
+    }
+
+    pub fn delete_receipt(&self, txid: &Hash32) -> Result<()> {
+        let mut t = self.tx.open_table(RECEIPTS)?;
+        t.remove(txid.0.as_slice())?;
         Ok(())
     }
 
@@ -551,7 +573,7 @@ mod tests {
         .unwrap();
         let addr = Address([7; 20]);
         for h in 0..5u64 {
-            w.index_address(&addr, h, 0, &Hash32([h as u8; 32])).unwrap();
+            w.index_address(&addr, h, 0).unwrap();
         }
         w.put_undo(3, &BlockUndo { changes: vec![StateChange { key: vec![5], old: Some(vec![1]), new: None }], addr_index: vec![] })
             .unwrap();
