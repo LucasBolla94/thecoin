@@ -619,8 +619,8 @@ async fn address(State(node): State<AppState>, Path(addr): Path<String>) -> ApiR
 
 async fn address_txs(State(node): State<AppState>, Path(addr): Path<String>, Query(q): Query<PageQuery>) -> ApiResult<Vec<TxView>> {
     let a = parse_addr(&node, &addr)?;
-    if !node.config.storage.address_index {
-        return Err(bad("address index disabled on this node"));
+    if !node.chain.options().address_index {
+        return Err(bad("address index disabled on this node (pruned nodes do not keep it)"));
     }
     let limit = q.limit.unwrap_or(25).clamp(1, 100);
     let cursor = match q.cursor {

@@ -5,31 +5,42 @@ dos nós seed (`seed1`/`seed2.the-coin.cloud`) e quem hospeda o site.
 
 ## Seja um validador em 1 minuto
 
-Em qualquer VPS Linux com systemd (x86_64 ou ARM64), conectado por SSH:
+Em qualquer VPS Linux com systemd (x86_64 ou ARM64), conectado por SSH, **um único comando**:
 
 ```bash
 curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes
 ```
 
-Não há nenhuma pergunta. Ao final:
+* `curl -fsSL …/install.sh` baixa o instalador (`installer/install.sh`);
+* `sudo bash -s --` executa como root lendo o script da entrada padrão e repassa as opções seguintes;
+* `--yes` = modo não interativo: nenhuma pergunta, aceita os padrões (mainnet, minerando, carteira criada automaticamente).
+
+Outras opções vêm depois de `--yes` (ex.: `--network testnet`, `--miner-address tc1…`,
+`--no-mine`, `--threads 2`; lista completa na §2.1). Ao final:
 
 - o nó `thecoind` está rodando como serviço, sincronizando e **minerando**;
 - existe uma carteira de recompensas em `~/.thecoin/wallet-mainnet.json`, protegida por uma senha
   aleatória forte guardada em `~/.thecoin/wallet-mainnet.password` (dono `root`, permissão `0600`);
 - as **24 palavras de recuperação** aparecem num quadro amarelo — anote-as no papel.
   Para vê-las de novo: `sudo thecoin mnemonic`;
+- os binários `thecoind` (nó), `thecoin-wallet` (carteira) e `tccl` (ferramenta de
+  contratos inteligentes) estão em `/usr/local/bin`;
 - o comando `thecoin` está instalado:
 
 | Comando | O que faz |
 |---|---|
-| `thecoin status` | serviço, versão, altura, sincronização, peers, mempool, hashrate, mineração e saldo do endereço de mineração |
+| `thecoin status` | serviço, versão, altura, sincronização, peers, mempool, hashrate, mineração e saldo do endereço de mineração (inclusive recompensas em cooldown) |
 | `thecoin logs` | segue os logs do serviço (`journalctl -u thecoind -f`) |
 | `thecoin balance` | saldo da carteira (sem sudo, usa a API do nó; com sudo, usa a carteira) |
 | `thecoin address` | endereço de mineração/carteira |
 | `sudo thecoin mnemonic` | mostra as palavras de recuperação |
 | `sudo thecoin restart` | reinicia o nó |
+| `thecoin signals` | propostas de governança que seus blocos apoiam e propostas abertas |
+| `sudo thecoin signal <id>` | passa a apoiar a proposta `<id>` (grava em `[mining] signal` e reinicia o nó) |
+| `sudo thecoin unsignal <id>` | deixa de apoiar a proposta |
 | `sudo thecoin update` | reinstala a versão mais recente mantendo carteira e configuração |
 | `sudo thecoin uninstall [--purge]` | remove o nó (a carteira nunca é apagada) |
+| `thecoin version` | versões instaladas do nó e da carteira |
 | `thecoin help` | ajuda |
 
 Comandos que precisam de root se reexecutam sozinhos com `sudo`.
@@ -57,7 +68,7 @@ Guia ilustrado para novos usuários: <https://the-coin.cloud/validator.html>.
 | Rede | porta TCP 7333 aberta para entrada | IP público fixo |
 | Relógio | NTP ativo (`timedatectl`) | — |
 
-Consumo medido na v0.1 (VPS 2 vCPU Haswell, 3,7 GB RAM):
+Consumo medido (VPS 2 vCPU Haswell, 3,7 GB RAM):
 
 | Métrica | Valor |
 |---|---|
@@ -65,10 +76,22 @@ Consumo medido na v0.1 (VPS 2 vCPU Haswell, 3,7 GB RAM):
 | CoinHash | ≈ 12 ms/hash → 83–87 H/s por thread |
 | Verificação de assinaturas | ≈ 14 400 transações/s por núcleo |
 | Aplicar bloco com 5 000 tx (790 kB) | 0,39 s + 62 ms de LtHash |
+| Contratos TCCL no pior caso | bloco cheio (50 M de combustível) ≈ 1 s de CPU |
 | Disco por bloco vazio | ≈ 765 bytes (~400 MB/ano) |
-| Disco por transação (nó arquivo com índice de endereços) | ≈ 886 bytes |
-| Disco por transação (sem índice de endereços) | ≈ 437 bytes |
-| Transferência simples | 158 bytes |
+| Disco por transação — nó arquivo **com** índice de endereços | ≈ 430 bytes de dados (≈ 792 bytes alocados no arquivo) |
+| Disco por transação — nó arquivo **sem** índice de endereços | ≈ 348 bytes de dados (≈ 633 bytes alocados) |
+| Transferência simples (sem memo) | 159 bytes |
+
+Os números de disco vêm de 100 000 transferências na regtest (v0.2):
+
+```bash
+GROWTH_BLOCKS=500 cargo test -p thecoin-node --release --test storage_growth -- --ignored --nocapture
+```
+
+*Dados* é o que o banco realmente usa (blocos comprimidos, estado, undo, índices
+e recibos). *Alocados* são os blocos de disco do arquivo `chain.redb`: o redb
+cresce o arquivo em dobras e reserva espaço à frente, então o arquivo ocupa mais
+que os dados. Esse excesso é recuperável com `thecoind compact` (nó parado, §10).
 
 Cada thread de mineração usa 16 MiB para o CoinHash.
 
@@ -86,7 +109,7 @@ O instalador (`installer/install.sh`):
 1. **pré-verificações**: Linux + systemd, arquitetura, `curl`/`tar`/`sha256sum`, RAM, disco,
    sincronização do relógio (NTP) e situação do firewall;
 2. oferece criar 1 GB de swap em máquinas com menos de 2 GB de RAM sem swap (aceito automaticamente com `--yes`);
-3. baixa `thecoind` + `thecoin-wallet` de `https://the-coin.cloud/releases/` (ou do GitHub Releases),
+3. baixa `thecoind` + `thecoin-wallet` + `tccl` de `https://the-coin.cloud/releases/` (ou do GitHub Releases),
    verificando o SHA-256 — ou compila do código-fonte se não houver binário;
 4. cria o usuário de sistema `thecoin` e `/var/lib/thecoin`;
 5. define o endereço de recompensa:
@@ -152,8 +175,8 @@ curl -fsSL https://the-coin.cloud/uninstall.sh | sudo bash      # alternativa
 sudo apt install -y build-essential pkg-config git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 git clone https://github.com/LucasBolla94/thecoin && cd thecoin
-cargo build --release -p thecoin-node -p thecoin-wallet
-sudo install -m755 target/release/thecoind target/release/thecoin-wallet /usr/local/bin/
+cargo build --release -p thecoin-node -p thecoin-wallet -p tccl
+sudo install -m755 target/release/thecoind target/release/thecoin-wallet target/release/tccl /usr/local/bin/
 thecoin-wallet create                         # anote a frase de recuperação!
 thecoind --miner-address $(thecoin-wallet address)
 ```
@@ -174,6 +197,7 @@ thecoind [OPÇÕES] [run|init|params|compact]
 | `--miner-address <addr>` | liga a mineração para esse endereço — env `THECOIN_MINER_ADDRESS` |
 | `--threads <n>` | threads de mineração |
 | `--no-mine` | desliga a mineração |
+| `--signal <id>` | id (hex) de proposta de governança que os blocos minerados apoiam; repetível; soma-se a `[mining] signal` |
 | `--listen <ip:porta>` | P2P |
 | `--rpc <ip:porta>` | API |
 | `--peer <host:porta>` | peer extra (repetível) |
@@ -223,7 +247,7 @@ signal = []                    # ids (hex) de propostas de governança apoiadas
 cache_mb = 64                  # cache de páginas do banco
 prune = false                  # true = guarda só os últimos prune_keep blocos
 prune_keep = 10000             # mínimo efetivo 1000
-address_index = true           # histórico por endereço (necessário para /address/{a}/txs)
+address_index = true           # histórico por endereço (necessário para /address/{a}/txs; ignorado em nós podados)
 
 [mempool]
 max_mb = 32
@@ -232,7 +256,7 @@ max_mb = 32
 | Campo | Padrão | Notas |
 |---|---|---|
 | `network` | `mainnet` | define portas e diretório padrão |
-| `data_dir` | `~/.thecoin[/rede]` | contém `chain.redb` e `peers.json` |
+| `data_dir` | `~/.thecoin[/rede]` | contém `chain.redb`, `peers.json` e, com o nó parado, `mempool.dat` (transações pendentes salvas ao desligar) |
 | `p2p.enabled` | `true` | `false` = nó isolado (só testes) |
 | `p2p.listen` | `0.0.0.0:<porta P2P>` | 7333 / 17333 / 27333 |
 | `p2p.max_inbound` | 32 | limite extra de 4 por IP público |
@@ -247,11 +271,11 @@ max_mb = 32
 | `mining.enabled` | `true` | só minera se `address` estiver preenchido |
 | `mining.address` | `""` | bech32m da rede |
 | `mining.threads` | 0 | |
-| `mining.signal` | `[]` | ver [GOVERNANCE.md](GOVERNANCE.md#44-sinalizar-mineradores) |
+| `mining.signal` | `[]` | ids de propostas apoiadas; também `--signal` e `thecoin signal <id>`; ver [GOVERNANCE.md](GOVERNANCE.md#44-sinalizar-mineradores) |
 | `storage.cache_mb` | 64 | reduza para 16–32 em máquinas de 1 GB |
 | `storage.prune` | `false` | nós seed e explorador devem ser **arquivo** (sem poda) |
 | `storage.prune_keep` | 10 000 | |
-| `storage.address_index` | `true` | pode desligar em mineradores para economizar disco |
+| `storage.address_index` | `true` | pode desligar em mineradores para economizar disco (≈ 82 bytes por transação); nós podados nunca mantêm o índice |
 | `mempool.max_mb` | 32 | |
 
 ## 5. Portas e firewall
@@ -319,9 +343,10 @@ rsync -av --delete dist/site/ usuario@maquina-do-site:/var/www/the-coin.cloud/
 systemctl status thecoind
 journalctl -u thecoind -f                          # logs ao vivo
 journalctl -u thecoind --since "1 hour ago" | grep -E "WARN|ERROR"
-curl -s http://127.0.0.1:7334/api/v1/status | jq '{height, peers, syncing, mempool_txs, software_upgrade_required}'
-curl -s http://127.0.0.1:7334/api/v1/mining  | jq '{hashrate, blocks_found}'
+curl -s http://127.0.0.1:7334/api/v1/status | jq '{height, peers, syncing, mempool_txs, congestion_bp, software_upgrade_required}'
+curl -s http://127.0.0.1:7334/api/v1/mining  | jq '{hashrate, blocks_found, signal_proposals}'
 curl -s http://127.0.0.1:7334/api/v1/peers   | jq length
+curl -s http://127.0.0.1:7334/api/v1/alerts  | jq length                # tentativas de gasto duplo vistas
 ```
 
 Mensagens de log importantes:
@@ -335,9 +360,25 @@ Mensagens de log importantes:
 | `refusing reorganization deeper than the maximum` | ramo alternativo com > 720 blocos — investigar |
 | `rejected invalid block` | peer enviou bloco inválido (é banido) |
 | `peer misbehaving` | pontuação de mau comportamento |
+| `double spend attempt` / `double spend attempt reported by peer` | duas transações do mesmo remetente e nonce (alerta listado em `/api/v1/alerts`) |
+| `saved pending transactions txs=…` | ao desligar, o mempool foi gravado em `mempool.dat` |
+| `restored pending transactions kept=… dropped=…` | ao iniciar, transações de `mempool.dat` revalidadas (as que ficaram inválidas são descartadas) |
 
 Alertas sugeridos: `peers == 0` por mais de 10 min; altura parada por mais de
-15 min; `software_upgrade_required != null`; disco > 80 %.
+15 min; `software_upgrade_required != null`; disco > 80 %; `congestion_bp` alto
+por muito tempo (blocos cheios: considere propor aumento de limites).
+
+### 8.1 Governança: sinalizar como minerador
+
+```bash
+thecoin signals              # o que seus blocos apoiam hoje + propostas abertas
+sudo thecoin signal <id>     # apoiar (reinicia o nó)
+sudo thecoin unsignal <id>   # deixar de apoiar
+```
+
+Sem o comando `thecoin`: `thecoind --signal <id>` (repetível) ou
+`[mining] signal = ["<id>"]` no `thecoind.toml`. Detalhes em
+[GOVERNANCE.md](GOVERNANCE.md#44-sinalizar-mineradores).
 
 ## 9. Backups
 
@@ -347,6 +388,11 @@ Alertas sugeridos: `peers == 0` por mais de 10 min; altura parada por mais de
   `thecoin-wallet show-mnemonic` mostra a frase (cuidado com o terminal).
 * **Blockchain:** não precisa de backup — é re-sincronizada da rede. Para
   acelerar a recuperação de um seed, copie `/var/lib/thecoin/chain.redb` com o nó **parado**.
+* **Transações pendentes:** ao desligar normalmente (`systemctl stop`, `thecoin restart`,
+  atualização) o nó grava o mempool em `/var/lib/thecoin/mempool.dat` e o recarrega ao
+  iniciar, revalidando cada transação; o arquivo é apagado depois de lido. Um
+  desligamento abrupto (queda de energia, `kill -9`) perde o mempool, que é
+  reconstruído pela rede.
 * **Configuração:** `/etc/thecoin/thecoind.toml`.
 
 ## 10. Poda (economia de disco)
@@ -358,8 +404,11 @@ prune_keep = 10000      # ~7 dias de blocos
 ```
 
 O nó continua validando tudo, mas apaga corpos de blocos mais antigos que
-`prune_keep` (mínimo 1 000, para suportar reorganizações). Nós podados não
-servem blocos antigos a outros peers nem histórico antigo pela API.
+`prune_keep` (mínimo 1 000, para suportar reorganizações) e, junto com cada
+corpo, as entradas do índice de transações e os **recibos** daquele bloco. Nós
+podados não servem blocos antigos a outros peers, não respondem
+`/api/v1/tx/{txid}` nem `/api/v1/block/{id}` para blocos antigos e **não mantêm o
+índice de endereços** (histórico por endereço é papel de nós arquivo/exploradores).
 Cabeçalhos e estado completo são mantidos. Dados de *undo* só são guardados
 para os últimos 736 blocos em qualquer modo.
 
@@ -383,7 +432,9 @@ thecoind --version
 * Atualize durante o `activation_delay` (≈ 2 dias na mainnet).
 * Se uma versão mudar o esquema do banco, o nó informa
   `unsupported database schema version; resync required`: pare, apague
-  `chain.redb` e reinicie para sincronizar de novo.
+  `chain.redb` e reinicie para sincronizar de novo. **A v0.2 usa o esquema 2 e
+  outro gênese**: dados de um nó v0.1 precisam ser apagados (a carteira continua válida).
+* `sudo thecoin update` (ou o instalador de novo) também instala a versão nova do `tccl`.
 
 ## 12. Solução de problemas
 
@@ -408,7 +459,7 @@ thecoind --version
    `thecoind params` e publicar o hash do gênese.
 2. **Testnet** rodando por pelo menos algumas semanas com os dois seeds e
    mineradores externos; testar contratos, governança e reorganizações.
-3. **Build reprodutível** da versão 0.1.0 (`scripts/package.sh`), publicar
+3. **Build reprodutível** da versão 0.2.0 (`scripts/package.sh`, que empacota `thecoind`, `thecoin-wallet` e `tccl`), publicar
    `thecoin-<target>.tar.gz` + `.sha256` no GitHub Releases e em
    `https://the-coin.cloud/releases/`.
 4. **DNS** de `seed1`/`seed2.the-coin.cloud` e firewall conforme §5–6.
@@ -416,8 +467,10 @@ thecoind --version
    conectam (`/api/v1/peers`) e produzem blocos.
 6. **Site** no ar com proxy para os seeds e o instalador em `/install.sh`.
 7. **Anúncio** com o hash do gênese e instruções de instalação.
-8. Nos primeiros 61 blocos a dificuldade fica no valor de gênese; depois o
-   LWMA ajusta a cada bloco. Acompanhe o tempo médio de bloco (alvo 60 s).
+8. Nos blocos 1 a 6 a dificuldade fica no valor de gênese; a partir do bloco 7
+   o LWMA ajusta a cada bloco (janela crescente até 60 blocos, no máximo 2× por
+   bloco). Acompanhe o tempo médio de bloco (alvo 60 s). Lembre que recompensas
+   só ficam 25 % gastáveis após 100 blocos e 100 % após 1 000.
 9. **Checkpoints:** após algumas semanas, adicionar em `checkpoints` alturas
    profundamente confirmadas numa versão nova (protege contra reescritas longas).
 10. Documentar responsáveis por segurança (`security@the-coin.cloud`) e

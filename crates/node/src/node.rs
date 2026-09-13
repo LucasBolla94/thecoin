@@ -204,18 +204,15 @@ impl Node {
         let result = self.mempool.lock().add(&self.chain, tx.clone());
         let txid = match result {
             Ok(id) => id,
-            Err(MempoolError::NotReplaceable { existing }) => {
+            Err(MempoolError::NotReplaceable { existing, new_conflict }) => {
                 // Warn the network: merchants watching unconfirmed payments see it at once.
                 // Only the first conflict for this sender and nonce is announced.
-                let first = {
-                    let pool = self.mempool.lock();
-                    pool.conflict_for(&tx.txid()).and_then(|_| pool.get(&existing).cloned())
-                };
+                let first = if new_conflict { self.mempool.lock().get(&existing).cloned() } else { None };
                 if let Some(first) = first {
                     warn!(sender = %tx.sender().encode(self.params.network), nonce = tx.body.nonce, "double spend attempt");
                     self.broadcast_double_spend(&first, &tx, source);
                 }
-                return Err(MempoolError::NotReplaceable { existing });
+                return Err(MempoolError::NotReplaceable { existing, new_conflict });
             }
             Err(e) => return Err(e),
         };

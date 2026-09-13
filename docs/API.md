@@ -5,7 +5,9 @@ carteira de referência, pelo explorador e pelo site the-coin.cloud. Os tipos
 JSON estão em `crates/core/src/api.rs` e podem ser reutilizados por clientes Rust.
 
 * Endereço padrão: `http://127.0.0.1:7334` (mainnet), `:17334` (testnet), `:27334` (regtest). Configurável em `[rpc] listen`.
-* Todos os exemplos abaixo são **respostas reais** de um nó regtest v0.1.
+* Todos os exemplos abaixo são **respostas reais** de um nó regtest v0.2 (os
+  comandos usam a porta da mainnet por clareza). Na regtest os parâmetros de
+  taxa são 10× menores e o cooldown de recompensas é de 5/12 blocos.
 
 ## Convenções
 
@@ -15,7 +17,8 @@ JSON estão em `crates/core/src/api.rs` e podem ser reutilizados por clientes Ru
 | Hashes / ids | hex minúsculo, 64 caracteres |
 | Endereços | bech32m (`tc1…`, `tct1…`, `tcr1…`) — endereços de outra rede são rejeitados |
 | Memos | `memo_hex` sempre; `memo_text` quando é UTF‑8 válido e não vazio |
-| Erros | status HTTP + `{"error": "mensagem"}` |
+| Valores TCCL | texto: inteiros em decimal, `bytes` como `0x…`, endereços bech32m, listas `[a, b]`, texto entre aspas em `init_args`/`args` |
+| Erros | status HTTP + `{"error": "mensagem"}` (exceção: parâmetros de *query string* com tipo errado em `/blocks` e `/address/{addr}/txs`, ex. `limit=abc`, recebem a mensagem de texto simples do framework) |
 
 | Status | Quando |
 |---|---|
@@ -28,12 +31,13 @@ JSON estão em `crates/core/src/api.rs` e podem ser reutilizados por clientes Ru
 ### Proteções embutidas
 
 * timeout de 20 s por requisição (→ 408);
-* corpo máximo de 64 KiB;
+* corpo máximo de 256 KiB (cabe um `Deploy` de 64 kB em hex);
 * limite global de concorrência `rpc.max_concurrency` (padrão 64);
 * CORS: métodos `GET, POST, OPTIONS`, qualquer cabeçalho; origens em `rpc.cors_origins` (padrão `["*"]`).
 
 O nó **nunca guarda chaves privadas de usuários**: a única escrita é o envio de
-transações já assinadas.
+transações já assinadas (`POST /api/v1/tx`). `POST /api/v1/tx/simulate` e
+`POST /api/v1/program/{addr}/view` são leituras.
 
 ---
 
@@ -44,18 +48,23 @@ transações já assinadas.
 | GET | `/` | identificação do nó |
 | GET | `/api/v1/status` | estado geral da cadeia e do nó |
 | GET | `/api/v1/supply` | emissão e supply |
-| GET | `/api/v1/fees` | taxas mínima e sugerida |
+| GET | `/api/v1/fees` | parâmetros de taxa, congestionamento e prioridades |
 | GET | `/api/v1/blocks` | lista de blocos recentes |
-| GET | `/api/v1/block/{altura\|hash}` | bloco completo com transações |
-| GET | `/api/v1/tx/{txid}` | transação (confirmada ou no mempool) |
+| GET | `/api/v1/block/{altura\|hash}` | bloco completo com transações e recibos |
+| GET | `/api/v1/tx/{txid}` | transação (confirmada ou no mempool) com recibo |
 | POST | `/api/v1/tx` | envia transação assinada |
-| GET | `/api/v1/address/{addr}` | saldo, nonce, bloqueios |
+| POST | `/api/v1/tx/simulate` | executa uma transação assinada sem gravar (combustível, eventos, erros) |
+| GET | `/api/v1/address/{addr}` | saldo, nonce, bloqueios, recompensas em cooldown |
 | GET | `/api/v1/address/{addr}/txs` | histórico do endereço |
-| GET | `/api/v1/contract/{id}` | contrato de pagamento |
+| GET | `/api/v1/contract/{id}` | contrato de pagamento nativo |
+| GET | `/api/v1/program/{addr}` | contrato TCCL: metadados, saldo, depósito e interface |
+| POST | `/api/v1/program/{addr}/view` | chama uma `view` de um contrato TCCL |
 | GET | `/api/v1/governance/proposals` | todas as propostas |
 | GET | `/api/v1/governance/proposal/{id}` | uma proposta |
 | GET | `/api/v1/governance/params` | parâmetros atuais e limites |
 | GET | `/api/v1/mempool` | resumo do mempool |
+| GET | `/api/v1/security?amount=` | confirmações recomendadas para um valor |
+| GET | `/api/v1/alerts` | tentativas de gasto duplo vistas pelo nó |
 | GET | `/api/v1/peers` | peers conectados |
 | GET | `/api/v1/mining` | estado do minerador local |
 
@@ -73,7 +82,7 @@ curl http://127.0.0.1:7334/
   "name": "The Coin node",
   "network": "regtest",
   "protocol": 1,
-  "version": "0.1.0"
+  "version": "0.2.0"
 }
 ```
 
@@ -86,24 +95,24 @@ curl http://127.0.0.1:7334/api/v1/status
 ```json
 {
   "network": "regtest",
-  "version": "0.1.0",
-  "genesis": "d4c9b8039d2cffefcfd6fe6d362bda992d149d47107dd73346e00e8f59e56c8b",
-  "height": 62,
-  "tip": "e21128a26c1554b6ad6a81a7ad608ac7226f47ab37d0b38b72f9bb4dba67ff73",
-  "tip_timestamp": 1789265118,
-  "chainwork": "3f",
+  "version": "0.2.0",
+  "genesis": "7022c9deda5f997eed99a09ca77ad4c48dcb1f5a8ab892adc0a4a180c19622cd",
+  "height": 92,
+  "tip": "0c29a1ed55f564d266b4fe81993c62a184329956c71bc3d1a544528c1cc18203",
+  "tip_timestamp": 1789308546,
+  "chainwork": "5d",
   "difficulty": 1.0,
   "next_target": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-  "hashrate_estimate": 1.8484848484848484,
+  "hashrate_estimate": 1.467741935483871,
   "peers": 0,
-  "mempool_txs": 1,
-  "mempool_bytes": 170,
+  "mempool_txs": 3,
+  "mempool_bytes": 553,
   "syncing": false,
   "supply": {
     "max_supply": 5000000000000000,
-    "emitted": 248000000000,
-    "burned": 100000000,
-    "circulating": 247900000000,
+    "emitted": 368000000000,
+    "burned": 0,
+    "circulating": 368000000000,
     "current_block_reward": 4000000000,
     "era": 0,
     "next_halving_height": 151,
@@ -112,7 +121,11 @@ curl http://127.0.0.1:7334/api/v1/status
   },
   "params": {
     "max_block_bytes": 1000000,
-    "min_fee_per_byte": 1,
+    "max_block_fuel": 50000000,
+    "base_fee": 100,
+    "fee_per_kb": 1000,
+    "fee_per_kfuel": 100,
+    "storage_deposit_per_kb": 10000,
     "proposal_deposit": 100000000,
     "vote_period": 20,
     "quorum_bp": 1000,
@@ -120,6 +133,7 @@ curl http://127.0.0.1:7334/api/v1/status
     "miner_approval_bp": 5000,
     "activation_delay": 5
   },
+  "congestion_bp": 10000,
   "software_upgrade_required": null
 }
 ```
@@ -130,9 +144,10 @@ curl http://127.0.0.1:7334/api/v1/status
 | `difficulty` | `work(target)` do tip (hashes esperados por bloco) |
 | `next_target` | alvo exigido para o próximo bloco (hex 64) |
 | `hashrate_estimate` | H/s estimado pelos últimos 120 blocos |
-| `syncing` | `true` se algum peer anuncia altura > local + 1 |
+| `syncing` | `true` durante a sincronização com um peer que está à frente |
 | `supply.current_block_reward` / `era` / `next_halving_height` | referentes ao **próximo** bloco |
-| `params` | parâmetros de governança em vigor |
+| `params` | parâmetros de governança em vigor ([PROTOCOL.md §20](PROTOCOL.md#20-parâmetros-por-rede)) |
+| `congestion_bp` | multiplicador de congestionamento das taxas (10 000 = 1,0×) |
 | `software_upgrade_required` | versão de uma proposta `SoftwareUpgrade` ativada mais nova que este nó, ou `null` |
 
 ## `GET /api/v1/supply`
@@ -142,9 +157,9 @@ Mesmo objeto `supply` do `/status`.
 ```json
 {
   "max_supply": 5000000000000000,
-  "emitted": 248000000000,
-  "burned": 100000000,
-  "circulating": 247900000000,
+  "emitted": 432000000000,
+  "burned": 0,
+  "circulating": 432000000000,
   "current_block_reward": 4000000000,
   "era": 0,
   "next_halving_height": 151,
@@ -153,21 +168,52 @@ Mesmo objeto `supply` do `/status`.
 }
 ```
 
-`circulating = emitted − burned` (inclui recompensas ainda imaturas e saldos de contratos).
+`circulating = emitted − burned`. `burned` soma depósitos de propostas sem
+quórum e sobretaxas de congestionamento. `circulating` inclui recompensas em
+cooldown, depósitos de armazenamento e saldos de contratos.
 
 ## `GET /api/v1/fees`
 
+```bash
+curl http://127.0.0.1:7334/api/v1/fees
+```
+
 ```json
 {
-  "min_fee_per_byte": 1,
-  "suggested_fee_per_byte": 1,
-  "typical_transfer_bytes": 170
+  "base_fee": 100,
+  "fee_per_kb": 1000,
+  "fee_per_kfuel": 100,
+  "storage_deposit_per_kb": 10000,
+  "congestion_bp": 10000,
+  "typical_transfer_fee": 260,
+  "priority": { "low_bp": 10000, "normal_bp": 12500, "high_bp": 20000, "urgent_bp": 122500 },
+  "mempool_txs": 5,
+  "mempool_bytes": 1125
 }
 ```
 
-`suggested_fee_per_byte` é o mínimo enquanto o mempool está abaixo de 10 % da
-capacidade; acima disso, a mediana das taxas por byte no mempool (nunca menor
-que o mínimo). Taxa final de uma transação = `tamanho × taxa_por_byte`.
+(Resposta com cinco chamadas de contrato de 10 000 000 de combustível no mempool, por isso `urgent_bp` alto.)
+
+| Campo | Significado |
+|---|---|
+| `base_fee`, `fee_per_kb`, `fee_per_kfuel` | parâmetros de governança da taxa mínima |
+| `storage_deposit_per_kb` | depósito reembolsável por kB de estado de contrato |
+| `congestion_bp` | multiplicador atual; a parte acima de 1× é queimada |
+| `typical_transfer_fee` | taxa mínima atual de uma transferência de 160 bytes |
+| `priority` | multiplicadores (pontos-base) **sobre a taxa mínima** por nível |
+| `mempool_txs`, `mempool_bytes` | tamanho do mempool |
+
+Taxa de uma transação:
+
+```
+mínima = ceil((base_fee + ceil(size × fee_per_kb / 1000) + ceil(max_fuel × fee_per_kfuel / 1000)) × congestion_bp / 10000)
+taxa   = ceil(mínima × priority_bp / 10000)
+```
+
+`low_bp = 10 000` e `normal_bp = 12 500` são fixos. `high_bp` =
+`max(multiplicador necessário para entrar num bloco cheio de pendentes + 1 000, 20 000)`;
+`urgent_bp` = `max(multiplicador para o primeiro quarto do bloco + 2 500, 2 × high_bp)`.
+Exemplos e passo a passo: [WALLET_DEVELOPERS.md §4.4](WALLET_DEVELOPERS.md#44-calcular-a-taxa).
 
 ## `GET /api/v1/blocks`
 
@@ -177,85 +223,141 @@ que o mínimo). Taxa final de uma transação = `tamanho × taxa_por_byte`.
 | `before` | tip+1 | lista blocos com altura `< before` |
 
 ```bash
-curl "http://127.0.0.1:7334/api/v1/blocks?limit=2"
-curl "http://127.0.0.1:7334/api/v1/blocks?limit=20&before=41"   # página seguinte
+curl "http://127.0.0.1:7334/api/v1/blocks?limit=2&before=107"
+curl "http://127.0.0.1:7334/api/v1/blocks?limit=2&before=105"    # página seguinte
 ```
 
 ```json
 [
   {
-    "height": 63,
-    "hash": "8f0d5585fd52c779745749ed27b477240565af6082a64927efef9c0fb9b72898",
-    "prev_hash": "e21128a26c1554b6ad6a81a7ad608ac7226f47ab37d0b38b72f9bb4dba67ff73",
-    "timestamp": 1789265118,
-    "tx_count": 0,
-    "size": 184,
-    "miner": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
+    "height": 106,
+    "hash": "9ab90d977596b12978da48f5d6e4145e6fd6ef6d1c52f105d103c31e7d717766",
+    "prev_hash": "61274ea5fb564c42870419322e79dcbc5b360e046ce42a20efc183384bdd8312",
+    "timestamp": 1789308559,
+    "tx_count": 2,
+    "size": 659,
+    "miner": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
     "difficulty": 1.0,
-    "signal": 0
+    "signal": 2
   },
   {
-    "height": 62,
-    "hash": "e21128a26c1554b6ad6a81a7ad608ac7226f47ab37d0b38b72f9bb4dba67ff73",
-    "prev_hash": "db44fd37169e7ab01b4c8eea9e42ac11d04f24aaf293ad0af26dc69e944bf518",
-    "timestamp": 1789265118,
+    "height": 105,
+    "hash": "61274ea5fb564c42870419322e79dcbc5b360e046ce42a20efc183384bdd8312",
+    "prev_hash": "16bcf3faa8f291b41a827d7ba32e11b8577d016f24d21703219e4d9194fc0af6",
+    "timestamp": 1789308556,
     "tx_count": 0,
     "size": 184,
-    "miner": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
+    "miner": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
     "difficulty": 1.0,
-    "signal": 0
+    "signal": 2
   }
 ]
 ```
 
 ## `GET /api/v1/block/{id}`
 
-`{id}` = altura (cadeia principal) ou hash (qualquer bloco armazenado).
+`{id}` = altura (cadeia principal) ou hash (qualquer bloco armazenado). Bloco
+real com duas chamadas de contrato no mesmo bloco — a segunda **falhou**
+porque a primeira zerou a permissão (`allowance`) que ela usaria. O campo
+`signal: 2` mostra o minerador apoiando a proposta com `signal_bit` 1:
 
 ```bash
-curl http://127.0.0.1:7334/api/v1/block/26
+curl http://127.0.0.1:7334/api/v1/block/106
 ```
 
 ```json
 {
-  "height": 26,
-  "hash": "edc4a5c777c33e750231875c3f86b0a9b9330189786d3d52c8378ba120f1ee35",
-  "prev_hash": "74bfb6daba9de4f395458096f945c2aac37cb47cbcf98cdf4cd747844bb830bf",
-  "timestamp": 1789265099,
-  "tx_count": 1,
-  "size": 353,
-  "miner": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
+  "height": 106,
+  "hash": "9ab90d977596b12978da48f5d6e4145e6fd6ef6d1c52f105d103c31e7d717766",
+  "prev_hash": "61274ea5fb564c42870419322e79dcbc5b360e046ce42a20efc183384bdd8312",
+  "timestamp": 1789308559,
+  "tx_count": 2,
+  "size": 659,
+  "miner": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
   "difficulty": 1.0,
-  "signal": 0,
+  "signal": 2,
   "version": 1,
-  "tx_root": "0472a908a6fecca4be1bd761c6793086fc63458f51927a65e436ee26ecf44903",
-  "state_root": "ef9434338209c497c5bfe605720a3c5b1bcfa4b52c74e18a20330621e84abcbf",
+  "tx_root": "1b7a72054a5d3cd5134a2a2013a5eb96b4719b2ff4d3986523aca5aa88e6d0df",
+  "state_root": "27f1fbc9bc1076915d367ff567456487011c9c69c3d8f8f44cfd6dc16cae9df9",
   "target": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-  "nonce": "7381520017383630049",
-  "confirmations": 38,
+  "nonce": "8687394620914278246",
+  "confirmations": 3,
   "subsidy": 4000000000,
-  "fees": 169,
+  "fees": 5069,
   "txs": [
     {
-      "txid": "e581ee5b19e22fbf4a67e1d066f12afa662f980942522a684b9027edde15235a",
-      "sender": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
-      "nonce": 0,
-      "fee": 169,
+      "txid": "f8efe16f3e07abce40a046b31fab3aca4b2f9d59e413b2e16d9e09e706b4cc9b",
+      "sender": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+      "nonce": 15,
+      "fee": 3780,
       "expiry_height": 0,
-      "size": 169,
+      "size": 224,
       "action": {
-        "type": "transfer",
-        "to": "tcr16ntq7jxlpcdgtp6zt22zwgfcuhlq4t9cg8exxl",
-        "amount": 2500000000,
-        "memo_hex": "50656469646f2031303031",
-        "memo_text": "Pedido 1001"
+        "type": "invoke",
+        "contract": "tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh",
+        "function": "approve",
+        "args": ["tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r", "0"],
+        "value": 0,
+        "max_fuel": 6201,
+        "max_deposit": 100000000
       },
-      "block_height": 26,
-      "block_hash": "edc4a5c777c33e750231875c3f86b0a9b9330189786d3d52c8378ba120f1ee35",
+      "block_height": 106,
+      "block_hash": "9ab90d977596b12978da48f5d6e4145e6fd6ef6d1c52f105d103c31e7d717766",
       "position": 0,
-      "confirmations": 38,
+      "confirmations": 3,
       "in_mempool": false,
-      "created": null
+      "created": null,
+      "replaceable": false,
+      "success": true,
+      "error": null,
+      "fuel_used": 924,
+      "burned": 0,
+      "logs": [
+        {
+          "contract": "tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh",
+          "event": "Approval",
+          "fields": [
+            ["holder", "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh"],
+            ["spender", "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r"],
+            ["amount", "0"]
+          ]
+        }
+      ],
+      "program": null,
+      "return_value": null,
+      "conflict": null
+    },
+    {
+      "txid": "4df1c69956d72a5f393febe21ebb22b49851cea2ee247b2c51da9a11fe57a670",
+      "sender": "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r",
+      "nonce": 0,
+      "fee": 1289,
+      "expiry_height": 0,
+      "size": 251,
+      "action": {
+        "type": "invoke",
+        "contract": "tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh",
+        "function": "transfer_from",
+        "args": ["tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh", "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r", "100"],
+        "value": 0,
+        "max_fuel": 9378,
+        "max_deposit": 100000000
+      },
+      "block_height": 106,
+      "block_hash": "9ab90d977596b12978da48f5d6e4145e6fd6ef6d1c52f105d103c31e7d717766",
+      "position": 1,
+      "confirmations": 3,
+      "in_mempool": false,
+      "created": null,
+      "replaceable": false,
+      "success": false,
+      "error": "requirement failed: allowance too low",
+      "fuel_used": 423,
+      "burned": 0,
+      "logs": [],
+      "program": null,
+      "return_value": null,
+      "conflict": null
     }
   ]
 }
@@ -264,78 +366,182 @@ curl http://127.0.0.1:7334/api/v1/block/26
 > `nonce` do cabeçalho é enviado como **string decimal**: é um `u64` e pode
 > passar do maior inteiro seguro de JavaScript (2⁵³).
 
-`confirmations` = 0 para blocos fora da cadeia principal. Em nó podado, blocos
-antigos retornam 404 `"block body pruned on this node"`.
+`subsidy` é o subsídio do bloco e `fees` a soma das taxas pagas pelas
+transações (antes da queima; o minerador recebe `fees − Σ burned`, liberados
+pelo cooldown). `confirmations` = 0 para blocos fora da cadeia principal. Em nó
+podado, blocos antigos retornam 404 `"block body pruned on this node"`.
 
 ## `GET /api/v1/tx/{txid}`
 
-Procura primeiro no mempool, depois na cadeia principal.
+Procura primeiro no mempool, depois na cadeia principal. Transações
+confirmadas trazem os dados do **recibo** de execução.
 
 ```bash
-curl http://127.0.0.1:7334/api/v1/tx/e581ee5b19e22fbf4a67e1d066f12afa662f980942522a684b9027edde15235a
+curl http://127.0.0.1:7334/api/v1/tx/9694e053755c0f187f71b87326daab7a6ac6af95a4d6a39864207da8ae1f5f7e
 ```
+
+Implantação de contrato TCCL (código-fonte abreviado aqui):
 
 ```json
 {
-  "txid": "e581ee5b19e22fbf4a67e1d066f12afa662f980942522a684b9027edde15235a",
-  "sender": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
-  "nonce": 0,
-  "fee": 169,
+  "txid": "9694e053755c0f187f71b87326daab7a6ac6af95a4d6a39864207da8ae1f5f7e",
+  "sender": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+  "nonce": 1,
+  "fee": 4619,
   "expiry_height": 0,
-  "size": 169,
+  "size": 1860,
   "action": {
-    "type": "transfer",
-    "to": "tcr16ntq7jxlpcdgtp6zt22zwgfcuhlq4t9cg8exxl",
-    "amount": 2500000000,
-    "memo_hex": "50656469646f2031303031",
-    "memo_text": "Pedido 1001"
+    "type": "deploy",
+    "source": "# A simple fungible token with a fixed maximum supply.\ncontr...",
+    "source_hash": "27a5cc37e896a9484e51fcf9405f5716fe8051b9b9ff6657fd13b1cbb7076157",
+    "init_args": [],
+    "value": 0,
+    "max_fuel": 17350,
+    "max_deposit": 100000000
   },
-  "block_height": 26,
-  "block_hash": "edc4a5c777c33e750231875c3f86b0a9b9330189786d3d52c8378ba120f1ee35",
+  "block_height": 66,
+  "block_hash": "65a8398dacad8ce897e866f81b6fa873ad08c187f5ccf1ee30bdcf73d6fbd768",
   "position": 0,
-  "confirmations": 38,
+  "confirmations": 27,
   "in_mempool": false,
-  "created": null
+  "created": null,
+  "replaceable": false,
+  "success": true,
+  "error": null,
+  "fuel_used": 9500,
+  "burned": 0,
+  "logs": [],
+  "program": "tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh",
+  "return_value": null,
+  "conflict": null
 }
 ```
 
-`position` é o índice da transação dentro do bloco (`null` no mempool).
-`created` traz o id do contrato ou da proposta criado pela transação (também
-para transações ainda no mempool — o id é determinístico).
+Transferência pendente, substituível, com memo vazio:
+
+```json
+{
+  "txid": "40a783d9495893893dd0ed6772a02002681de3c1cee2a8925f62568e273297ec",
+  "sender": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+  "nonce": 13,
+  "fee": 259,
+  "expiry_height": 0,
+  "size": 159,
+  "action": {
+    "type": "transfer",
+    "to": "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r",
+    "amount": 100000000,
+    "memo_hex": "",
+    "memo_text": null
+  },
+  "block_height": null,
+  "block_hash": null,
+  "position": null,
+  "confirmations": 0,
+  "in_mempool": true,
+  "created": null,
+  "replaceable": true,
+  "success": true,
+  "error": null,
+  "fuel_used": 0,
+  "burned": 0,
+  "logs": [],
+  "program": null,
+  "return_value": null,
+  "conflict": null
+}
+```
+
+Transação pendente com **tentativa de gasto duplo** (outra transação do mesmo
+remetente e nonce foi recusada):
+
+```json
+{
+  "txid": "f5ac06fe273eef17a173cc6b4999d0adfe02eeebe5ef85721a45ff57f8a7acbf",
+  "sender": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+  "nonce": 12,
+  "fee": 335,
+  "expiry_height": 0,
+  "size": 168,
+  "action": {
+    "type": "transfer",
+    "to": "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r",
+    "amount": 200000000,
+    "memo_hex": "706167616d656e746f",
+    "memo_text": "pagamento"
+  },
+  "block_height": null,
+  "block_hash": null,
+  "position": null,
+  "confirmations": 0,
+  "in_mempool": true,
+  "created": null,
+  "replaceable": false,
+  "success": true,
+  "error": null,
+  "fuel_used": 0,
+  "burned": 0,
+  "logs": [],
+  "program": null,
+  "return_value": null,
+  "conflict": "4d53d4d9c058ba72059c76752a2c27a178c38a5a1e9896a2ead43f9d2c48cfc7"
+}
+```
+
+| Campo | Significado |
+|---|---|
+| `position` | índice da transação dentro do bloco (`null` no mempool) |
+| `created` | id do contrato nativo ou da proposta criado pela transação (também no mempool — o id é determinístico) |
+| `replaceable` | o remetente usou `FLAG_REPLACEABLE`: pode trocá-la por outra com taxa ≥ 125 % enquanto pendente |
+| `success` | `false` só para `deploy`/`invoke` confirmadas cujo código falhou (taxa cobrada, efeitos revertidos) |
+| `error` | motivo da falha do contrato |
+| `fuel_used` | combustível consumido (a taxa foi calculada sobre `max_fuel`) |
+| `burned` | parte da taxa queimada pela sobretaxa de congestionamento |
+| `logs` | eventos `emit` do contrato; `fields` como pares `[nome, valor em texto]` |
+| `program` | endereço do contrato TCCL criado por um `deploy` (no mempool: o endereço previsto; confirmado: só se teve sucesso) |
+| `return_value` | valor retornado pela ação, em texto, ou `null` |
+| `conflict` | txid de outra transação vista com o mesmo remetente e nonce (possível gasto duplo), ou `null` |
 
 ### Formatos de `action`
 
 `type` é um de `transfer`, `batch_transfer`, `create_contract`,
-`call_contract`, `propose`, `vote`:
+`call_contract`, `propose`, `vote`, `deploy`, `invoke`:
 
 ```json
 { "type": "batch_transfer", "outputs": [{"to": "tc1…", "amount": 100}], "total": 100, "memo_hex": "", "memo_text": null }
-{ "type": "create_contract", "spec": { "kind": "escrow", "payee": "tcr16ntq7jxlpcdgtp6zt22zwgfcuhlq4t9cg8exxl", "arbiter": null, "amount": 1000000000, "deadline_height": 125 } }
-{ "type": "call_contract", "contract": "07ac…", "call": { "call": "htlc_redeem", "preimage_hex": "…" } }
-{ "type": "propose", "title": "…", "url": "…", "content_hash": "00…", "action": { "type": "set_param", "param": "min_fee_per_byte", "value": 2 } }
-{ "type": "vote", "proposal": "32ed…", "choice": "yes", "weight": 10000000000 }
+{ "type": "create_contract", "spec": { "kind": "escrow", "payee": "tcr1…", "arbiter": null, "amount": 1000000000, "deadline_height": 125 } }
+{ "type": "call_contract", "contract": "ba95…", "call": { "call": "multisig_close" } }
+{ "type": "propose", "title": "Reduzir fee_per_kb para 500", "url": "https://the-coin.cloud/governance/1", "content_hash": "00…", "action": { "type": "set_param", "param": "fee_per_kb", "value": 500 } }
+{ "type": "vote", "proposal": "b7a2…", "choice": "yes", "weight": 100000000000 }
+{ "type": "deploy", "source": "contract …", "source_hash": "27a5…", "init_args": [], "value": 0, "max_fuel": 17350, "max_deposit": 100000000 }
+{ "type": "invoke", "contract": "tcr1dk4rd49asu34c6dxa23t68xa9qv0e4tm0mz68t", "function": "withdraw",
+  "args": ["tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r", "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh", "10000000", "[1, 0, 2]", "0xb7bd…", "0x4ad1…"],
+  "value": 0, "max_fuel": 56885, "max_deposit": 100000000 }
 ```
 
 `spec.kind`: `escrow`, `vesting`, `subscription`, `htlc`, `multisig`.
 `call.call`: `escrow_release`, `escrow_refund`, `vesting_claim`,
-`vesting_revoke`, `subscription_claim`, `subscription_cancel`, `htlc_redeem`,
-`htlc_refund`, `multisig_deposit`, `multisig_propose` (com `to`, `amount`,
-`memo_hex`, `memo_text`), `multisig_approve`, `multisig_cancel`. Proposta `action.type`: `text`, `set_param`, `software_upgrade`.
+`vesting_revoke`, `subscription_claim`, `subscription_cancel`, `htlc_redeem`
+(com `preimage_hex`), `htlc_refund`, `multisig_deposit` (com `amount`),
+`multisig_propose` (com `to`, `amount`, `memo_hex`, `memo_text`),
+`multisig_approve`, `multisig_cancel` (com `spend_id`), `multisig_close`.
+Proposta `action.type`: `text`, `set_param`, `software_upgrade`.
 
 ## `POST /api/v1/tx`
 
 Corpo: `{"tx": "<Transaction em Borsh, hex>"}`. A transação é validada
-completamente contra o estado (assinatura, nonce, saldo, taxa, regras do
-contrato/governança), entra no mempool e é propagada.
+completamente contra o estado (assinatura, flags, nonce, saldo, taxa, regras do
+contrato/governança; chamadas TCCL são **simuladas** e recusadas se falhariam),
+entra no mempool e é propagada.
 
 ```bash
 curl -X POST http://127.0.0.1:7334/api/v1/tx \
   -H 'content-type: application/json' \
-  -d '{"tx":"010300435404000000000000009e00000000000000000000000000000000d4d60f48df0e1a8587425a94272138e5fe0aacb800c2eb0b0000000000000000995c3d4c826cd5f74919633dbd45b2cdbfd6bc52e204e21e0a81e7fa78da7c3dadb8cd5b86b7db2aaa1c59026844bec42e8675d38b3c184b9e33a57f095bd6af904d5d04aa5902e50c280bc4818b8e22810092eb265eb2f13898d22cd4fa8c04"}'
+  -d '{"tx":"0103004354000c000000000000004f010000000000000000000000000000004e4d81210369614ea4a94714d965ef6518786bbc00c2eb0b0000000009000000706167616d656e746fabb24395ded74b11e3bc5940ac6848fe05df1aded872086329076ecd3d1fcb50a001a2a157cd935b529a53c6ddc51aa56a202b98418ae67eeb7ab3e72e2e3cd98b78e985f8babf19fc133f1ded7eb54c99d0de7f9422ce2601da817eda68a207"}'
 ```
 
 ```json
-{"txid":"ac30b6d7d8c12880ddde57e710e96e565f09da99fada31a4db13b93a839ea0cf"}
+{"txid":"f5ac06fe273eef17a173cc6b4999d0adfe02eeebe5ef85721a45ff57f8a7acbf"}
 ```
 
 Erros típicos (HTTP 400):
@@ -344,35 +550,106 @@ Erros típicos (HTTP 400):
 {"error":"malformed transaction: Unexpected length of input"}
 {"error":"transaction already in mempool"}
 {"error":"invalid transaction: bad nonce: expected 4, got 3"}
-{"error":"invalid transaction: fee too low: minimum 1690, got 169"}
-{"error":"invalid transaction: insufficient funds: need 2500000169, spendable 100"}
-{"error":"invalid transaction: governance error: proposal is not open for voting"}   (votação encerrada)
+{"error":"invalid transaction: fee too low: minimum 2630, got 263"}
+{"error":"invalid transaction: unknown transaction flags 0x2"}
+{"error":"invalid transaction: insufficient funds: need 2500002630, spendable 100"}
+{"error":"invalid transaction: governance error: proposal is not open for voting"}
+{"error":"contract call would fail: requirement failed: insufficient token balance"}
+{"error":"a transaction with this nonce is already pending (f5ac06fe273eef17a173cc6b4999d0adfe02eeebe5ef85721a45ff57f8a7acbf) and it is not replaceable — double spend attempt recorded"}
 {"error":"replacement needs a fee at least 25% higher"}
 {"error":"too many pending transactions from this sender"}
 {"error":"mempool full and fee rate too low"}
 ```
 
-Regras do mempool: até 32 transações pendentes por remetente; *replace-by-fee*
-com mesmo remetente+nonce exige taxa ≥ 125 % da anterior; expiração em 72 h;
-limite de memória `mempool.max_mb` (32 MiB) com expulsão das de menor taxa por byte.
+Regras do mempool (política do nó, não consenso):
+
+* até 32 transações pendentes por remetente; expiração em 72 h; limite de memória
+  `mempool.max_mb` (32 MiB) com expulsão das de menor taxa por peso;
+* ordenação por **taxa por unidade de peso** = `fee / (size + max_fuel / 100)`;
+* **substituição (RBF) opt-in:** mesmo remetente e nonce só substitui se a
+  original tem `replaceable: true` **e** a nova taxa é ≥ `taxa + floor(taxa/4)` (e maior);
+* mesmo nonce de uma pendente **não** substituível → recusada, registrada em
+  `/api/v1/alerts`, `conflict` preenchido nas duas e alerta `DoubleSpend` enviado aos peers;
+* transações que ficam abaixo da taxa mínima porque o congestionamento subiu
+  **permanecem** no mempool e voltam a ser incluídas quando ele cai;
+* o mempool é gravado em `<data-dir>/mempool.dat` ao desligar e revalidado ao iniciar.
+
+## `POST /api/v1/tx/simulate`
+
+Executa uma transação **assinada** sobre o estado do tip (depois das pendentes
+do mesmo remetente com nonce menor), como se entrasse no próximo bloco, sem
+gravar nada nem propagar. Use para medir o combustível antes de enviar.
+
+```bash
+curl -X POST http://127.0.0.1:7334/api/v1/tx/simulate \
+  -H 'content-type: application/json' -d '{"tx":"<hex>"}'
+```
+
+Chamada que funcionaria:
+
+```json
+{
+  "valid": true,
+  "invalid_reason": null,
+  "success": true,
+  "error": null,
+  "fuel_used": 2225,
+  "required_fee": 5325,
+  "logs": [
+    {
+      "contract": "tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh",
+      "event": "Transfer",
+      "fields": [
+        ["from", "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r"],
+        ["to", "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh"],
+        ["amount", "10"]
+      ]
+    }
+  ],
+  "return_value": null,
+  "program": null
+}
+```
+
+Chamada válida cujo código falharia:
+
+```json
+{"valid":true,"invalid_reason":null,"success":false,"error":"requirement failed: insufficient token balance","fuel_used":421,"required_fee":5325,"logs":[],"return_value":null,"program":null}
+```
+
+Transação que não pode entrar num bloco:
+
+```json
+{"valid":false,"invalid_reason":"bad nonce: expected 12, got 1","success":false,"error":null,"fuel_used":0,"required_fee":3695,"logs":[],"return_value":null,"program":null}
+```
+
+| Campo | Significado |
+|---|---|
+| `valid` | passaria nas regras de inclusão (assinatura, nonce, saldo, taxa…) |
+| `invalid_reason` | motivo quando `valid = false` |
+| `success` / `error` | resultado da execução do contrato (ações nativas: sempre `true` se válida) |
+| `fuel_used` | combustível consumido; a carteira de referência reserva `fuel_used × 1,3 + 5 000` |
+| `required_fee` | taxa mínima atual para o tamanho e o `max_fuel` **desta** transação |
+| `logs`, `return_value` | eventos e retorno que a execução produziria |
+| `program` | endereço do contrato para um `deploy` bem-sucedido |
 
 ## `GET /api/v1/address/{addr}`
 
 ```bash
-curl http://127.0.0.1:7334/api/v1/address/tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr
+curl http://127.0.0.1:7334/api/v1/address/tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh
 ```
 
 ```json
 {
-  "address": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
-  "balance": 411949999770,
-  "spendable": 411949999770,
+  "address": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+  "balance": 320909942360,
+  "spendable": 320909942360,
   "locked": 0,
   "locked_until": 0,
-  "nonce": 6,
-  "next_nonce": 6,
-  "immature": 20000000230,
-  "mempool_txs": 0
+  "nonce": 12,
+  "next_nonce": 15,
+  "immature": 41000007640,
+  "mempool_txs": 3
 }
 ```
 
@@ -383,16 +660,18 @@ curl http://127.0.0.1:7334/api/v1/address/tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32
 | `locked`, `locked_until` | moedas bloqueadas por voto e altura final do bloqueio |
 | `nonce` | transações confirmadas enviadas |
 | `next_nonce` | nonce a usar na próxima transação, contando as pendentes no mempool |
-| `immature` | recompensas de mineração ainda não maturadas (não incluídas em `balance`) |
+| `immature` | recompensas de mineração ainda em cooldown (não incluídas em `balance`): 25 % liberados após `coinbase_maturity`, o resto após `reward_unlock_blocks` |
 | `mempool_txs` | transações deste remetente no mempool |
 
-Endereços nunca usados retornam zeros (não 404).
+Endereços nunca usados retornam zeros (não 404). O endereço de um contrato TCCL
+retorna o saldo do contrato.
 
 ## `GET /api/v1/address/{addr}/txs`
 
 Histórico (mais recente primeiro) de transações que **tocam** o endereço: enviadas,
-recebidas, contratos em que ele é parte e chamadas que lhe pagam.
-Requer `storage.address_index = true` (padrão); senão 400.
+recebidas, contratos nativos em que ele é parte, chamadas que lhe pagam e
+chamadas TCCL que lhe enviam TCN. Requer `storage.address_index = true` (padrão);
+senão 400 `"address index disabled on this node"`. Nós podados não mantêm o índice.
 
 | Query | Padrão | Descrição |
 |---|---|---|
@@ -400,92 +679,104 @@ Requer `storage.address_index = true` (padrão); senão 400.
 | `cursor` | — | `altura:posição`; retorna entradas estritamente anteriores a esse ponto |
 
 Sem `cursor`, a resposta começa pelas transações **enviadas** pelo endereço que
-estão no mempool (`in_mempool: true`).
+estão no mempool (`in_mempool: true`, com `created`/`program`/`conflict`). Cada item tem o formato de
+`GET /api/v1/tx/{txid}`.
 
 ```bash
-curl "http://127.0.0.1:7334/api/v1/address/tcr16ntq7jxlpcdgtp6zt22zwgfcuhlq4t9cg8exxl/txs?limit=5"
+curl "http://127.0.0.1:7334/api/v1/address/tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r/txs?limit=3"
 ```
 
 ```json
 [
   {
-    "txid": "0cc5a7f6570116e074fbf08eb6ceb35fc52da19ff5d9e2e3d60ed89a01fc8467",
-    "sender": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
-    "nonce": 1,
-    "fee": 164,
+    "txid": "4df1c69956d72a5f393febe21ebb22b49851cea2ee247b2c51da9a11fe57a670",
+    "sender": "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r",
+    "nonce": 0,
+    "fee": 1289,
     "expiry_height": 0,
-    "size": 164,
+    "size": 251,
     "action": {
-      "type": "create_contract",
-      "spec": {
-        "kind": "escrow",
-        "payee": "tcr16ntq7jxlpcdgtp6zt22zwgfcuhlq4t9cg8exxl",
-        "arbiter": null,
-        "amount": 1000000000,
-        "deadline_height": 125
-      }
+      "type": "invoke",
+      "contract": "tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh",
+      "function": "transfer_from",
+      "args": ["tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh", "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r", "100"],
+      "value": 0,
+      "max_fuel": 9378,
+      "max_deposit": 100000000
     },
-    "block_height": 28,
-    "block_hash": "cbdf54d3c25309d15ff41883e6c415b75d66fabe85f777ed64f66445bccf4b13",
-    "position": 0,
-    "confirmations": 36,
+    "block_height": 106,
+    "block_hash": "9ab90d977596b12978da48f5d6e4145e6fd6ef6d1c52f105d103c31e7d717766",
+    "position": 1,
+    "confirmations": 3,
     "in_mempool": false,
-    "created": "07acfa4198a55563940ceb8e188aef4a602a54b9bcaa69bf1dc7411fe87350ae"
+    "created": null,
+    "replaceable": false,
+    "success": false,
+    "error": "requirement failed: allowance too low",
+    "fuel_used": 423,
+    "burned": 0,
+    "logs": [],
+    "program": null,
+    "return_value": null,
+    "conflict": null
   },
   {
-    "txid": "e581ee5b19e22fbf4a67e1d066f12afa662f980942522a684b9027edde15235a",
-    "sender": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
-    "nonce": 0,
-    "fee": 169,
-    "expiry_height": 0,
-    "size": 169,
+    "txid": "327bb870c3f626feba801b911f85d95b193a62b81415c225c4fb93217757aebb",
+    "sender": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+    "nonce": 13,
+    "fee": 518,
+    "size": 159,
     "action": {
       "type": "transfer",
-      "to": "tcr16ntq7jxlpcdgtp6zt22zwgfcuhlq4t9cg8exxl",
-      "amount": 2500000000,
-      "memo_hex": "50656469646f2031303031",
-      "memo_text": "Pedido 1001"
+      "to": "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r",
+      "amount": 100000000,
+      "memo_hex": "",
+      "memo_text": null
     },
-    "block_height": 26,
-    "block_hash": "edc4a5c777c33e750231875c3f86b0a9b9330189786d3d52c8378ba120f1ee35",
-    "position": 0,
-    "confirmations": 38,
-    "in_mempool": false,
-    "created": null
+    "block_height": 93,
+    "position": 1,
+    "replaceable": true,
+    "…": "demais campos como acima"
   }
 ]
 ```
 
 > **Paginação:** para a próxima página use
 > `cursor=<block_height>:<position>` da **última** entrada recebida
-> (ex.: `?limit=25&cursor=26:0`). Entradas de mempool não têm `position` e só
+> (ex.: `?limit=25&cursor=93:1`). Entradas de mempool não têm `position` e só
 > aparecem na primeira página.
 
 ## `GET /api/v1/contract/{id}`
 
+Contrato de pagamento nativo (escrow, vesting, subscription, HTLC, multisig).
+
 ```bash
-curl http://127.0.0.1:7334/api/v1/contract/07acfa4198a55563940ceb8e188aef4a602a54b9bcaa69bf1dc7411fe87350ae
+curl http://127.0.0.1:7334/api/v1/contract/ba959f4d8a01e48e29a3bf4c84aefbca3522eb36a472ecebe27734b06cf1b2cc
 ```
 
 ```json
 {
-  "id": "07acfa4198a55563940ceb8e188aef4a602a54b9bcaa69bf1dc7411fe87350ae",
-  "creator": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
-  "created_height": 28,
-  "balance": 1000000000,
+  "id": "ba959f4d8a01e48e29a3bf4c84aefbca3522eb36a472ecebe27734b06cf1b2cc",
+  "creator": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+  "created_height": 89,
+  "balance": 500000000,
+  "deposit": 10000,
   "state": {
-    "kind": "escrow",
-    "payer": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
-    "payee": "tcr16ntq7jxlpcdgtp6zt22zwgfcuhlq4t9cg8exxl",
-    "arbiter": null,
-    "deadline_height": 125
+    "kind": "multisig",
+    "signers": ["tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh", "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r"],
+    "threshold": 2,
+    "next_spend_id": 0,
+    "pending": []
   }
 }
 ```
 
-Formatos de `state` para os outros tipos:
+`deposit` é o depósito de armazenamento reembolsável, devolvido ao criador
+quando o contrato termina (ou quando um multisig vazio é fechado com
+`multisig_close`). Formatos de `state` para os outros tipos:
 
 ```json
+{ "kind": "escrow", "payer": "…", "payee": "…", "arbiter": null, "deadline_height": 0 }
 { "kind": "vesting", "beneficiary": "…", "total": 0, "claimed": 0, "vested_now": 0, "start_height": 0, "cliff_height": 0, "end_height": 0, "revocable": false }
 { "kind": "subscription", "payer": "…", "payee": "…", "amount_per_period": 0, "period_blocks": 0, "max_periods": 0, "start_height": 0, "claimed_periods": 0, "claimable_periods_now": 0 }
 { "kind": "htlc", "sender": "…", "recipient": "…", "hash_lock": "…", "timeout_height": 0 }
@@ -498,6 +789,83 @@ Contratos finalizados são removidos do estado → 404
 `"contract not found (it may have been completed)"`; o histórico continua
 disponível pelas transações.
 
+## `GET /api/v1/program/{addr}`
+
+Contrato inteligente TCCL: metadados, saldo, uso de armazenamento, depósito e interface pública.
+
+```bash
+curl http://127.0.0.1:7334/api/v1/program/tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh
+```
+
+```json
+{
+  "address": "tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh",
+  "name": "SimpleToken",
+  "creator": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+  "created_height": 66,
+  "deploy_txid": "9694e053755c0f187f71b87326daab7a6ac6af95a4d6a39864207da8ae1f5f7e",
+  "source_hash": "27a5cc37e896a9484e51fcf9405f5716fe8051b9b9ff6657fd13b1cbb7076157",
+  "balance": 0,
+  "state_bytes": 1376,
+  "storage_items": 6,
+  "deposit": 20000,
+  "functions": [
+    { "name": "init", "kind": "init", "payable": false, "params": [], "returns": "nothing" },
+    { "name": "mint", "kind": "action", "payable": false, "params": [["to", "address"], ["amount", "int"]], "returns": "nothing" },
+    { "name": "transfer", "kind": "action", "payable": false, "params": [["to", "address"], ["amount", "int"]], "returns": "nothing" },
+    { "name": "approve", "kind": "action", "payable": false, "params": [["spender", "address"], ["amount", "int"]], "returns": "nothing" },
+    { "name": "transfer_from", "kind": "action", "payable": false, "params": [["holder", "address"], ["to", "address"], ["amount", "int"]], "returns": "nothing" },
+    { "name": "balance_of", "kind": "view", "payable": false, "params": [["who", "address"]], "returns": "int" },
+    { "name": "allowance", "kind": "view", "payable": false, "params": [["holder", "address"], ["spender", "address"]], "returns": "int" }
+  ]
+}
+```
+
+| Campo | Significado |
+|---|---|
+| `source_hash` | `tagged_hash("tccl-source", source)`; o código-fonte está na transação `deploy_txid` |
+| `balance` | TCN do contrato (a conta no mesmo endereço) |
+| `state_bytes`, `storage_items` | bytes do código compilado + armazenamento, e número de entradas |
+| `deposit` | depósito reembolsável = `ceil(state_bytes / 1000) × storage_deposit_per_kb` (aqui 2 kB × 10 000) |
+| `functions[].kind` | `init`, `action` (chamável por transação `invoke`) ou `view` (leitura grátis) |
+| `functions[].params` | pares `[nome, tipo]`; tipos: `int`, `bool`, `text`, `bytes`, `address`, `list[T]` |
+
+Contrato inexistente ou destruído → 404 `"no contract at this address (it may have been destroyed)"`.
+
+## `POST /api/v1/program/{addr}/view`
+
+Chama uma função `view` sem transação e sem custo, no estado do tip (altura de
+contexto `tip + 1`, combustível máximo 2 000 000). Os argumentos são **texto**,
+interpretados pelos tipos declarados.
+
+```bash
+curl -X POST http://127.0.0.1:7334/api/v1/program/tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh/view \
+  -H 'content-type: application/json' \
+  -d '{"function":"balance_of","args":["tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r"]}'
+```
+
+```json
+{"result":"2500","error":null,"fuel_used":274}
+```
+
+Outros exemplos reais (pool de privacidade):
+
+```json
+{"result":"1000000000","error":null,"fuel_used":23}                                  // {"function":"denomination"}
+{"result":null,"error":"index 7 out of bounds (length 3)","fuel_used":274}            // {"function":"key_at","args":["7"]}
+{"result":null,"error":"function 'transfer' cannot be called this way","fuel_used":0} // action chamada como view
+```
+
+| Campo | Significado |
+|---|---|
+| `function` | nome da view |
+| `args` | lista de strings (opcional se não há parâmetros): `int` `42` ou `2.5tcn`, `bool` `true`, `text`, `bytes` `0x…`, `address` bech32m, `list[T]` `[1, 2]` |
+| `result` | valor retornado, em texto (`bytes` como `0x…`, listas como `[a, b]`) |
+| `error` | erro da execução (a resposta ainda é 200) |
+
+Erros de requisição → 400: `"unknown function 'nope'"`, `"balance_of expects 1 argument(s)"`,
+`"argument 'who': invalid address '…'"`; contrato inexistente → 404.
+
 ## `GET /api/v1/governance/proposals`
 
 Lista todas as propostas (mais recentes primeiro). Cada item tem o formato de
@@ -505,20 +873,22 @@ Lista todas as propostas (mais recentes primeiro). Cada item tem o formato de
 
 ## `GET /api/v1/governance/proposal/{id}`
 
-Proposta em votação:
+Proposta em votação, logo depois de o minerador reiniciar com `--signal <id>`:
 
 ```json
 {
-  "id": "7b8818aa9d00cf589963ce3386d93fc9a0873fbdea6f6ebd71ebbf45d8891eb4",
-  "proposer": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
-  "title": "Roadmap v0.2: WASM contracts",
+  "id": "b7a2d3fee315ebe1697de557d8ca425afbbf8ad754a45336e393431f73b5c29f",
+  "proposer": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+  "title": "Roadmap: fase 2 hibrida",
   "url": "https://the-coin.cloud/governance/2",
   "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-  "action": { "type": "text" },
+  "action": {
+    "type": "text"
+  },
   "deposit": 100000000,
-  "created_height": 108,
-  "end_height": 128,
-  "signal_bit": 0,
+  "created_height": 93,
+  "end_height": 113,
+  "signal_bit": 1,
   "status": "voting",
   "activation_height": null,
   "tally": {
@@ -526,16 +896,16 @@ Proposta em votação:
     "no": 0,
     "abstain": 0,
     "voters": 0,
-    "miner_yes_blocks": 0,
+    "miner_yes_blocks": 1,
     "miner_total_blocks": 1
   },
   "outcome": null,
   "projection": {
-    "quorum_needed": 43590000000,
+    "quorum_needed": 37600000000,
     "quorum_progress_bp": 0,
     "approval_bp": 0,
     "approval_needed_bp": 6667,
-    "miner_approval_bp": 0,
+    "miner_approval_bp": 10000,
     "miner_approval_needed_bp": 5000,
     "blocks_left": 19
   }
@@ -546,12 +916,19 @@ Proposta encerrada (rejeitada por falta de quórum — depósito queimado):
 
 ```json
 {
-  "id": "32ed5bf794aa77ea7a28ea1378fe213876393dacb374425860d4422e05582b4d",
-  "title": "Aumentar taxa minima para 2 motes/byte",
-  "action": { "type": "set_param", "param": "min_fee_per_byte", "value": 2 },
+  "id": "34089bfe2b35260b485fdc6b6f2c384a97f56b50d56417c16a0bb34bb1b6017b",
+  "proposer": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+  "title": "Reduzir fee_per_kb para 500",
+  "url": "https://the-coin.cloud/governance/1",
+  "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "action": {
+    "type": "set_param",
+    "param": "fee_per_kb",
+    "value": 500
+  },
   "deposit": 100000000,
-  "created_height": 32,
-  "end_height": 52,
+  "created_height": 92,
+  "end_height": 112,
   "signal_bit": 0,
   "status": "rejected",
   "activation_height": null,
@@ -560,11 +937,17 @@ Proposta encerrada (rejeitada por falta de quórum — depósito queimado):
     "quorum_reached": false,
     "holders_approved": false,
     "miners_approved": false,
-    "circulating_at_end": 204000000000,
+    "circulating_at_end": 444000000000,
     "deposit_refunded": false
   },
   "projection": null
 }
+```
+
+Proposta aprovada (1 000 TCN votando "sim", 20 de 20 blocos sinalizando) e já ativada, resumida:
+
+```json
+{"id": "b7a2d3fee315ebe1697de557d8ca425afbbf8ad754a45336e393431f73b5c29f", "title": "Roadmap: fase 2 hibrida", "status": "activated", "activation_height": 118, "tally": {"yes": 100000000000, "no": 0, "abstain": 0, "voters": 1, "miner_yes_blocks": 20, "miner_total_blocks": 20}, "outcome": {"quorum_reached": true, "holders_approved": true, "miners_approved": true, "circulating_at_end": 447900000000, "deposit_refunded": true}}
 ```
 
 | Campo | Significado |
@@ -578,72 +961,153 @@ Proposta encerrada (rejeitada por falta de quórum — depósito queimado):
 
 ```json
 {
-  "current": {
-    "activation_delay": 5,
-    "approval_bp": 6667,
-    "max_block_bytes": 1000000,
-    "min_fee_per_byte": 1,
-    "miner_approval_bp": 5000,
-    "proposal_deposit": 100000000,
-    "quorum_bp": 1000,
-    "vote_period": 20
-  },
   "bounds": {
     "activation_delay": [1, 43200],
     "approval_bp": [5001, 10000],
+    "base_fee": [0, 10000000],
+    "fee_per_kb": [0, 100000000],
+    "fee_per_kfuel": [0, 100000000],
     "max_block_bytes": [10000, 8000000],
-    "min_fee_per_byte": [0, 100000],
+    "max_block_fuel": [1000000, 500000000],
     "miner_approval_bp": [0, 10000],
     "proposal_deposit": [0, 100000000000000],
     "quorum_bp": [0, 10000],
+    "storage_deposit_per_kb": [0, 1000000000],
     "vote_period": [5, 201600]
   },
+  "current": {
+    "activation_delay": 5,
+    "approval_bp": 6667,
+    "base_fee": 100,
+    "fee_per_kb": 1000,
+    "fee_per_kfuel": 100,
+    "max_block_bytes": 1000000,
+    "max_block_fuel": 50000000,
+    "miner_approval_bp": 5000,
+    "proposal_deposit": 100000000,
+    "quorum_bp": 1000,
+    "storage_deposit_per_kb": 10000,
+    "vote_period": 20
+  },
   "pending_activations": 0,
-  "voting_proposals": 0
+  "voting_proposals": 2
 }
 ```
 
-(Limites acima são os de regtest; ver [PROTOCOL.md §19](PROTOCOL.md#19-parâmetros-por-rede).)
+(Limites acima são os de regtest; ver [PROTOCOL.md §20](PROTOCOL.md#20-parâmetros-por-rede).)
 
 ## `GET /api/v1/mempool`
 
-Até 100 transações, ordenadas por taxa por byte.
+Até 100 transações, ordenadas por taxa por unidade de peso (maior primeiro).
+Cada item tem o formato de `GET /api/v1/tx/{txid}` com `in_mempool: true`
+(chaves em ordem alfabética nesta rota).
 
 ```json
 {
-  "bytes": 170,
-  "count": 1,
+  "bytes": 553,
+  "count": 3,
   "txs": [
     {
       "action": {
-        "amount": 150000000,
-        "memo_hex": "6d656d706f6f6c2064656d6f",
-        "memo_text": "mempool demo",
-        "to": "tcr16ntq7jxlpcdgtp6zt22zwgfcuhlq4t9cg8exxl",
+        "amount": 100000000,
+        "memo_hex": "",
+        "memo_text": null,
+        "to": "tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r",
         "type": "transfer"
       },
       "block_hash": null,
       "block_height": null,
-      "position": null,
+      "burned": 0,
       "confirmations": 0,
+      "conflict": null,
       "created": null,
+      "error": null,
       "expiry_height": 0,
-      "fee": 170,
+      "fee": 518,
+      "fuel_used": 0,
       "in_mempool": true,
-      "nonce": 3,
-      "sender": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
-      "size": 170,
-      "txid": "826345fba49a0222189c076bbe2d13472d82f1813c1bc65c923d35cefdbb64fd"
+      "logs": [],
+      "nonce": 13,
+      "position": null,
+      "program": null,
+      "replaceable": true,
+      "return_value": null,
+      "sender": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+      "size": 159,
+      "success": true,
+      "txid": "327bb870c3f626feba801b911f85d95b193a62b81415c225c4fb93217757aebb"
     }
   ]
 }
 ```
 
+(Resposta abreviada: só a primeira das três transações — a substituta enviada por `bump-fee`.)
+Como em `GET /api/v1/tx/{txid}`, `created`, `program` (endereço previsto de um
+`deploy`) e `conflict` já vêm preenchidos para transações pendentes.
+
+## `GET /api/v1/security?amount=`
+
+Quantas confirmações esperar antes de confiar num pagamento. `amount` em motes (obrigatório).
+
+```bash
+curl "http://127.0.0.1:7334/api/v1/security?amount=50000000000"
+```
+
+```json
+{
+  "amount": 50000000000,
+  "confirmations": 25,
+  "minutes": 25,
+  "value_per_block": 4000000000,
+  "network_hashrate": 1.467741935483871,
+  "explanation": "Reversing 25 block(s) means redoing their proof of work and giving up about 1000 TCN of rewards. For larger amounts wait for more confirmations; beyond 720 blocks the chain never reorganizes."
+}
+```
+
+```
+value_per_block = subsídio do próximo bloco (mínimo 1)
+confirmations   = clamp(ceil(2 × amount / value_per_block), 1, 720)
+minutes         = confirmations × target_block_time / 60
+```
+
+Um atacante que reescreve `N` blocos abandona cerca de `N` recompensas e precisa
+superar a rede por esse tempo; a recomendação garante que isso vale pelo menos o
+dobro do pagamento (500 TCN com recompensa de 40 TCN → 25 blocos). Com
+`amount=100000000` (1 TCN) a resposta foi `"confirmations": 1`.
+
+Erros (400): `{"error":"query parameter 'amount' (motes) is required"}` e
+`{"error":"amount must be a whole number of motes"}`.
+
+## `GET /api/v1/alerts`
+
+Tentativas de gasto duplo vistas por este nó (mais recentes primeiro, até 512):
+duas transações diferentes do mesmo remetente com o mesmo nonce, detectadas
+localmente ou recebidas de peers (mensagem P2P `DoubleSpend`).
+
+```bash
+curl http://127.0.0.1:7334/api/v1/alerts
+```
+
+```json
+[
+  {
+    "sender": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+    "nonce": 12,
+    "first": "f5ac06fe273eef17a173cc6b4999d0adfe02eeebe5ef85721a45ff57f8a7acbf",
+    "second": "4d53d4d9c058ba72059c76752a2c27a178c38a5a1e9896a2ead43f9d2c48cfc7",
+    "seen_at": 1789308548
+  }
+]
+```
+
+`first` é a transação que ficou no mempool; `second`, a que tentou o mesmo nonce.
+`seen_at` em segundos Unix. A lista fica em memória (reinicia com o nó).
+
 ## `GET /api/v1/peers`
 
 ```json
 [
-  { "addr": "203.0.113.10:7333", "inbound": false, "height": 1520, "user_agent": "/thecoind:0.1.0/", "connected_secs": 3605 }
+  { "addr": "203.0.113.10:7333", "inbound": false, "height": 1520, "user_agent": "/thecoind:0.2.0/", "connected_secs": 3605 }
 ]
 ```
 
@@ -655,15 +1119,18 @@ Até 100 transações, ordenadas por taxa por byte.
 {
   "enabled": true,
   "threads": 1,
-  "address": "tcr1d9zd0zyrhql2xutfv6dyg0rvqnq8skcp32uxcr",
-  "hashrate": 1.9997212250631498,
-  "blocks_found": 63,
-  "signal_proposals": []
+  "address": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+  "hashrate": 0.0,
+  "blocks_found": 3,
+  "signal_proposals": [
+    "b7a2d3fee315ebe1697de557d8ca425afbbf8ad754a45336e393431f73b5c29f"
+  ]
 }
 ```
 
 `hashrate` = H/s do minerador local (média de 10 s). `blocks_found` conta blocos
-locais que viraram tip.
+locais que viraram tip. `signal_proposals` = ids de `[mining] signal` e das
+opções `--signal` do `thecoind`.
 
 ---
 
@@ -689,9 +1156,10 @@ flowchart LR
    sudo ufw allow from <IP_DO_SITE> to any port 7334 proto tcp
    ```
 3. No servidor web use o `upstream` com os dois seeds e `location /api/` com
-   `limit_req` (ex.: 10 req/s para leitura, 1 req/s para `POST /api/v1/tx`),
-   `client_max_body_size 64k` e cache curto de GETs. Uma configuração completa
-   está em `website/nginx/the-coin.cloud.conf`.
+   `limit_req` (ex.: 10 req/s para leitura, 1 req/s para `POST /api/v1/tx`,
+   `/tx/simulate` e `/program/*/view`), `client_max_body_size` compatível com o
+   maior `Deploy` que quiser aceitar (a API aceita até 256 KiB) e cache curto de
+   GETs. Uma configuração completa está em `website/nginx/the-coin.cloud.conf`.
 
 Nunca exponha a API sem TLS diretamente para navegadores: a página HTTPS não
 consegue chamar HTTP (mixed content) e o tráfego ficaria sem proteção.

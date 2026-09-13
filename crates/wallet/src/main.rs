@@ -1068,17 +1068,14 @@ fn privacy_cmd(ctx: &Ctx, p: PrivacyCmd) -> Result<()> {
             other => bail!("expected bytes, got {other:?}"),
         }
     };
-    // Finds the pool index of our deposit.
-    let find_index = |pool: &str, public: &[u8; 32]| -> Result<Option<i128>> {
+    // Downloads every deposited key. Always all of them, never stopping at ours:
+    // the node answering these views must not learn which deposit is ours.
+    let pool_keys = |pool: &str| -> Result<Vec<Vec<u8>>> {
         let count = int_of(ctx.view_value(pool, "deposits", &[])?)?;
-        for i in 0..count {
-            let k = bytes_of(ctx.view_value(pool, "key_at", &[i.to_string()])?)?;
-            if k.as_slice() == public {
-                return Ok(Some(i));
-            }
-        }
-        Ok(None)
+        (0..count).map(|i| bytes_of(ctx.view_value(pool, "key_at", &[i.to_string()])?)).collect()
     };
+    let index_in =
+        |keys: &[Vec<u8>], public: &[u8; 32]| -> Option<i128> { keys.iter().position(|k| k.as_slice() == public).map(|i| i as i128) };
     match p {
         PrivacyCmd::Keygen { key } => {
             let (_, keys) = ctx.unlock()?;
@@ -1090,7 +1087,7 @@ fn privacy_cmd(ctx: &Ctx, p: PrivacyCmd) -> Result<()> {
             let denomination = int_of(ctx.view_value(&pool, "denomination", &[])?)?;
             let (_, keys) = ctx.unlock()?;
             let (_, public) = keys.ring_keypair(key);
-            if find_index(&pool, &public)?.is_some() {
+            if index_in(&pool_keys(&pool)?, &public).is_some() {
                 bail!("ring key #{key} is already deposited in this pool; use another --key");
             }
             let signer = ctx.signer(&keys, ctx.from);
@@ -1108,7 +1105,7 @@ fn privacy_cmd(ctx: &Ctx, p: PrivacyCmd) -> Result<()> {
             let (_, keys) = ctx.unlock()?;
             let (secret, public) = keys.ring_keypair(key);
             let image = thecoin_core::tccl::ring::key_image(&secret).ok_or_else(|| anyhow!("invalid ring key"))?;
-            match find_index(&pool, &public)? {
+            match index_in(&pool_keys(&pool)?, &public) {
                 None => println!("Ring key #{key} has no deposit in this pool."),
                 Some(i) => {
                     let spent = matches!(ctx.view_value(&pool, "is_withdrawn", &[format!("0x{}", hex::encode(image))])?, Value::Bool(true));
@@ -1131,12 +1128,13 @@ fn privacy_cmd(ctx: &Ctx, p: PrivacyCmd) -> Result<()> {
                 None => signer.address,
             };
             let (secret, public) = keys.ring_keypair(key);
-            let my_index = find_index(&pool, &public)?.ok_or_else(|| anyhow!("ring key #{key} has no deposit in this pool"))?;
+            let all_keys = pool_keys(&pool)?;
+            let my_index = index_in(&all_keys, &public).ok_or_else(|| anyhow!("ring key #{key} has no deposit in this pool"))?;
             let image = thecoin_core::tccl::ring::key_image(&secret).ok_or_else(|| anyhow!("invalid ring key"))?;
             if matches!(ctx.view_value(&pool, "is_withdrawn", &[format!("0x{}", hex::encode(image))])?, Value::Bool(true)) {
                 bail!("this deposit was already withdrawn");
             }
-            let total = int_of(ctx.view_value(&pool, "deposits", &[])?)?;
+            let total = all_keys.len() as i128;
             let size = ring_size.clamp(2, 32).min(total as usize);
             if size < 2 {
                 bail!("the pool needs at least 2 deposits before anyone can withdraw privately");
@@ -1149,7 +1147,7 @@ fn privacy_cmd(ctx: &Ctx, p: PrivacyCmd) -> Result<()> {
             members.shuffle(&mut rand::thread_rng());
             let mut ring = Vec::with_capacity(size);
             for m in &members {
-                let k = bytes_of(ctx.view_value(&pool, "key_at", &[m.to_string()])?)?;
+                let k = &all_keys[*m as usize];
                 ring.push(<[u8; 32]>::try_from(k.as_slice()).map_err(|_| anyhow!("pool key #{m} is not 32 bytes"))?);
             }
             let position = members.iter().position(|m| *m == my_index).expect("included");

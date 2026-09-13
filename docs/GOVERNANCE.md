@@ -9,8 +9,10 @@ sozinho: toda mudança precisa passar pelas **duas câmaras**.
 | **Detentores** | quem tem TCN | transação `Vote` bloqueando moedas (1 TCN = 1 voto) | quórum + supermaioria |
 | **Mineradores** | quem produz blocos | bit de sinalização no cabeçalho de cada bloco | % mínima dos blocos do período |
 
-Especificação exata: [PROTOCOL.md §17](PROTOCOL.md#17-governança).
-Código: `crates/core/src/governance.rs`.
+Especificação exata: [PROTOCOL.md §18](PROTOCOL.md#18-governança).
+Código: `crates/core/src/governance.rs`. As próximas grandes mudanças de consenso
+(PoW → híbrido PoW/PoS → PoS) também passam por este processo: veja o
+[roteiro de consenso](ROADMAP.md).
 
 ## 1. Ciclo de vida
 
@@ -59,30 +61,44 @@ quórum 5 %, mineradores 50 %).
 
 **Pode (dentro de limites fixos no código):**
 
-| Parâmetro | Faixa permitida (mainnet) |
-|---|---|
-| `max_block_bytes` — tamanho máximo do bloco | 250 000 – 8 000 000 bytes |
-| `min_fee_per_byte` — taxa mínima | 1 – 100 000 motes/byte |
-| `proposal_deposit` | 1 – 1 000 000 TCN |
-| `vote_period` | 1 440 – 201 600 blocos |
-| `quorum_bp` | 1 % – 50 % |
-| `approval_bp` | 50,01 % – 95 % |
-| `miner_approval_bp` | 50 % – 95 % |
-| `activation_delay` | 720 – 43 200 blocos |
+| Parâmetro | Padrão (mainnet) | Faixa permitida (mainnet e testnet) |
+|---|---|---|
+| `max_block_bytes` — tamanho máximo do bloco | 1 000 000 bytes | 250 000 – 8 000 000 bytes |
+| `max_block_fuel` — combustível máximo (Σ `max_fuel`) por bloco | 50 000 000 | 5 000 000 – 500 000 000 |
+| `base_fee` — parte fixa da taxa de toda transação | 1 000 motes (0,00001 TCN) | 0 – 10 000 000 motes |
+| `fee_per_kb` — taxa por 1 000 bytes de transação | 10 000 motes (10 motes/byte) | 1 – 100 000 000 motes |
+| `fee_per_kfuel` — taxa por 1 000 de combustível reservado | 1 000 motes | 1 – 100 000 000 motes |
+| `storage_deposit_per_kb` — depósito reembolsável por kB de estado de contrato | 100 000 motes (0,001 TCN) | 0 – 1 000 000 000 motes |
+| `proposal_deposit` | 100 TCN | 1 – 1 000 000 TCN |
+| `vote_period` | 20 160 blocos | 1 440 – 201 600 blocos |
+| `quorum_bp` | 1 000 (10 %) | 1 % – 50 % |
+| `approval_bp` | 6 667 (66,67 %) | 50,01 % – 95 % |
+| `miner_approval_bp` | 6 000 (60 %) | 50 % – 95 % |
+| `activation_delay` | 2 880 blocos | 720 – 43 200 blocos |
+
+Taxas e depósitos são cotados em **motes**: se o TCN valorizar muito, a
+comunidade pode reduzir `base_fee`, `fee_per_kb`, `fee_per_kfuel` e
+`storage_deposit_per_kb` por votação para manter pagamentos e contratos baratos
+(ver [CONTRACTS.md §6.5](CONTRACTS.md#65-por-que-continua-barato-se-o-preço-da-moeda-subir)).
+O **multiplicador de congestionamento** (1× a 1000×) não é um parâmetro: ele se
+ajusta sozinho a cada bloco, e a parte acima de 1× é queimada.
+Valores de testnet e regtest: [PROTOCOL.md §20](PROTOCOL.md#20-parâmetros-por-rede).
 
 Além disso:
 
 * **`Text`** — decisões sem efeito automático (roadmap, prioridades, uso de recursos da comunidade).
-* **`SoftwareUpgrade`** — aprova uma versão de software (ex.: `0.2.0`) e o hash
+* **`SoftwareUpgrade`** — aprova uma versão de software (ex.: `0.3.0`) e o hash
   do pacote. Após a ativação, nós mais antigos passam a informar
   `software_upgrade_required` em `/api/v1/status`. É assim que *hard forks*
-  (novos contratos, VM WASM, etc.) são coordenados.
+  (novas regras de contrato, a fase híbrida PoW/PoS do [roteiro](ROADMAP.md),
+  etc.) são coordenados.
 
 **Não pode — nunca, por votação:**
 
 * o **supply máximo de 50 milhões** de TCN e a curva de emissão (halvings);
 * o tempo de bloco, o algoritmo de prova de trabalho (CoinHash) e o ajuste de dificuldade;
-* a maturidade das recompensas e a profundidade máxima de reorganização;
+* o cooldown das recompensas (25 % após 100 blocos, o resto após 1 000) e a profundidade máxima de reorganização;
+* a tabela de combustível da VM TCCL e os limites absolutos de transação, programa e bloco;
 * saldos de qualquer pessoa.
 
 Esses valores estão fixos no código de consenso; mudá-los exigiria que cada
@@ -108,19 +124,19 @@ Ou pela API/site: `GET /api/v1/governance/proposals`, página *Governança* em h
 2. Registre o hash do texto na proposta para que ele não possa ser editado depois:
 
 ```bash
-# Mudança de parâmetro
+# Mudança de parâmetro: taxa por kB de 10 000 para 5 000 motes (5 motes/byte)
 thecoin-wallet gov propose \
-  --title "Reduzir taxa mínima para 5 motes/byte" \
+  --title "Reduzir fee_per_kb para 5 000 motes" \
   --url https://the-coin.cloud/governance/reduzir-taxa \
   --text-file proposta.md \
-  --set-param min_fee_per_byte=5
+  --set-param fee_per_kb=5000
 
 # Proposta de texto
-thecoin-wallet gov propose --title "Roadmap 2027: contratos WASM" --url https://… --text-file roadmap.md
+thecoin-wallet gov propose --title "Roadmap: fase 2 híbrida PoW/PoS" --url https://… --text-file roadmap.md
 
 # Atualização de software
-thecoin-wallet gov propose --title "Ativar The Coin 0.2.0" --url https://… \
-  --upgrade-version 0.2.0 --release-hash <sha256_do_pacote>
+thecoin-wallet gov propose --title "Ativar The Coin 0.3.0" --url https://… \
+  --upgrade-version 0.3.0 --release-hash <sha256_do_pacote>
 ```
 
 O id da proposta aparece em `thecoin-wallet tx <txid>` (campo `created`) após a confirmação.
@@ -147,18 +163,37 @@ Regras importantes:
 
 ### 4.4 Sinalizar (mineradores)
 
-Adicione o id da proposta à configuração do nó e reinicie:
+Há três formas equivalentes; todas fazem os blocos minerados por este nó ligarem
+o `signal_bit` da proposta.
+
+**Nó instalado pelo instalador (`thecoin`):**
+
+```bash
+thecoin signals             # propostas que seus blocos apoiam + propostas abertas
+sudo thecoin signal <id>    # passa a apoiar (grava em [mining] signal e reinicia o nó)
+sudo thecoin unsignal <id>  # deixa de apoiar
+```
+
+**Linha de comando do `thecoind`** (repetível; soma-se ao que está no arquivo de configuração):
+
+```bash
+thecoind --miner-address tc1... --signal b591295daf4fd9f4eaa12bf428d25bcd02ec893751bbc8f4ddac8d8500fb39bb
+```
+
+**Arquivo de configuração:**
 
 ```toml
 # /etc/thecoin/thecoind.toml
 [mining]
-signal = ["7b8818aa9d00cf589963ce3386d93fc9a0873fbdea6f6ebd71ebbf45d8891eb4"]
+signal = ["b591295daf4fd9f4eaa12bf428d25bcd02ec893751bbc8f4ddac8d8500fb39bb"]
 ```
 
 ```bash
 sudo systemctl restart thecoind
 curl -s http://127.0.0.1:7334/api/v1/mining    # "signal_proposals" lista os ids
 ```
+
+Um id inválido (que não seja hex de 64 caracteres) impede o nó de iniciar.
 
 Cada bloco minerado enquanto a proposta está em votação conta a favor. Ids de
 propostas que não estão em votação são ignorados automaticamente. Blocos sem o

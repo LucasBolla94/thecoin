@@ -12,7 +12,7 @@
 #
 #  What it does:
 #   1. Pre-flight checks: OS/arch, systemd, RAM/disk, clock sync, firewall.
-#   2. Downloads the release binaries (thecoind + thecoin-wallet) and verifies
+#   2. Downloads the release binaries (thecoind, thecoin-wallet, tccl) and verifies
 #      their SHA-256 checksum. Falls back to building from source.
 #   3. Creates the unprivileged system user `thecoin` and /var/lib/thecoin.
 #   4. Creates a wallet for the mining rewards (or uses --miner-address).

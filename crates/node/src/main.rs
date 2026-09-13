@@ -162,7 +162,8 @@ fn print_params(network: Network) {
             h as f64 * p.target_block_time as f64 / 31_557_600.0
         );
     }
-    println!("  coinbase maturity   {} blocks", p.coinbase_maturity);
+    println!("  reward cooldown     25% after {} blocks, the rest after {} blocks", p.coinbase_maturity, p.reward_unlock_blocks);
+    println!("  max reorganization  {} blocks", p.max_reorg_depth);
     println!("  PoW                 CoinHash (Argon2id, {} KiB, t={})", p.pow.mem_kib, p.pow.iterations);
     println!("  ports               p2p {} / api {}", p.default_p2p_port, p.default_rpc_port);
     println!("  address prefix      {}1...", p.hrp());

@@ -8,7 +8,8 @@ compatibilidade (novas mensagens no fim do enum, bits de serviço).
 ## 1. Transporte e framing
 
 * TCP, `TCP_NODELAY` ligado. Porta padrão: **7333** (mainnet), 17333 (testnet), 27333 (regtest).
-* Sem criptografia na v0.1 (dados são públicos e autenticados por PoW/assinaturas). Transporte cifrado (estilo BIP‑324) está no roadmap.
+* Sem criptografia na v0.2 (dados são públicos e autenticados por PoW/assinaturas). Transporte cifrado (estilo BIP‑324) está no roadmap.
+* A versão do protocolo continua `1`, mas nós v0.1 não entendem as mensagens 13–16 (nem as regras de consenso da v0.2): as duas versões não formam a mesma rede.
 
 Cada mensagem é um frame:
 
@@ -53,6 +54,10 @@ Regras de rejeição (desconexão imediata, sem banimento):
 | 10 | `Block` | `Block` | bloco completo |
 | 11 | `Tx` | `Transaction` | transação |
 | 12 | `GetMempool` | — | pede um `Inv` do mempool do peer |
+| 13 | `CompactBlock` | `CompactBlock` | novo bloco anunciado como cabeçalho + ids curtos das transações (§7.1) |
+| 14 | `GetBlockTxs` | `block: Hash32`, `indexes: Vec<u32>` | pede as transações de um compact block que faltam no mempool |
+| 15 | `BlockTxs` | `block: Hash32`, `txs: Vec<Transaction>` | resposta a `GetBlockTxs`, na ordem dos índices pedidos |
+| 16 | `DoubleSpend` | `first: Transaction`, `second: Transaction` | alerta de gasto duplo: duas transações do mesmo remetente e nonce (§7.3) |
 
 ```rust
 struct VersionMsg {
@@ -61,7 +66,7 @@ struct VersionMsg {
     height: u64,          // altura do tip de quem envia
     tip: Hash32,
     services: u64,        // bits: 1 = ARCHIVE (tem todos os blocos), 2 = INDEX (índice de endereços)
-    user_agent: String,   // ex. "/thecoind:0.1.0/" (≤ 256 bytes)
+    user_agent: String,   // ex. "/thecoind:0.2.0/" (≤ 256 bytes)
     listen_port: u16,     // porta em que aceita conexões (0 = nenhuma)
     nonce: u64,           // aleatório; detecta conexão consigo mesmo
     timestamp: u64,
@@ -71,7 +76,20 @@ enum InvKind { Tx = 0, Block = 1 }
 struct InvItem { kind: InvKind, hash: Hash32 }     // hash = txid ou block hash
 
 struct NetAddr { ip: [u8; 16], port: u16 }        // IPv6; IPv4 como ::ffff:a.b.c.d
+
+struct CompactBlock {
+    header: BlockHeader,              // 180 bytes (PROTOCOL.md §6)
+    short_ids: Vec<[u8; 6]>,          // short_id(block_hash, txid) de cada transação, na ordem do bloco
+    prefilled: Vec<(u32, Transaction)>, // transações enviadas inteiras: (índice, tx); o nó de referência envia vazio
+}
+
+short_id(block_hash, txid) = tagged_hash("short-id", block_hash(32) || txid(32))[0..6]
 ```
+
+Codificação Borsh de exemplo: `CompactBlock` = `0x0d || header(180) || u32_le(n) || n × 6 bytes || u32_le(k) || k × (u32_le(índice) || Transaction)`;
+`GetBlockTxs` = `0x0e || block(32) || u32_le(m) || m × u32_le(índice)`;
+`BlockTxs` = `0x0f || block(32) || u32_le(m) || m × Transaction`;
+`DoubleSpend` = `0x10 || Transaction || Transaction` (`Box<T>` é codificado como `T`).
 
 ## 3. Limites
 
@@ -82,6 +100,9 @@ struct NetAddr { ip: [u8; 16], port: u16 }        // IPv6; IPv4 como ::ffff:a.b.
 | endereços em `Addr` | 1 000 |
 | entradas no locator | 64 |
 | hashes por resposta a `GetBlocks` | 500 |
+| `short_ids` em `CompactBlock` / índices em `GetBlockTxs` | 65 536 (e `prefilled` ≤ `short_ids`) |
+| compact blocks aguardando transações, por peer | 8 (o mais antigo é descartado) |
+| alertas de gasto duplo guardados | 512, no máximo 1 por (remetente, nonce) |
 | `user_agent` | 256 bytes |
 | fila de escrita por peer | 4 096 frames **e** 32 MiB de dados não enviados (acima disso o peer é desconectado) |
 | envio de blocos em massa (`GetData`) | pausa enquanto houver > 4 MiB na fila do peer; após 60 s sem o peer ler, desconecta |
@@ -180,18 +201,84 @@ anúncios de transações (`Inv` de tx) são ignorados.
 
 ## 7. Relay
 
-### Blocos
-Quando o tip muda, o nó envia `Inv([tip])` a todos os peers prontos que não
-conhecem o hash, exceto a origem — se o bloco foi minerado localmente ou se o
-timestamp do tip está a menos de 1 hora (evita inundar a rede durante o sync).
-Quem recebe pede com `GetData`; lacunas são resolvidas pelo fluxo de órfãos.
+### 7.1 Blocos (compact blocks)
 
-### Transações
+Quando o tip muda — se o bloco foi minerado localmente ou se o timestamp do tip
+está a menos de 1 hora (evita inundar a rede durante o sync) — o nó envia o
+novo bloco como `CompactBlock` (cabeçalho + um id curto de 6 bytes por
+transação) a todos os peers prontos que não conhecem o hash, exceto a origem.
+Se o último bloco conectado não for o próprio tip, envia `Inv([tip])` como antes.
+
+Os ids curtos usam o **hash do bloco como sal** (`tagged_hash("short-id", …)`),
+então um atacante não consegue pré-calcular colisões para um bloco que ainda
+não existe. Quem recebe:
+
+```mermaid
+sequenceDiagram
+    participant A as Nó que minerou/recebeu
+    participant B as Peer
+    A->>B: CompactBlock(header, short_ids)
+    Note over B: 1. cabeçalho já conhecido → ignora<br/>2. valida contexto (altura, MTP, alvo LWMA, checkpoints) e CoinHash<br/>3. preenche slots com transações do mempool
+    alt faltam transações
+        B->>A: GetBlockTxs(block, índices)
+        A->>B: BlockTxs(block, txs)
+    end
+    Note over B: monta o bloco; tx_root confere → pipeline normal de blocos<br/>tx_root não confere → GetData(Block) (bloco inteiro)
+```
+
+1. Marca o hash como conhecido pelo peer.
+2. **Valida o cabeçalho antes de alocar qualquer coisa:** alvo acima de
+   `pow_limit` → inválido; cabeçalho já armazenado → ignora; pai desconhecido →
+   pede o bloco inteiro com `GetData` (fluxo de órfãos); bloco mais de 720 blocos
+   abaixo do tip → ignora; checagens de contexto de cabeçalho
+   ([PROTOCOL.md §19.1](PROTOCOL.md#191-checagens-de-cabeçalho--antes-de-aplicar-o-corpo)
+   itens 1–5) e **prova de trabalho**. Cabeçalho inválido → 100 pontos de mau
+   comportamento, exceto *timestamp* no futuro (possível diferença de relógio: ignorado sem punição).
+3. Coloca as transações `prefilled` nos seus índices e procura as demais no
+   mempool comparando `short_id(hash, txid)`.
+4. Se não falta nada, monta o bloco. Senão guarda o compact block pendente (até 8
+   por peer) e envia `GetBlockTxs` com os índices que faltam.
+5. `GetBlockTxs`: quem recebe responde `BlockTxs` com as transações nesses índices
+   do bloco armazenado; índice fora do intervalo é erro (20 pontos); bloco
+   desconhecido → `NotFound([Block])`.
+6. `BlockTxs`: preenche os slots vazios na ordem; se sobrar ou faltar
+   transação, pede o bloco inteiro (`GetData`).
+7. Bloco montado: se o `tx_root` não confere (colisão de id curto ou transação
+   errada), pede o bloco inteiro; senão o bloco entra no mesmo pipeline dos
+   blocos completos (verificação de PoW e processamento em ordem).
+
+Blocos completos continuam sendo servidos por `GetData` (sincronização, órfãos e fallback).
+
+### 7.2 Transações
+
 Transação aceita no mempool (via P2P ou API) é anunciada com `Inv` a todos os
 peers prontos que não a conhecem, exceto a origem. Itens anunciados/recebidos
 são marcados como conhecidos por peer (cache de 8 192).
 
-### `GetData`
+### 7.3 Alertas de gasto duplo (`DoubleSpend`)
+
+Quando o mempool recusa uma transação porque já existe outra **não
+substituível** do mesmo remetente com o mesmo nonce (via API ou `Tx` de um
+peer), o nó registra o conflito (`GET /api/v1/alerts`, campo `conflict` em
+`/api/v1/tx`) e envia `DoubleSpend { first: pendente, second: nova }` a todos os
+peers prontos, exceto a origem. Só o **primeiro** conflito de cada
+(remetente, nonce) é registrado e anunciado.
+
+Ao receber `DoubleSpend`, o nó:
+
+1. exige mesmo remetente, mesmo nonce, txids diferentes e as duas transações
+   válidas sem estado (formato, flags, limites e **assinaturas**) — senão é erro
+   de mensagem (20 pontos);
+2. ignora silenciosamente se a conta do remetente não existe, se
+   `balance < min(fee_1, fee_2)` ou se o nonce não está em
+   `[nonce da conta, nonce da conta + 32)` (chaves novas não custam nada e poderiam inundar a rede);
+3. registra o conflito (no máximo um por remetente e nonce, 512 no total) e,
+   se for novo, retransmite a todos os outros peers.
+
+Lojistas que aceitam pagamentos sem confirmação recebem o aviso em segundos,
+mesmo que a segunda transação nunca chegue ao seu mempool.
+
+### 7.4 `GetData`
 Blocos são servidos do banco (qualquer bloco armazenado com corpo); transações
 do mempool. Itens ausentes voltam em `NotFound`. Nós podados não servem blocos
 antigos (não anunciam o bit `ARCHIVE`).
@@ -201,11 +288,12 @@ antigos (não anunciam o bit `ARCHIVE`).
 | Evento | Pontos |
 |---|---|
 | bloco inválido (consenso) | 100 |
+| cabeçalho de `CompactBlock` inválido (contexto ou PoW) | 100 |
 | bloco com timestamp além da deriva futura | 0 (pode ser apenas diferença de relógio; o bloco é recusado sem punir o peer) |
 | peer de sync sem progresso por 90 s | 50 (e desconexão) |
 | bloco com PoW inválida | 100 |
 | transação com assinatura inválida | 10 |
-| erro ao tratar mensagem (ex.: `Version` duplicado) | 20 |
+| erro ao tratar mensagem (ex.: `Version` duplicado, `DoubleSpend` inválido, índice fora do intervalo em `GetBlockTxs`) | 20 |
 
 Ao atingir **100 pontos** o peer é desconectado; se o IP for roteável
 (público), fica **banido por 24 h** (conexões de entrada recusadas e sem

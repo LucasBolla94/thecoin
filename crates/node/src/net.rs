@@ -424,7 +424,10 @@ pub fn misbehave(node: &Arc<Node>, peer_id: u64, score: u32, reason: &str) {
 
 fn version_msg(node: &Node) -> Message {
     let tip = node.chain.tip();
-    let mut services = SERVICE_INDEX;
+    let mut services = 0;
+    if node.chain.options().address_index {
+        services |= SERVICE_INDEX;
+    }
     if node.chain.options().prune_keep.is_none() {
         services |= SERVICE_ARCHIVE;
     }
@@ -766,6 +769,10 @@ async fn handle_message(node: &Arc<Node>, peer: &Arc<Peer>, msg: Message, block_
                 && thecoin_core::execution::check_tx_stateless(node.params, &second).is_ok();
             if !valid {
                 bail!("invalid double-spend report");
+            }
+            // A replaceable transaction may legitimately be replaced (fee bump): not an alert.
+            if first.is_replaceable() || second.is_replaceable() {
+                return Ok(());
             }
             // Only a funded account's nonce that can still be spent is worth an
             // alert (fresh keys cost nothing, so they could flood the network).

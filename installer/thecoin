@@ -321,7 +321,7 @@ case "$command" in
   signal) cmd_signal add "$@" ;;
   unsignal) cmd_signal remove "$@" ;;
   uninstall) cmd_uninstall "$@" ;;
-  version|--version|-V) thecoind --version; thecoin-wallet --version ;;
+  version|--version|-V) thecoind --version; thecoin-wallet --version; if command -v tccl >/dev/null; then tccl --version; fi ;;
   help|--help|-h) cmd_help ;;
   *) cmd_help; exit 1 ;;
 esac

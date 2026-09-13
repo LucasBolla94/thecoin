@@ -38,7 +38,11 @@ pub enum MempoolError {
     SenderLimit,
     Full,
     ReplacementFeeTooLow,
-    NotReplaceable { existing: Hash32 },
+    /// `new_conflict` is true the first time this sender and nonce conflict (worth an alert).
+    NotReplaceable {
+        existing: Hash32,
+        new_conflict: bool,
+    },
     Storage(String),
 }
 
@@ -53,7 +57,7 @@ impl std::fmt::Display for MempoolError {
             MempoolError::SenderLimit => write!(f, "too many pending transactions from this sender"),
             MempoolError::Full => write!(f, "mempool full and fee rate too low"),
             MempoolError::ReplacementFeeTooLow => write!(f, "replacement needs a fee at least 25% higher"),
-            MempoolError::NotReplaceable { existing } => {
+            MempoolError::NotReplaceable { existing, .. } => {
                 write!(f, "a transaction with this nonce is already pending ({existing}) and it is not replaceable — double spend attempt recorded")
             }
             MempoolError::Storage(e) => write!(f, "storage error: {e}"),
@@ -286,8 +290,8 @@ impl Mempool {
         if let Some(pos) = pending.iter().position(|p| p.body.nonce == tx.body.nonce) {
             let old = pending[pos].clone();
             if !old.is_replaceable() {
-                self.record_conflict(&old, &tx);
-                return Err(MempoolError::NotReplaceable { existing: old.txid() });
+                let new_conflict = self.record_conflict(&old, &tx);
+                return Err(MempoolError::NotReplaceable { existing: old.txid(), new_conflict });
             }
             if tx.body.fee < old.body.fee.saturating_add(old.body.fee / 4).max(old.body.fee + 1) {
                 return Err(MempoolError::ReplacementFeeTooLow);
@@ -313,16 +317,22 @@ impl Mempool {
 
         let weight = tx.weight();
         let fee_rate = tx.body.fee / weight.max(1);
+        // The replaced transaction leaves first, so its space counts for the replacement.
+        let removed = replaced.and_then(|old| self.remove(&old));
         if self.bytes + size > self.max_bytes && !self.evict_for(fee_rate, size) {
+            if let Some(old) = removed {
+                self.insert_entry(old);
+            }
             return Err(MempoolError::Full);
         }
-        if let Some(old) = replaced {
-            self.remove(&old);
-        }
-        self.bytes += size;
-        self.by_sender.entry(sender).or_default().insert(tx.body.nonce, txid);
-        self.entries.insert(txid, Entry { tx, txid, size, weight, fee_rate, sender, added: Instant::now() });
+        self.insert_entry(Entry { tx, txid, size, weight, fee_rate, sender, added: Instant::now() });
         Ok(txid)
+    }
+
+    fn insert_entry(&mut self, e: Entry) {
+        self.bytes += e.size;
+        self.by_sender.entry(e.sender).or_default().insert(e.tx.body.nonce, e.txid);
+        self.entries.insert(e.txid, e);
     }
 
     /// Evicts lowest fee-rate tail transactions until `size` bytes fit.
