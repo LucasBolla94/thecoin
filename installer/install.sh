@@ -220,7 +220,10 @@ fi
 install -m 0755 "$SRC_DIR/thecoind" "$BIN_DIR/thecoind"
 install -m 0755 "$SRC_DIR/thecoin-wallet" "$BIN_DIR/thecoin-wallet"
 # TCCL developer tool (check, simulate and test smart contracts locally).
-if [ -f "$SRC_DIR/tccl" ]; then install -m 0755 "$SRC_DIR/tccl" "$BIN_DIR/tccl"; fi
+if [ -f "$SRC_DIR/tccl" ]; then
+  install -m 0755 "$SRC_DIR/tccl" "$BIN_DIR/tccl"
+  ok "installed the TCCL contract tool: $("$BIN_DIR/tccl" --version)"
+fi
 ok "installed $("$BIN_DIR/thecoind" --version) and $("$BIN_DIR/thecoin-wallet" --version)"
 
 # ------------------------------------------------ helper + uninstaller ----
