@@ -7,6 +7,20 @@ use crate::lexer::{tokenize, Tok, Token};
 
 /// Maximum nesting of expressions and blocks.
 pub const MAX_NESTING: usize = 32;
+/// Most operators of one precedence level chained in one expression.
+pub const MAX_CHAIN: usize = 64;
+/// Deepest expression tree accepted.
+pub const MAX_EXPR_DEPTH: usize = 128;
+
+fn expr_depth(e: &Expr) -> usize {
+    1 + match e {
+        Expr::Int(..) | Expr::Bool(..) | Expr::Text(..) | Expr::Bytes(..) | Expr::Name(..) => 0,
+        Expr::List(items, _) | Expr::Call(_, items, _) => items.iter().map(expr_depth).max().unwrap_or(0),
+        Expr::Unary(_, x, _) => expr_depth(x),
+        Expr::Binary(_, l, r, _) | Expr::Index(l, r, _) => expr_depth(l).max(expr_depth(r)),
+        Expr::Method(x, _, args, _) => args.iter().map(expr_depth).max().unwrap_or(0).max(expr_depth(x)),
+    }
+}
 
 struct Parser {
     toks: Vec<Token>,
@@ -129,6 +143,13 @@ impl Parser {
     }
 
     fn type_expr(&mut self) -> PResult<TypeExpr> {
+        self.enter()?;
+        let t = self.type_expr_inner();
+        self.leave();
+        t
+    }
+
+    fn type_expr_inner(&mut self) -> PResult<TypeExpr> {
         let (name, pos) = self.ident("type")?;
         match name.as_str() {
             "list" => {
@@ -399,12 +420,35 @@ impl Parser {
         self.enter()?;
         let r = self.or_expr();
         self.leave();
-        r
+        let e = r?;
+        // Operator chains build left-deep trees without recursing here, but the
+        // checker and the VM walk trees recursively: bound the depth.
+        if expr_depth(&e) > MAX_EXPR_DEPTH {
+            return Err(CompileError::new(
+                e.pos(),
+                format!("expression too deeply nested (max depth {MAX_EXPR_DEPTH}); split it with 'let'"),
+            ));
+        }
+        Ok(e)
+    }
+
+    /// Counts one more operator in a chain like `a + b + c`.
+    fn chain_step(&mut self, count: &mut usize) -> PResult<()> {
+        *count += 1;
+        if *count > MAX_CHAIN {
+            return Err(CompileError::new(
+                self.pos(),
+                format!("too many operators in one expression (max {MAX_CHAIN}); split it with 'let'"),
+            ));
+        }
+        Ok(())
     }
 
     fn or_expr(&mut self) -> PResult<Expr> {
         let mut l = self.and_expr()?;
+        let mut count = 0;
         while self.check(&Tok::Or) {
+            self.chain_step(&mut count)?;
             let pos = self.advance().pos;
             let r = self.and_expr()?;
             l = Expr::Binary(BinOp::Or, Box::new(l), Box::new(r), pos);
@@ -414,7 +458,9 @@ impl Parser {
 
     fn and_expr(&mut self) -> PResult<Expr> {
         let mut l = self.not_expr()?;
+        let mut count = 0;
         while self.check(&Tok::And) {
+            self.chain_step(&mut count)?;
             let pos = self.advance().pos;
             let r = self.not_expr()?;
             l = Expr::Binary(BinOp::And, Box::new(l), Box::new(r), pos);
@@ -454,12 +500,14 @@ impl Parser {
 
     fn add_expr(&mut self) -> PResult<Expr> {
         let mut l = self.mul_expr()?;
+        let mut count = 0;
         loop {
             let op = match self.peek() {
                 Tok::Plus => BinOp::Add,
                 Tok::Minus => BinOp::Sub,
                 _ => return Ok(l),
             };
+            self.chain_step(&mut count)?;
             let pos = self.advance().pos;
             let r = self.mul_expr()?;
             l = Expr::Binary(op, Box::new(l), Box::new(r), pos);
@@ -468,6 +516,7 @@ impl Parser {
 
     fn mul_expr(&mut self) -> PResult<Expr> {
         let mut l = self.unary_expr()?;
+        let mut count = 0;
         loop {
             let op = match self.peek() {
                 Tok::Star => BinOp::Mul,
@@ -475,6 +524,7 @@ impl Parser {
                 Tok::Percent => BinOp::Rem,
                 _ => return Ok(l),
             };
+            self.chain_step(&mut count)?;
             let pos = self.advance().pos;
             let r = self.unary_expr()?;
             l = Expr::Binary(op, Box::new(l), Box::new(r), pos);
@@ -613,6 +663,25 @@ fn double(x: int) -> int:
         let c = parse(src).unwrap();
         assert_eq!(c.name, "Bank");
         assert_eq!(c.items.len(), 8);
+    }
+
+    #[test]
+    fn hostile_nesting_is_rejected_without_overflow() {
+        let body = |e: String| format!("contract Deep\n\nview f() -> int:\n    return {e}\n");
+        // Long operator chains, deep parentheses, nested types, unary chains.
+        let cases = [
+            body(format!("1{}", "+1".repeat(20_000))),
+            body(format!("{}1{}", "(".repeat(10_000), ")".repeat(10_000))),
+            body(format!("{}1", "-".repeat(10_000))),
+            format!("contract Deep\nstate x: {}int{}\n", "list[".repeat(7_000), "]".repeat(7_000)),
+            body((0..30).fold("1".to_string(), |e, _| format!("({e}{})", "+1".repeat(60)))),
+        ];
+        for src in cases {
+            let src2 = src.clone();
+            let result = std::thread::Builder::new().stack_size(1024 * 1024).spawn(move || parse(&src2).is_err()).unwrap().join();
+            assert_eq!(result.ok(), Some(true), "must fail cleanly: {}", &src[..60.min(src.len())]);
+        }
+        assert!(parse(&body(format!("1{}", "+1".repeat(MAX_CHAIN)))).is_ok());
     }
 
     #[test]

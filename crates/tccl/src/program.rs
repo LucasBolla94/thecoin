@@ -41,6 +41,9 @@ impl std::str::FromStr for Type {
 
     /// Parses the textual form produced by `Display` (`int`, `list[bytes]`, `map[address, int]`).
     fn from_str(s: &str) -> Result<Type, String> {
+        if s.matches('[').count() > crate::parser::MAX_NESTING {
+            return Err(format!("type nested too deeply: '{s}'"));
+        }
         let s = s.trim();
         Ok(match s {
             "int" => Type::Int,
@@ -92,7 +95,11 @@ impl fmt::Display for Type {
 }
 
 /// A runtime value.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, serde::Serialize, serde::Deserialize)]
+///
+/// Values arrive from the network inside transactions, so decoding is
+/// hand-written with a nesting limit (see [`MAX_VALUE_DEPTH`]); the encoding is
+/// the standard Borsh enum layout.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, serde::Serialize, serde::Deserialize)]
 pub enum Value {
     Int(i128),
     Bool(bool),
@@ -101,6 +108,42 @@ pub enum Value {
     Address([u8; 20]),
     List(Vec<Value>),
     Unit,
+}
+
+/// Deepest list nesting accepted when decoding a [`Value`]. Types nest at most
+/// [`crate::parser::MAX_NESTING`] levels, so every value a program can hold fits.
+pub const MAX_VALUE_DEPTH: usize = 64;
+
+impl BorshDeserialize for Value {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        read_value(reader, 0)
+    }
+}
+
+fn read_value<R: std::io::Read>(reader: &mut R, depth: usize) -> std::io::Result<Value> {
+    let invalid = |msg: String| std::io::Error::new(std::io::ErrorKind::InvalidData, msg);
+    let tag = u8::deserialize_reader(reader)?;
+    Ok(match tag {
+        0 => Value::Int(i128::deserialize_reader(reader)?),
+        1 => Value::Bool(bool::deserialize_reader(reader)?),
+        2 => Value::Text(String::deserialize_reader(reader)?),
+        3 => Value::Bytes(Vec::<u8>::deserialize_reader(reader)?),
+        4 => Value::Address(<[u8; 20]>::deserialize_reader(reader)?),
+        5 => {
+            if depth >= MAX_VALUE_DEPTH {
+                return Err(invalid(format!("value nested deeper than {MAX_VALUE_DEPTH} lists")));
+            }
+            let len = u32::deserialize_reader(reader)? as usize;
+            // Never trust the length for allocation: every item needs at least one byte.
+            let mut items = Vec::with_capacity(len.min(1024));
+            for _ in 0..len {
+                items.push(read_value(reader, depth + 1)?);
+            }
+            Value::List(items)
+        }
+        6 => Value::Unit,
+        other => return Err(invalid(format!("unexpected value tag {other}"))),
+    })
 }
 
 impl Value {
@@ -304,5 +347,58 @@ impl Program {
                 returns: f.ret.to_string(),
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn value_decoding_matches_borsh_layout() {
+        let v = Value::List(vec![
+            Value::Int(-5),
+            Value::Bool(true),
+            Value::Text("hé".into()),
+            Value::Bytes(vec![1, 2]),
+            Value::Address([7; 20]),
+            Value::List(vec![Value::Unit]),
+        ]);
+        let bytes = borsh::to_vec(&v).unwrap();
+        assert_eq!(bytes[0], 5, "List is variant 5");
+        assert_eq!(Value::try_from_slice(&bytes).unwrap(), v);
+        assert!(Value::try_from_slice(&[7]).is_err(), "unknown tag");
+        assert!(Value::try_from_slice(&[1, 2]).is_err(), "bool must be 0 or 1");
+        assert!(Value::try_from_slice(&[5, 0xff, 0xff, 0xff, 0xff]).is_err(), "huge length without data");
+    }
+
+    fn nested(depth: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for _ in 0..depth {
+            bytes.push(5u8);
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+        }
+        bytes.push(6);
+        bytes
+    }
+
+    #[test]
+    fn deeply_nested_values_are_rejected_without_recursion() {
+        assert!(Value::try_from_slice(&nested(MAX_VALUE_DEPTH)).is_ok());
+        assert!(Value::try_from_slice(&nested(MAX_VALUE_DEPTH + 1)).is_err());
+        // Hostile input from the network must not overflow a small stack.
+        std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(|| assert!(Value::try_from_slice(&nested(200_000)).is_err()))
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn type_parsing_is_bounded() {
+        let deep = format!("{}int{}", "list[".repeat(10_000), "]".repeat(10_000));
+        assert!(deep.parse::<Type>().is_err());
+        assert!("list[map[address, int]]".parse::<Type>().is_ok());
     }
 }
