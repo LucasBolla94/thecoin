@@ -394,7 +394,8 @@ fn governance_without_miner_support_is_rejected_and_no_quorum_burns() {
 #[test]
 fn vote_in_same_block_as_proposal() {
     let (mut c, mut miner) = funded();
-    let spec = ProposalSpec { title: "Same-block vote".into(), url: String::new(), content_hash: Hash32::ZERO, action: ProposalAction::Text };
+    let spec =
+        ProposalSpec { title: "Same-block vote".into(), url: String::new(), content_hash: Hash32::ZERO, action: ProposalAction::Text };
     let pid = proposal_id(&miner.addr, miner.nonce);
     let propose = miner.tx(TxAction::Propose { proposal: spec });
     let vote = miner.tx(TxAction::Vote { proposal: pid, choice: VoteChoice::Yes, weight: COIN });

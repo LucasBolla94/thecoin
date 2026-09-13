@@ -90,7 +90,11 @@ async fn competing_miners_converge_via_reorg() {
 
     let dx = tempfile::tempdir().unwrap();
     let dy = tempfile::tempdir().unwrap();
-    let x = Node::start(config(dx.path(), Some(mx), vec![])).await.unwrap();
+    // X gets more hashrate: with trivial regtest PoW both miners would otherwise
+    // produce blocks at exactly the same pace and stay tied (first-seen wins).
+    let mut cx = config(dx.path(), Some(mx), vec![]);
+    cx.mining.threads = 2;
+    let x = Node::start(cx).await.unwrap();
     let y = Node::start(config(dy.path(), Some(my), vec![])).await.unwrap();
     // Two independent chains.
     wait_until("both mine separately", Duration::from_secs(60), || x.chain.tip().height >= 6 && y.chain.tip().height >= 6).await;
