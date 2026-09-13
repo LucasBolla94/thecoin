@@ -367,16 +367,23 @@ fn created_program(t: &Transaction) -> Option<Address> {
     }
 }
 
+/// View of a transaction waiting in the mempool.
+fn pending_view(pool: &crate::mempool::Mempool, tx: &Transaction, n: thecoin_core::Network) -> TxView {
+    let mut v = tx_view(tx, n);
+    v.in_mempool = true;
+    v.created = created_id(tx);
+    v.program = created_program(tx).map(|a| a.encode(n));
+    v.conflict = pool.conflict_for(&v.txid);
+    v
+}
+
 fn find_tx(node: &Node, txid: &Hash32) -> Result<Option<TxView>, ApiErr> {
     let n = node.params.network;
-    let pending = node.mempool.lock().get(txid).cloned();
-    if let Some(tx) = pending {
-        let mut v = tx_view(&tx, n);
-        v.in_mempool = true;
-        v.created = created_id(&tx);
-        v.program = created_program(&tx).map(|a| a.encode(n));
-        v.conflict = node.mempool.lock().conflict_for(txid);
-        return Ok(Some(v));
+    {
+        let pool = node.mempool.lock();
+        if let Some(tx) = pool.get(txid) {
+            return Ok(Some(pending_view(&pool, tx, n)));
+        }
     }
     let r = node.chain.read()?;
     let Some((height, pos)) = r.tx_location(txid)? else { return Ok(None) };
@@ -537,8 +544,8 @@ async fn program_view(
 
 #[derive(Deserialize)]
 struct SecurityQuery {
-    /// Amount in motes.
-    amount: u64,
+    /// Amount in motes (validated in the handler so errors are JSON).
+    amount: Option<String>,
 }
 
 /// Recommended confirmations: an attacker rewriting N blocks gives up about N
@@ -546,10 +553,17 @@ struct SecurityQuery {
 /// such that the rewards at stake are at least twice the payment, never less
 /// than 1 and never more than the maximum reorganization depth.
 async fn security(State(node): State<AppState>, Query(q): Query<SecurityQuery>) -> ApiResult<SecurityView> {
+    let amount: u64 = q
+        .amount
+        .as_deref()
+        .ok_or_else(|| bad("query parameter 'amount' (motes) is required"))?
+        .trim()
+        .parse()
+        .map_err(|_| bad("amount must be a whole number of motes"))?;
     let tip = node.chain.tip();
     let p = node.params;
     let per_block = block_subsidy(p, tip.height + 1).max(1);
-    let wanted = (q.amount as u128 * 2).div_ceil(per_block as u128) as u64;
+    let wanted = (amount as u128 * 2).div_ceil(per_block as u128) as u64;
     let confirmations = wanted.clamp(1, p.max_reorg_depth);
     let hashrate = node.chain.network_hashrate(120).unwrap_or(0.0);
     let explanation = format!(
@@ -559,7 +573,7 @@ async fn security(State(node): State<AppState>, Query(q): Query<SecurityQuery>) 
         p.max_reorg_depth
     );
     Ok(Json(SecurityView {
-        amount: q.amount,
+        amount,
         confirmations,
         minutes: confirmations * p.target_block_time / 60,
         value_per_block: per_block,
@@ -621,10 +635,9 @@ async fn address_txs(State(node): State<AppState>, Path(addr): Path<String>, Que
             let n = node.params.network;
             let mut out: Vec<TxView> = Vec::new();
             if cursor.is_none() {
-                for tx in node.mempool.lock().sender_txs(&a) {
-                    let mut v = tx_view(&tx, n);
-                    v.in_mempool = true;
-                    out.push(v);
+                let pool = node.mempool.lock();
+                for tx in pool.sender_txs(&a) {
+                    out.push(pending_view(&pool, &tx, n));
                 }
             }
             let r = node.chain.read()?;
@@ -716,16 +729,7 @@ async fn gov_params(State(node): State<AppState>) -> ApiResult<serde_json::Value
 async fn mempool(State(node): State<AppState>) -> ApiResult<serde_json::Value> {
     let m = node.mempool.lock();
     let n = node.params.network;
-    let txs: Vec<TxView> = m
-        .txids(100)
-        .iter()
-        .filter_map(|id| m.get(id))
-        .map(|t| {
-            let mut v = tx_view(t, n);
-            v.in_mempool = true;
-            v
-        })
-        .collect();
+    let txs: Vec<TxView> = m.txids(100).iter().filter_map(|id| m.get(id)).map(|t| pending_view(&m, t, n)).collect();
     Ok(Json(serde_json::json!({ "count": m.len(), "bytes": m.bytes(), "txs": txs })))
 }
 

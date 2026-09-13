@@ -5,7 +5,8 @@
 
   async function refresh() {
     try {
-      var s = await TC.api("/status");
+      var res = await Promise.all([TC.api("/status"), TC.api("/fees").catch(function () { return null; })]);
+      var s = res[0], fees = res[1];
       var sup = s.supply;
       $("s-height").textContent = TC.fmtInt(s.height);
       $("s-tip").textContent = "último bloco " + TC.timeAgo(s.tip_timestamp);
@@ -23,7 +24,10 @@
       $("s-halving-eta").textContent = "faltam " + TC.fmtInt(left) + " blocos ≈ " + TC.fmtDuration(left * sup.target_block_time);
       $("s-peers").textContent = TC.fmtInt(s.peers);
       $("s-mempool").textContent = TC.fmtInt(s.mempool_txs) + " tx no mempool" + (s.syncing ? " · sincronizando" : "");
-      $("s-fee").textContent = TC.fmtInt(s.params.min_fee_per_byte) + " motes";
+      if (fees) {
+        $("s-fee").textContent = TC.fmtTCN(fees.typical_transfer_fee);
+        $("s-fee-sub").textContent = "transferência de 160 bytes · congestionamento " + TC.fmtMultiplier(fees.congestion_bp);
+      }
       $("live-dot").classList.add("on");
       $("live-updated").textContent = s.network + " · atualizado " + new Date().toLocaleTimeString("pt-BR");
       $("live-error").hidden = true;

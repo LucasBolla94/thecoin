@@ -183,7 +183,9 @@ impl Simulator {
         let h = blake3::hash(&[&deployer[..], &self.nonce.to_le_bytes()].concat());
         let addr = hex::encode(&h.as_bytes()[..20]);
         self.contracts.insert(addr.clone(), SimContract { source: source.to_string(), program: Some(program), storage: BTreeMap::new() });
-        let r = self.run(&addr, Mode::Deploy, "init", deployer, args, value);
+        let mut r = self.run(&addr, Mode::Deploy, "init", deployer, args, value);
+        // On-chain deployments also pay for compiling the source.
+        r.fuel_used += source.len() as u64 * vm::fuel::COMPILE_PER_BYTE;
         if r.result.is_err() {
             self.contracts.remove(&addr);
         }

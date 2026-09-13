@@ -18,6 +18,7 @@
       <a href="download.html">Instalar</a>
       <a href="explorer.html">Explorer</a>
       <a href="governance.html">Governança</a>
+      <a href="tccl.html">TCCL</a>
       <a href="docs.html">Desenvolvedores</a>
     </nav>
   </div>
@@ -36,10 +37,10 @@
         <li><strong>Mineradores</strong>: a fração de blocos que sinalizaram apoio durante a votação alcança o mínimo exigido.</li>
       </ol>
       <p class="muted">Aprovada, a mudança é ativada automaticamente depois do <em>atraso de ativação</em> — tempo para todos atualizarem. O depósito da proposta volta ao autor se houver quórum; sem quórum ele é queimado (anti-spam).</p>
-      <p class="muted" style="margin:0">A governança altera apenas parâmetros dentro de limites fixos. <strong>O teto de 50 milhões, a emissão e o algoritmo de PoW nunca podem ser mudados por votação.</strong></p>
+      <p class="muted" style="margin:0">A governança altera apenas parâmetros dentro de limites fixos (taxas, depósito de armazenamento, limites de bloco, regras de votação). <strong>O teto de 50 milhões, a emissão e o algoritmo de PoW nunca podem ser mudados por votação.</strong></p>
     </div>
     <div class="card">
-      <h3>Comandos</h3>
+      <h3>Detentores: votar e propor</h3>
       <pre><code># listar e ver propostas
 thecoin-wallet gov list
 thecoin-wallet gov show &lt;id&gt;
@@ -49,28 +50,52 @@ thecoin-wallet gov vote &lt;id&gt; yes 150
 thecoin-wallet gov vote &lt;id&gt; no 20
 thecoin-wallet gov vote &lt;id&gt; abstain 5
 
-# propor mudança de parâmetro
+# propor mudança de parâmetro (valores em motes ou bp)
 thecoin-wallet gov propose \
-  --title "Taxa mínima de 20 motes/byte" \
-  --url https://the-coin.cloud/propostas/taxa-20 \
+  --title "Taxa por kB de 0,0002 TCN" \
+  --url https://the-coin.cloud/propostas/taxa-kb \
   --text-file proposta.md \
-  --set-param min_fee_per_byte=20
+  --set-param fee_per_kb=20000
 
 # proposta de texto ou de atualização de software
 thecoin-wallet gov propose --title "Roadmap 2027" --text-file roadmap.md
-thecoin-wallet gov propose --title "Versão 0.2.0" \
-  --upgrade-version 0.2.0 --release-hash &lt;sha256&gt;</code></pre>
-      <p class="muted">Mineradores apoiam uma proposta adicionando o id em <code>thecoind.toml</code> e reiniciando o nó:</p>
-      <pre><code>[mining]
-signal = ["&lt;id da proposta&gt;"]</code></pre>
+thecoin-wallet gov propose --title "Versão 0.3.0" \
+  --upgrade-version 0.3.0 --release-hash &lt;sha256&gt;</code></pre>
     </div>
+  </div>
+
+  <h2 id="sinalizar">Validadores: sinalizar apoio</h2>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Com o instalador de uma linha</h3>
+      <p class="muted">Quem instalou o nó com <code>install.sh</code> usa o comando <code>thecoin</code>. Ele grava o id em <code>/etc/thecoin/thecoind.toml</code> e reinicia o nó; a partir daí cada bloco que você minerar sinaliza apoio.</p>
+      <pre><code>thecoin signals            # propostas abertas e as que você apoia
+sudo thecoin signal &lt;id&gt;     # apoiar uma proposta
+sudo thecoin unsignal &lt;id&gt;   # retirar o apoio</code></pre>
+    </div>
+    <div class="card">
+      <h3>Nó configurado à mão</h3>
+      <p class="muted">Passe o id na linha de comando (pode repetir) ou no arquivo de configuração:</p>
+      <pre><code>thecoind --signal &lt;id da proposta&gt;
+
+# ou em thecoind.toml
+[mining]
+signal = ["&lt;id da proposta&gt;"]</code></pre>
+      <p class="muted" style="margin:0">Só blocos minerados durante a votação contam. Um nó que não minera não sinaliza.</p>
+    </div>
+  </div>
+
+  <h2 id="roadmap">Roadmap de consenso</h2>
+  <div class="card">
+    <p class="muted">As próximas grandes mudanças — <strong>PoW → híbrido PoW/PoS → PoS</strong> — também passam por aqui: cada fase só é ativada por uma proposta <code>software_upgrade</code> aprovada pelos detentores <strong>e</strong> sinalizada pelos mineradores, e só depois de alturas mínimas e testes públicos.</p>
+    <p style="margin:0"><a class="btn btn-small" href="index.html#roadmap">Resumo das 3 fases</a> <a class="btn btn-small" data-repo-link="/blob/main/docs/ROADMAP.md" href="#">ROADMAP.md completo</a></p>
   </div>
 </main>
 
 <footer class="site-footer">
   <div class="wrap">
     <span>The Coin · governança on-chain</span>
-    <span><a data-repo-link="/blob/main/docs/GOVERNANCE.md" href="#">GOVERNANCE.md</a> · <a href="explorer.html">Explorer</a></span>
+    <span><a data-repo-link="/blob/main/docs/GOVERNANCE.md" href="#">GOVERNANCE.md</a> · <a data-repo-link="/blob/main/docs/ROADMAP.md" href="#">ROADMAP.md</a> · <a href="explorer.html">Explorer</a></span>
   </div>
 </footer>
 <script src="assets/config.js"></script>

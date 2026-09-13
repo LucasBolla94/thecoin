@@ -13,26 +13,44 @@
     rejected: ["Rejeitada", "bad"],
   };
 
+  /* [label, unit, short explanation] — names match GET /governance/params. */
   var PARAM_INFO = {
-    max_block_bytes: ["Tamanho máximo do bloco", "bytes"],
-    min_fee_per_byte: ["Taxa mínima", "motes/byte"],
-    proposal_deposit: ["Depósito de proposta", "tcn"],
-    vote_period: ["Duração da votação", "blocks"],
-    quorum_bp: ["Quórum (detentores)", "bp"],
-    approval_bp: ["Aprovação dos detentores", "bp"],
-    miner_approval_bp: ["Aprovação dos mineradores", "bp"],
-    activation_delay: ["Atraso de ativação", "blocks"],
+    base_fee: ["Taxa base", "tcn", "cobrada de toda transação"],
+    fee_per_kb: ["Taxa por tamanho", "tcn_kb", "por 1.000 bytes da transação"],
+    fee_per_kfuel: ["Taxa por combustível", "tcn_kfuel", "por 1.000 unidades de combustível reservadas (contratos TCCL)"],
+    storage_deposit_per_kb: ["Depósito de armazenamento", "tcn_kb", "travado por kB de estado de contrato; devolvido quando o espaço é liberado"],
+    max_block_bytes: ["Tamanho máximo do bloco", "bytes", "limite de bytes por bloco"],
+    max_block_fuel: ["Combustível máximo do bloco", "fuel", "soma dos max_fuel dos contratos em um bloco"],
+    proposal_deposit: ["Depósito de proposta", "tcn", "devolvido se houver quórum; queimado se não houver"],
+    vote_period: ["Duração da votação", "blocks", ""],
+    quorum_bp: ["Quórum (detentores)", "bp", "votos ÷ oferta circulante"],
+    approval_bp: ["Aprovação dos detentores", "bp", "sim ÷ (sim + não)"],
+    miner_approval_bp: ["Aprovação dos mineradores", "bp", "blocos que sinalizaram ÷ blocos da votação"],
+    activation_delay: ["Atraso de ativação", "blocks", "tempo para todos atualizarem"],
   };
 
   function fmtParam(name, v) {
     var unit = (PARAM_INFO[name] || [name, ""])[1];
+    if (v === null || v === undefined) return "—";
     switch (unit) {
       case "tcn": return TC.fmtTCN(v);
+      case "tcn_kb": return TC.fmtTCN(v) + " por kB";
+      case "tcn_kfuel": return TC.fmtTCN(v) + " por 1.000 de combustível";
       case "bp": return TC.bp(v);
       case "blocks": return TC.fmtInt(v) + (Number(v) === 1 ? " bloco" : " blocos") + " ≈ " + TC.fmtDuration(Number(v) * 60);
       case "bytes": return TC.fmtInt(v) + " bytes";
-      default: return TC.fmtInt(v) + " " + unit;
+      case "fuel": return TC.fmtInt(v) + " de combustível";
+      default: return TC.fmtInt(v) + (unit ? " " + unit : "");
     }
+  }
+
+  /** Raw value with its base unit, for tooltips/secondary text. */
+  function rawParam(name, v) {
+    var unit = (PARAM_INFO[name] || [name, ""])[1];
+    if (v === null || v === undefined) return "";
+    if (unit.indexOf("tcn") === 0) return TC.fmtInt(v) + " motes";
+    if (unit === "bp") return TC.fmtInt(v) + " bp";
+    return "";
   }
 
   function badge(status) {
@@ -145,13 +163,17 @@
       }).join("") + "</tbody></table></div>" : '<p class="faint">Nenhuma proposta encerrada ainda.</p>';
 
     html += '<div class="section-title"><h2>Parâmetros atuais</h2><span class="faint">' + TC.fmtInt(params.voting_proposals) + " em votação · " + TC.fmtInt(params.pending_activations) + " aguardando ativação</span></div>";
+    var names = Object.keys(PARAM_INFO).concat(Object.keys(params.current || {}).filter(function (k) { return !PARAM_INFO[k]; }));
     html += '<div class="table-wrap"><table><thead><tr><th>Parâmetro</th><th class="num">Valor atual</th><th class="num hide-sm">Mínimo</th><th class="num hide-sm">Máximo</th></tr></thead><tbody>' +
-      Object.keys(PARAM_INFO).map(function (k) {
-        var b = params.bounds[k] || ["—", "—"];
-        return "<tr><td>" + e(PARAM_INFO[k][0]) + ' <br><code>' + e(k) + '</code></td><td class="num">' + e(fmtParam(k, params.current[k])) +
+      names.filter(function (k) { return params.current && params.current[k] !== undefined; }).map(function (k) {
+        var info = PARAM_INFO[k] || [k, "", ""];
+        var b = (params.bounds && params.bounds[k]) || [null, null];
+        var raw = rawParam(k, params.current[k]);
+        return "<tr><td>" + e(info[0]) + '<br><code>' + e(k) + "</code>" + (info[2] ? '<br><span class="faint">' + e(info[2]) + "</span>" : "") +
+          '</td><td class="num">' + e(fmtParam(k, params.current[k])) + (raw ? '<br><span class="faint">' + e(raw) + "</span>" : "") +
           '</td><td class="num hide-sm">' + e(fmtParam(k, b[0])) + '</td><td class="num hide-sm">' + e(fmtParam(k, b[1])) + "</td></tr>";
       }).join("") + "</tbody></table></div>";
-    html += '<p class="faint">Mudanças só são aceitas dentro dos limites mínimo/máximo, que fazem parte do protocolo.</p>';
+    html += '<p class="faint">Mudanças só são aceitas dentro dos limites mínimo/máximo, que fazem parte do protocolo. 1 TCN = 100.000.000 motes; 100 bp = 1%.</p>';
     view.innerHTML = html;
   }
 
@@ -173,7 +195,10 @@
       "<dt>Bit de sinalização</dt><dd>" + e(p.signal_bit) + "</dd>" +
       "</dl></div>";
     if (p.status === "voting") {
-      html += '<div class="section-title"><h2>Votar nesta proposta</h2></div><pre><code>thecoin-wallet gov vote ' + e(p.id) + ' yes &lt;peso em TCN&gt;\n\n# mineradores: em thecoind.toml\n[mining]\nsignal = ["' + e(p.id) + '"]</code></pre>';
+      html += '<div class="section-title"><h2>Votar nesta proposta</h2></div><div class="grid grid-2">' +
+        '<div class="card"><h3>Detentores</h3><p class="muted">O peso fica travado até o fim da votação.</p><pre><code>thecoin-wallet gov vote ' + e(p.id) + ' yes &lt;peso em TCN&gt;</code></pre></div>' +
+        '<div class="card"><h3>Validadores (mineradores)</h3><p class="muted">Instalado com o instalador de uma linha:</p><pre><code>sudo thecoin signal ' + e(p.id) + "\nthecoin signals          # o que você apoia\nsudo thecoin unsignal " + e(p.id) + '</code></pre>' +
+        '<p class="muted" style="margin:0">Ou inicie o nó com <code>thecoind --signal ' + e(p.id) + "</code>.</p></div></div>";
     }
     view.innerHTML = html;
   }

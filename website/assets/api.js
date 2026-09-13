@@ -69,6 +69,15 @@
     throw lastErr || new ApiError(0, "API indisponível");
   }
 
+  /** POST a JSON body (read-only calls such as contract views). */
+  function post(path, body) {
+    return api(path, {
+      method: "POST",
+      headers: { "Accept": "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
   /* ---------------- formatting ---------------- */
 
   function groupThousands(s) {
@@ -164,6 +173,37 @@
     return (Number(v) / 100).toFixed(2).replace(".", ",") + "%";
   }
 
+  /** Basis points as a multiplier: 12500 → "1,25×". */
+  function fmtMultiplier(v) {
+    return (Number(v) / 10000).toFixed(2).replace(".", ",") + "×";
+  }
+
+  /** ceil(motes × bp / 10000), exact (BigInt) — how wallets apply a priority. */
+  function applyBp(motes, bpValue) {
+    var m = BigInt(motes), b = BigInt(bpValue);
+    return ((m * b + 9999n) / 10000n).toString();
+  }
+
+  /**
+   * User-typed TCN amount ("12.5", "12,5", "1.234,5") → motes as a decimal
+   * string, or null when invalid. Exact: never uses floating point.
+   */
+  function parseTCN(input) {
+    var s = String(input || "").trim().replace(/\s+/g, "");
+    if (s.indexOf(",") >= 0) s = s.replace(/\./g, "").replace(",", ".");
+    var m = /^(\d+)(?:\.(\d{0,8}))?$/.exec(s);
+    if (!m) return null;
+    var motes = BigInt(m[1]) * MOTES_PER_TCN + BigInt((m[2] || "").padEnd(8, "0") || "0");
+    if (motes > 18446744073709551615n) return null;
+    return motes.toString();
+  }
+
+  /** UTF-8 byte length of a string. */
+  function byteLength(s) {
+    s = String(s || "");
+    return typeof TextEncoder !== "undefined" ? new TextEncoder().encode(s).length : s.length;
+  }
+
   function isHash(s) { return /^[0-9a-fA-F]{64}$/.test(s); }
   function isAddress(s) { return /^(tc|tct|tcr)1[02-9ac-hj-np-z]{20,}$/i.test(s); }
 
@@ -197,6 +237,7 @@
 
   window.TC = {
     api: api,
+    post: post,
     ApiError: ApiError,
     bases: BASES,
     fmtTCN: fmtTCN,
@@ -211,6 +252,10 @@
     shortAddr: shortAddr,
     esc: esc,
     bp: bp,
+    fmtMultiplier: fmtMultiplier,
+    applyBp: applyBp,
+    parseTCN: parseTCN,
+    byteLength: byteLength,
     isHash: isHash,
     isAddress: isAddress,
   };

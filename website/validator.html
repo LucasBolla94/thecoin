@@ -18,6 +18,7 @@
       <a href="download.html">Instalar</a>
       <a href="explorer.html">Explorer</a>
       <a href="governance.html">Governança</a>
+      <a href="tccl.html">TCCL</a>
       <a href="docs.html">Desenvolvedores</a>
     </nav>
   </div>
@@ -30,10 +31,11 @@
   <h2>Do que você precisa</h2>
   <div class="grid grid-4" style="margin:16px 0 24px">
     <div class="card stat"><span class="label">Sistema</span><span class="value">Linux</span><span class="sub">x86_64 ou ARM64, com systemd (Ubuntu, Debian, Fedora…)</span></div>
-    <div class="card stat"><span class="label">CPU</span><span class="value">1 vCPU</span><span class="sub">2 ou mais para minerar melhor</span></div>
-    <div class="card stat"><span class="label">Memória</span><span class="value">1 GB</span><span class="sub">o instalador oferece criar swap se faltar</span></div>
-    <div class="card stat"><span class="label">Disco / rede</span><span class="value">5 GB</span><span class="sub">porta TCP 7333 aberta para a internet</span></div>
+    <div class="card stat"><span class="label">CPU</span><span class="value">1–2 vCPU</span><span class="sub">2 ou mais para minerar melhor</span></div>
+    <div class="card stat"><span class="label">Memória</span><span class="value">2–4 GB</span><span class="sub">funciona com 1 GB, mais devagar; o instalador cria 1 GB de swap se faltar</span></div>
+    <div class="card stat"><span class="label">Disco / rede</span><span class="value">5 GB+</span><span class="sub">SSD de preferência · porta TCP 7333 aberta para a internet</span></div>
   </div>
+  <p class="muted">Não precisa saber programar nem entender de blockchain. Você só precisa conseguir entrar no servidor por SSH (o painel do seu provedor mostra como) e colar um comando.</p>
 
   <h2>O comando</h2>
   <p class="muted">Entre no servidor por SSH e cole:</p>
@@ -41,13 +43,18 @@
     <button class="btn btn-small" data-copy="curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes">copiar</button>
     <pre><code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes</code></pre>
   </div>
-  <p class="muted">Pronto. Não há perguntas: em cerca de um minuto o nó está rodando e minerando para uma carteira criada só para você.</p>
+  <p class="muted">Pronto. Com <code>--yes</code> não há perguntas: o instalador aceita as opções padrão, cria uma carteira só para você e deixa o nó rodando e minerando.</p>
+  <div class="grid grid-3" style="margin:16px 0">
+    <div class="card"><h3>Quanto tempo leva?</h3><p class="muted" style="margin:0">Cerca de <strong>1 minuto</strong> para instalar. Se não houver programa pronto para o seu processador, ele compila do código-fonte (10 a 30 minutos). Depois o nó leva um tempo para baixar e conferir os blocos que já existem — a mineração começa sozinha quando ele alcança a rede.</p></div>
+    <div class="card"><h3>O que é instalado?</h3><p class="muted" style="margin:0"><code>thecoind</code> (o nó), <code>thecoin-wallet</code> (a carteira), <code>tccl</code> (ferramenta de contratos inteligentes) e o atalho <code>thecoin</code> para administrar tudo.</p></div>
+    <div class="card"><h3>Posso rodar de novo?</h3><p class="muted" style="margin:0">Sim. Rodar o comando outra vez atualiza os programas e mantém a configuração e a carteira. Também dá para usar <code>sudo thecoin update</code>.</p></div>
+  </div>
   <div class="notice accent">No final da instalação aparecem <strong>24 palavras de recuperação</strong> num quadro amarelo. <strong>Anote no papel e guarde longe do computador.</strong> Quem tem essas palavras controla as suas moedas — e ninguém consegue recuperá-las por você.</div>
 
   <h2>O que acontece, passo a passo</h2>
   <ol class="steps">
-    <li><strong>Checagem do servidor</strong> — sistema, arquitetura, memória, disco e se o relógio está sincronizado (os horários dos blocos são validados pela rede).</li>
-    <li><strong>Download seguro</strong> — baixa os programas <code>thecoind</code> (o nó) e <code>thecoin-wallet</code> (a carteira) e confere o checksum SHA-256. Se algo não bater, a instalação para.</li>
+    <li><strong>Checagem do servidor</strong> — sistema, arquitetura, memória, disco e se o relógio está sincronizado (os horários dos blocos são validados pela rede). Com menos de 2 GB de RAM e sem swap, cria um arquivo de swap de 1 GB.</li>
+    <li><strong>Download seguro</strong> — baixa <code>thecoind</code>, <code>thecoin-wallet</code> e <code>tccl</code> e confere o checksum SHA-256. Se algo não bater, a instalação para.</li>
     <li><strong>Carteira de recompensas</strong> — cria uma carteira com uma senha forte e aleatória, guardada num arquivo que só o administrador (root) lê, ao lado da carteira em <code>~/.thecoin/</code>.</li>
     <li><strong>Configuração e serviço</strong> — cria <code>/etc/thecoin/thecoind.toml</code> e o serviço <code>thecoind</code>, que roda com um usuário sem privilégios, isolado do resto do sistema e com prioridade baixa para não travar o servidor.</li>
     <li><strong>Rede</strong> — abre a porta P2P no <code>ufw</code> (se estiver ativo) e inicia o nó, que sincroniza com a rede e começa a minerar.</li>
@@ -55,23 +62,58 @@
   </ol>
 
   <h2>Acompanhar o seu validador</h2>
-  <pre><code>thecoin status        # serviço, altura, sincronização, peers, mineração e saldo
-thecoin logs          # logs em tempo real (Ctrl+C para sair)
-thecoin balance       # saldo da carteira de recompensas
-thecoin address       # seu endereço de mineração
-sudo thecoin mnemonic # mostrar de novo as 24 palavras
-thecoin help          # todos os comandos</code></pre>
-  <p class="muted">Você também pode procurar o seu endereço no <a href="explorer.html">Explorer</a> para ver os blocos minerados e o saldo.</p>
+  <pre><code>thecoin status            # serviço, altura, sincronização, peers, mineração e saldo
+thecoin logs              # logs em tempo real (Ctrl+C para sair)
+thecoin balance           # saldo da carteira de recompensas
+thecoin address           # seu endereço de mineração
+sudo thecoin mnemonic     # mostrar de novo as 24 palavras
+sudo thecoin restart      # reiniciar o nó
+thecoin signals           # propostas de governança abertas e as que você apoia
+sudo thecoin signal &lt;id&gt;   # apoiar uma proposta com os blocos que você minerar
+sudo thecoin unsignal &lt;id&gt; # retirar o apoio
+sudo thecoin update       # atualizar para a versão mais recente
+thecoin version           # versões instaladas
+thecoin help              # todos os comandos</code></pre>
+  <p class="muted">Você também pode procurar o seu endereço no <a href="explorer.html">Explorer</a> para ver os blocos minerados, o saldo disponível e as recompensas em cooldown.</p>
 
   <h2>Como funcionam as recompensas</h2>
   <div class="grid grid-2">
     <div class="card">
       <h3>Quem ganha</h3>
-      <p class="muted">Cada bloco novo gera uma recompensa em TCN para o validador que o encontrou, mais as taxas das transações do bloco. A chance de encontrar um bloco é proporcional ao trabalho da sua máquina: mais núcleos, mais chances.</p>
+      <p class="muted">Cada bloco novo gera uma recompensa em TCN para o validador que o encontrou, mais as taxas das transações do bloco (menos a sobretaxa de congestionamento, que é queimada). A chance de encontrar um bloco é proporcional ao trabalho da sua máquina: mais núcleos, mais chances.</p>
     </div>
     <div class="card">
       <h3>Quando fica disponível</h3>
-      <p class="muted">Por segurança, <strong>as recompensas ficam disponíveis após um período de segurança</strong>. Enquanto isso, aparecem como “maturando” no <code>thecoin status</code> e no <code>thecoin balance</code>. Isso impede que moedas de um bloco que a rede acabou descartando sejam gastas.</p>
+      <p class="muted">Por segurança, cada recompensa passa por um <strong>cooldown</strong>: <strong>25% ficam disponíveis após 100 blocos</strong> (≈ 1h40) e <strong>o restante após 1.000 blocos</strong> (≈ 17 h). Enquanto isso, aparecem como “maturing” no <code>thecoin status</code> e no <code>thecoin balance</code>. Isso impede que moedas de um bloco que a rede acabou descartando sejam gastas.</p>
+    </div>
+  </div>
+
+  <h2>Governança: vote com os seus blocos</h2>
+  <div class="card">
+    <p class="muted">Mudanças na rede precisam da aprovação dos detentores <strong>e</strong> dos validadores. Como validador, você apoia uma proposta fazendo os blocos que você minerar “sinalizarem” a favor. Veja as propostas em <a href="governance.html">Governança</a>, copie o id e rode:</p>
+    <pre><code>sudo thecoin signal 3f9a…c2   # o id completo tem 64 caracteres</code></pre>
+    <p class="muted" style="margin:0">O comando grava o id na configuração e reinicia o nó. Para desistir: <code>sudo thecoin unsignal &lt;id&gt;</code>. Nós configurados à mão usam <code>thecoind --signal &lt;id&gt;</code>.</p>
+  </div>
+
+  <h2>Espaço em disco</h2>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Quanto a blockchain cresce</h3>
+      <p class="muted">Medido na versão 0.2: cada transação ocupa <strong>≈ 430 bytes</strong> em disco com o índice de endereços ligado (padrão, usado pelo explorer e pelo histórico da carteira) e <strong>≈ 350 bytes</strong> sem ele.</p>
+      <ul class="muted" style="margin:0">
+        <li>1 milhão de transações ≈ 430 MB (≈ 350 MB sem índice);</li>
+        <li>10 milhões de transações ≈ 4,3 GB.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Precisa economizar?</h3>
+      <p class="muted">Em <code>/etc/thecoin/thecoind.toml</code>, na seção <code>[storage]</code>:</p>
+      <pre><code>prune = true           # guarda só os blocos recentes
+address_index = false  # sem histórico por endereço</code></pre>
+      <p class="muted">Depois: <code>sudo thecoin restart</code>. Para devolver ao disco o espaço liberado, compacte o banco com o nó parado:</p>
+      <pre><code>sudo systemctl stop thecoind
+sudo -u thecoin thecoind --config /etc/thecoin/thecoind.toml compact
+sudo systemctl start thecoind</code></pre>
     </div>
   </div>
 
@@ -126,11 +168,20 @@ curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --no-mine
 curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network testnet</code></pre>
   <p class="muted">Mais opções e a instalação manual estão em <a href="download.html">Instalar</a>.</p>
 
+  <h2>Bônus: contratos inteligentes</h2>
+  <div class="card">
+    <p class="muted">O instalador também deixa pronta a ferramenta <code>tccl</code>, para escrever e testar contratos na linguagem TCCL sem gastar nada:</p>
+    <pre><code>tccl check meu_contrato.tccl                 # confere tipos e mostra as funções
+tccl run meu_contrato.tccl deploy            # simula localmente
+thecoin-wallet contract deploy meu_contrato.tccl   # publica na rede</code></pre>
+    <p class="muted" style="margin:0">Guia completo em <a href="tccl.html">TCCL — Contratos inteligentes</a>.</p>
+  </div>
+
   <h2>Perguntas frequentes</h2>
   <div class="grid grid-2">
     <div class="card">
       <h3>O servidor vai ficar lento?</h3>
-      <p class="muted">Não. A mineração roda com a menor prioridade do sistema e, em máquinas com 2 ou mais núcleos, deixa um núcleo livre por padrão; o nó usa algumas dezenas de MB de memória. Se precisar, ajuste <code>threads</code> em <code>/etc/thecoin/thecoind.toml</code> e rode <code>sudo thecoin restart</code>.</p>
+      <p class="muted">Não. A mineração roda com a menor prioridade do sistema e, em máquinas com 2 ou mais núcleos, deixa um núcleo livre por padrão; cada thread de mineração usa 16 MiB de memória. Se precisar, ajuste <code>threads</code> em <code>/etc/thecoin/thecoind.toml</code> e rode <code>sudo thecoin restart</code>.</p>
     </div>
     <div class="card">
       <h3>Quanto vou ganhar?</h3>
@@ -160,13 +211,17 @@ curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network t
       <h3>É seguro rodar o comando com sudo?</h3>
       <p class="muted">O script é público e verifica o checksum de tudo o que baixa. Para ler antes: <code>curl -fsSLO https://the-coin.cloud/install.sh &amp;&amp; less install.sh</code>. O nó em si roda com um usuário sem privilégios.</p>
     </div>
+    <div class="card">
+      <h3>E quando a rede mudar para proof-of-stake?</h3>
+      <p class="muted">Não é para agora: o <a href="index.html#roadmap">roadmap</a> prevê um híbrido PoW/PoS só a partir do bloco 1.250.000 e depende de votação. Quando acontecer, a atualização será feita pelo mesmo <code>thecoin update</code>, e o instalador de uma linha passará a configurar um validador com stake.</p>
+    </div>
   </div>
 </main>
 
 <footer class="site-footer">
   <div class="wrap">
-    <span>The Coin v0.1 · the-coin.cloud · código aberto (MIT/Apache-2.0)</span>
-    <span><a data-repo-link="" href="#">Código-fonte</a> · <a href="/whitepaper/the-coin-whitepaper-v0.1.pdf">Whitepaper</a> · <a href="docs.html">API</a></span>
+    <span>The Coin v0.2 · the-coin.cloud · código aberto (MIT/Apache-2.0)</span>
+    <span><a data-repo-link="" href="#">Código-fonte</a> · <a href="/whitepaper/the-coin-whitepaper-v0.2.pdf">Whitepaper v0.2</a> (<a href="/whitepaper/the-coin-whitepaper-v0.1.pdf">versão anterior</a>) · <a href="docs.html">API</a></span>
   </div>
 </footer>
 <script src="assets/config.js"></script>

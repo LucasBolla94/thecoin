@@ -266,3 +266,31 @@ dl.kv dd { word-break: break-word; }
   th, td { padding: 8px 10px; }
   .hide-sm { display: none; }
 }
+
+/* ---------- forms (explorer views, confirmations estimator) ---------- */
+.inline-form label, .view-form label { display: block; font-size: .85rem; color: var(--text-3); margin: 8px 0 4px; }
+.inline-form .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.inline-form input, .view-form input {
+  flex: 1; min-width: 0; width: 100%; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: .95rem; font-family: var(--mono);
+}
+.inline-form .row input { width: auto; }
+.inline-form input:focus, .view-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.view-form .btn { margin-top: 10px; }
+.view-sig { font-weight: 600; word-break: break-word; }
+.view-out { margin-top: 10px; font-family: var(--mono); font-size: .88rem; word-break: break-all; white-space: pre-wrap; }
+.view-out.ok { color: var(--ok); }
+.view-out.bad { color: var(--bad); }
+.sec-result { margin-top: 14px; }
+ol.arglist { margin: 0; padding-left: 1.3em; }
+details.source { margin-top: 14px; }
+details.source summary { cursor: pointer; color: var(--link); font-weight: 600; margin-bottom: 8px; }
+
+/* ---------- content pages (TCCL, roadmap) ---------- */
+.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 8px; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 5px 12px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); font-size: .9rem; }
+.toc a:hover { text-decoration: none; border-color: var(--text-3); }
+.prose { max-width: 800px; }
+.prose p, .prose li { color: var(--text-2); }
+.formula { font-family: var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: 0 0 1em; font-size: .9rem; }
+.label-cmd { color: var(--text-3); font-size: .85rem; margin: 14px 0 6px; }

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>The Coin — dinheiro proof-of-work leve e democrático</title>
-  <meta name="description" content="The Coin: blockchain proof-of-work leve para VPS pequenas. 50 milhões de TCN, sem pré-mineração, contratos de pagamento e governança bicameral.">
+  <title>The Coin — dinheiro proof-of-work leve, democrático e programável</title>
+  <meta name="description" content="The Coin: blockchain proof-of-work leve para VPS pequenas. 50 milhões de TCN, sem pré-mineração, contratos inteligentes TCCL, taxas com prioridade e governança bicameral.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e0a52b'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' font-family='Arial' font-weight='700' fill='%234a3000'%3ETC%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="assets/style.css">
 </head>
@@ -18,6 +18,7 @@
       <a href="download.html">Instalar</a>
       <a href="explorer.html">Explorer</a>
       <a href="governance.html">Governança</a>
+      <a href="tccl.html">TCCL</a>
       <a href="docs.html">Desenvolvedores</a>
     </nav>
   </div>
@@ -25,18 +26,28 @@
 
 <main>
   <section class="wrap hero">
-    <div class="eyebrow">Versão 0.1 · rede aberta · sem pré-mineração</div>
+    <div class="eyebrow">Versão 0.2 · contratos inteligentes TCCL · sem pré-mineração</div>
     <h1>O dinheiro proof-of-work que roda em qualquer VPS.</h1>
     <p class="lead">
       The Coin é uma blockchain escrita em Rust, feita para máquinas com poucos recursos.
       Qualquer pessoa instala um nó com um comando, ajuda a proteger a rede e concorre às
-      recompensas — com oferta limitada a <strong>50 milhões de TCN</strong>, contratos de
-      pagamento nativos e uma governança em que nem baleias nem mineradores decidem sozinhos.
+      recompensas — com oferta limitada a <strong>50 milhões de TCN</strong>, contratos inteligentes
+      na linguagem <strong>TCCL</strong> e uma governança em que nem baleias nem mineradores decidem sozinhos.
     </p>
     <div class="actions">
-      <a class="btn btn-primary" href="download.html">Instalar um nó</a>
-      <a class="btn" href="/whitepaper/the-coin-whitepaper-v0.1.pdf">Whitepaper (PDF)</a>
+      <a class="btn btn-primary" href="validator.html">Seja um validador</a>
+      <a class="btn" href="tccl.html">Contratos TCCL</a>
+      <a class="btn" href="/whitepaper/the-coin-whitepaper-v0.2.pdf">Whitepaper v0.2 (PDF)</a>
       <a class="btn" href="explorer.html">Explorar a rede</a>
+    </div>
+    <div class="card" style="margin-top:28px">
+      <h3>Validador em um comando</h3>
+      <p class="muted">Num servidor Linux (1–2 vCPU, 2–4 GB de RAM), entre por SSH e cole:</p>
+      <div class="codeblock">
+        <button class="btn btn-small" data-copy="curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes">copiar</button>
+        <pre><code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes</code></pre>
+      </div>
+      <p class="faint" style="margin:0">Baixa e confere os programas, cria a carteira de recompensas, instala o serviço e começa a validar e minerar — em cerca de um minuto. <a href="validator.html">Passo a passo para iniciantes</a>.</p>
     </div>
   </section>
 
@@ -53,7 +64,7 @@
       <div class="card stat"><span class="label">Recompensa por bloco</span><span class="value" id="s-reward">—</span><span class="sub" id="s-era">—</span></div>
       <div class="card stat"><span class="label">Próximo halving</span><span class="value" id="s-halving">—</span><span class="sub" id="s-halving-eta">—</span></div>
       <div class="card stat"><span class="label">Peers do nó</span><span class="value" id="s-peers">—</span><span class="sub" id="s-mempool">—</span></div>
-      <div class="card stat"><span class="label">Taxa mínima</span><span class="value" id="s-fee">—</span><span class="sub">por byte · transferência ≈ 170 bytes</span></div>
+      <div class="card stat"><span class="label">Taxa de uma transferência</span><span class="value" id="s-fee">—</span><span class="sub" id="s-fee-sub">transferência de 160 bytes</span></div>
     </div>
     <p class="faint" id="live-error" hidden></p>
   </section>
@@ -64,12 +75,32 @@
       <div class="card feature">
         <div class="icon" aria-hidden="true">⚙️</div>
         <h3>Leve de verdade</h3>
-        <p class="muted">Roda com 1 vCPU e 1 GB de RAM. Banco de dados embarcado (redb), blocos comprimidos com zstd, modo <em>pruned</em> opcional e compromisso de estado incremental (LtHash) — sem reprocessar tudo a cada bloco.</p>
+        <p class="muted">Roda em VPS de 1–2 vCPU e 2–4 GB de RAM. Banco de dados embarcado (redb), blocos comprimidos com zstd, modo <em>pruned</em> opcional e compromisso de estado incremental (LtHash). Cada transação ocupa ≈ 430 bytes em disco com o índice de endereços.</p>
       </div>
       <div class="card feature">
         <div class="icon" aria-hidden="true">⛏️</div>
         <h3>Mineração com CPU</h3>
         <p class="muted">O PoW <strong>CoinHash</strong> usa Argon2id com 16 MiB por hash: memory-hard, favorece CPUs comuns e reduz a vantagem de GPUs e ASICs. O minerador roda com prioridade mínima para não travar a máquina.</p>
+      </div>
+      <div class="card feature">
+        <div class="icon" aria-hidden="true">🧩</div>
+        <h3>Contratos inteligentes TCCL</h3>
+        <p class="muted">Uma linguagem simples, com tipos estritos e execução determinística. Cada passo gasta <em>combustível</em>, o código-fonte fica na blockchain para qualquer um conferir e o armazenamento usa um depósito reembolsável. <a href="tccl.html">Aprenda TCCL</a>.</p>
+      </div>
+      <div class="card feature">
+        <div class="icon" aria-hidden="true">🕶️</div>
+        <h3>Pagamentos privados via contratos</h3>
+        <p class="muted">A rede é transparente, mas contratos TCCL podem criar <em>pools</em> de privacidade com assinaturas em anel: você deposita de um endereço e saca em outro sem revelar qual depósito era seu. A carteira já fala o padrão <code>TCCL-PRIV-1</code>.</p>
+      </div>
+      <div class="card feature">
+        <div class="icon" aria-hidden="true">🚦</div>
+        <h3>Taxas com prioridade</h3>
+        <p class="muted">Escolha <code>--priority low|normal|high|urgent</code>. Quando os blocos passam de 50% de uso a taxa mínima sobe até 12,5% por bloco — e essa sobretaxa é <strong>queimada</strong>, então mineradores não ganham inflando taxas. Esqueceu de pagar mais? Envie com <code>--replaceable</code> e use <code>bump-fee</code>.</p>
+      </div>
+      <div class="card feature">
+        <div class="icon" aria-hidden="true">⚡</div>
+        <h3>Confirmação rápida com segurança</h3>
+        <p class="muted">O explorer e a carteira dizem quantas confirmações esperar para cada valor, e todo nó avisa na hora quando alguém tenta gastar as mesmas moedas duas vezes. Recompensas de mineração têm <em>cooldown</em>, o que desencoraja reorganizar a cadeia.</p>
       </div>
       <div class="card feature">
         <div class="icon" aria-hidden="true">🔒</div>
@@ -78,18 +109,13 @@
       </div>
       <div class="card feature">
         <div class="icon" aria-hidden="true">🤝</div>
-        <h3>Contratos de pagamento</h3>
-        <p class="muted">Escrow com árbitro, vesting com cliff, assinaturas recorrentes, HTLC para swaps atômicos e cofres multisig M-de-N. Custo fixo, sem gas e sem surpresas.</p>
+        <h3>Contratos de pagamento nativos</h3>
+        <p class="muted">Escrow com árbitro, vesting com cliff, assinaturas recorrentes, HTLC para swaps atômicos e cofres multisig M-de-N, prontos na carteira, sem escrever código.</p>
       </div>
       <div class="card feature">
         <div class="icon" aria-hidden="true">🗳️</div>
         <h3>Governança bicameral</h3>
-        <p class="muted">Mudanças passam só com aprovação dos <strong>detentores</strong> (voto com moedas travadas, quórum e supermaioria) <strong>e</strong> dos <strong>mineradores</strong> (sinalização nos blocos). O teto de 50M nunca pode ser alterado.</p>
-      </div>
-      <div class="card feature">
-        <div class="icon" aria-hidden="true">🌐</div>
-        <h3>Aberta e auditável</h3>
-        <p class="muted">Todo o histórico é público e consultável pela API REST de qualquer nó. Carteira de referência com padrões abertos (BIP-39, SLIP-0010) para que qualquer um crie novas carteiras.</p>
+        <p class="muted">Mudanças passam só com aprovação dos <strong>detentores</strong> (voto com moedas travadas, quórum e supermaioria) <strong>e</strong> dos <strong>validadores</strong> (sinalização nos blocos com <code>thecoin signal</code>). O teto de 50M nunca pode ser alterado.</p>
       </div>
     </div>
   </section>
@@ -120,24 +146,77 @@
         </table>
       </div>
     </div>
-    <p class="faint">Recompensas de mineração ficam disponíveis após 100 blocos de maturação. O bloco gênese não tem recompensa e não existe pré-mineração.</p>
+    <p class="faint">Recompensas de mineração passam por um <em>cooldown</em>: 25% ficam disponíveis após 100 blocos e o restante após 1.000 blocos — mais que o limite de reorganização de 720 blocos. O bloco gênese não tem recompensa e não existe pré-mineração.</p>
+  </section>
+
+  <section class="wrap">
+    <h2>Recebendo pagamentos? Confirme rápido e com segurança</h2>
+    <div class="grid grid-2">
+      <div class="card">
+        <ol class="steps">
+          <li><strong>Veja quantas confirmações esperar</strong> — no <a href="explorer.html">Explorer</a> (“Quantas confirmações?”) ou com <code>thecoin-wallet confirmations 250</code>. Valores pequenos precisam de poucos blocos; valores grandes, de mais.</li>
+          <li><strong>Desconfie de “substituível”</strong> — uma transação enviada com <code>--replaceable</code> ainda pode ter a taxa trocada. Espere ao menos 1 confirmação.</li>
+          <li><strong>Olhe os alertas de gasto duplo</strong> — se o remetente tentou gastar as mesmas moedas duas vezes, o explorer mostra o aviso na transação e em <code>thecoin-wallet alerts</code>.</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3>Enviando? Escolha a prioridade</h3>
+        <pre><code># padrão: normal (mínimo + 25%)
+thecoin-wallet send tc1... 12.5
+
+# pressa: urgente; sem pressa: low
+thecoin-wallet send tc1... 12.5 --priority urgent
+
+# permitir aumentar a taxa depois
+thecoin-wallet send tc1... 12.5 --replaceable
+thecoin-wallet bump-fee &lt;txid&gt;
+
+# taxas agora
+thecoin-wallet fees</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap" id="roadmap">
+    <h2>Roadmap: PoW → Híbrido → PoS</h2>
+    <p class="muted" style="max-width:800px">A The Coin nasce em prova de trabalho para distribuir as moedas de forma justa, ganha depois finalidade por participação (stake) e, quando a emissão já estiver quase toda distribuída, passa a prova de participação com confirmações em segundos — sempre com hardware modesto (2 vCPU / 4 GB). <strong>Cada transição só acontece com aprovação da governança bicameral</strong> e após testes públicos; nada disso está ativo na versão 0.2.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>Fase 1 — PoW (atual)</th><th>Fase 2 — Híbrido</th><th>Fase 3 — PoS</th></tr></thead>
+        <tbody>
+          <tr><td>Quem produz blocos</td><td>mineradores (CoinHash)</td><td>mineradores (CoinHash)</td><td>validadores com stake, em rodízio</td></tr>
+          <tr><td>Quem finaliza</td><td>ninguém (probabilístico, reorg máx. 720)</td><td>validadores votam checkpoints a cada 120 blocos</td><td>validadores (BFT) a cada bloco</td></tr>
+          <tr><td>Tempo até irreversível</td><td>~1 h a 12 h, conforme o valor</td><td>≤ 2 épocas (~4 h), depois nunca reverte</td><td>~2 blocos</td></tr>
+          <tr><td>Tempo de bloco</td><td>60 s</td><td>60 s</td><td>10 s (parâmetro de governança)</td></tr>
+          <tr><td>Recompensa</td><td>100% mineradores</td><td>dividida (de 90/10 até 50/50)</td><td>100% validadores</td></tr>
+          <tr><td>Mais cedo possível</td><td>bloco 0</td><td>bloco 1.250.000 (~2,4 anos)</td><td>bloco 3.125.000 (~5,9 anos)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="faint" style="margin-top:10px">Em nenhuma fase mudam o teto de 50.000.000 TCN, o cronograma de emissão, os endereços, as carteiras ou a linguagem TCCL. Detalhes, condições de ativação e riscos: <a data-repo-link="/blob/main/docs/ROADMAP.md" href="#">ROADMAP.md</a>.</p>
   </section>
 
   <section class="wrap">
     <h2>Participe em 3 passos</h2>
     <ol class="steps">
-      <li><strong>Crie sua carteira</strong> — <code>thecoin-wallet create</code> gera 24 palavras de recuperação e seu endereço <code>tc1…</code>.</li>
-      <li><strong>Instale o nó</strong> — <code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash</code> baixa, verifica e configura o serviço.</li>
-      <li><strong>Minere e use</strong> — o nó sincroniza, começa a minerar para o seu endereço e você já pode enviar e receber TCN.</li>
+      <li><strong>Instale o nó</strong> — <code>curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes</code> baixa, confere, cria a carteira e inicia o serviço. Também instala <code>thecoin-wallet</code> e a ferramenta de contratos <code>tccl</code>.</li>
+      <li><strong>Guarde as 24 palavras</strong> — aparecem no final da instalação. Anote no papel: elas são a sua carteira.</li>
+      <li><strong>Minere, pague e programe</strong> — o nó sincroniza e minera para o seu endereço; você já pode enviar TCN, votar e publicar contratos TCCL.</li>
     </ol>
-    <p style="margin-top:20px"><a class="btn btn-primary" href="download.html">Guia de instalação completo</a></p>
+    <div class="grid grid-3" style="margin-top:24px">
+      <a class="card" href="/tccl/tccl-cookbook.pdf"><h3>TCCL Cookbook (PDF, inglês)</h3><p class="muted" style="margin:0">Receitas prontas de contratos: tokens, crowdfunding, pools de privacidade e mais.</p></a>
+      <a class="card" href="/whitepaper/the-coin-whitepaper-v0.2.pdf"><h3>Whitepaper v0.2</h3><p class="muted" style="margin:0">Design, economia, taxas, contratos, segurança e roadmap. <span class="faint">Versão anterior: v0.1 (link abaixo).</span></p></a>
+      <a class="card" href="docs.html"><h3>Desenvolvedores</h3><p class="muted" style="margin:0">API REST, protocolo, carteiras, TCCL e governança.</p></a>
+    </div>
+    <p class="faint" style="margin-top:12px">Whitepaper anterior: <a href="/whitepaper/the-coin-whitepaper-v0.1.pdf">versão 0.1 (PDF)</a>.</p>
+    <p style="margin-top:20px"><a class="btn btn-primary" href="validator.html">Guia do validador</a> <a class="btn" href="download.html">Instalação completa</a></p>
   </section>
 </main>
 
 <footer class="site-footer">
   <div class="wrap">
-    <span>The Coin v0.1 · the-coin.cloud · código aberto (MIT/Apache-2.0)</span>
-    <span><a data-repo-link="" href="#">Código-fonte</a> · <a href="/whitepaper/the-coin-whitepaper-v0.1.pdf">Whitepaper</a> · <a href="docs.html">API</a></span>
+    <span>The Coin v0.2 · the-coin.cloud · código aberto (MIT/Apache-2.0)</span>
+    <span><a data-repo-link="" href="#">Código-fonte</a> · <a href="/whitepaper/the-coin-whitepaper-v0.2.pdf">Whitepaper v0.2</a> · <a href="tccl.html">TCCL</a> · <a href="docs.html">API</a></span>
   </div>
 </footer>
 

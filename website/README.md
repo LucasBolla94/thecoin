@@ -2,14 +2,17 @@
 
 Site estático (HTML + CSS + JavaScript puro, sem build e sem CDNs externas) da
 rede **The Coin**: página inicial com estatísticas ao vivo, guia de instalação,
-explorer de blocos, governança e hub de desenvolvedores.
+explorer de blocos (contratos TCCL, taxas, alertas de gasto duplo),
+governança, guia de contratos inteligentes TCCL e hub de desenvolvedores.
 
 ```
 website/
 ├── index.html          # landing + estatísticas ao vivo
 ├── download.html       # instalação do nó e carteira
-├── explorer.html       # explorer (SPA com rotas #/block/…, #/tx/…, #/address/…, #/contract/…, #/mempool)
+├── validator.html      # guia do validador para iniciantes (instalação em uma linha)
+├── explorer.html       # explorer (SPA: #/block/…, #/tx/…, #/address/… (contas e contratos TCCL), #/contract/…, #/mempool)
 ├── governance.html     # propostas, apuração bicameral, parâmetros (#/proposal/<id>)
+├── tccl.html           # guia de contratos inteligentes TCCL
 ├── docs.html           # hub de desenvolvedores + resumo da API
 ├── assets/
 │   ├── config.js       # lista de bases da API (failover)
@@ -28,7 +31,8 @@ navegador ──HTTPS──▶ nginx (máquina do site)
                         ├── /            arquivos estáticos
                         ├── /install.sh  instalador do nó
                         ├── /releases/   binários + SHA256SUMS
-                        ├── /whitepaper/ PDF
+                        ├── /whitepaper/ PDFs (v0.2 atual, v0.1 anterior)
+                        ├── /tccl/       cookbook PDF + examples/*.tccl
                         └── /api/        ──HTTP──▶ seed1.the-coin.cloud:7334
                                                     seed2.the-coin.cloud:7334  (failover)
 ```
@@ -70,9 +74,11 @@ sudo apt install nginx certbot python3-certbot-nginx
 # arquivos
 sudo mkdir -p /var/www/the-coin.cloud /var/www/certbot
 sudo cp -r website/*.html website/assets /var/www/the-coin.cloud/
-sudo mkdir -p /var/www/the-coin.cloud/{releases,whitepaper}
-sudo cp installer/install.sh installer/uninstall.sh /var/www/the-coin.cloud/     # scripts do instalador
-sudo cp docs/whitepaper/the-coin-whitepaper-v0.1.pdf /var/www/the-coin.cloud/whitepaper/
+sudo mkdir -p /var/www/the-coin.cloud/{releases,whitepaper,tccl/examples}
+sudo cp installer/install.sh installer/uninstall.sh installer/thecoin /var/www/the-coin.cloud/   # instalador
+sudo cp docs/whitepaper/*.pdf /var/www/the-coin.cloud/whitepaper/                              # v0.2 e anteriores
+sudo cp docs/tccl/tccl-cookbook.pdf /var/www/the-coin.cloud/tccl/
+sudo cp crates/tccl/examples/*.tccl /var/www/the-coin.cloud/tccl/examples/
 # binários de release: releases/latest/thecoin-<target>.tar.gz + .sha256 (layout usado pelo install.sh)
 # atalho: no repositório, `scripts/package.sh <target>` e depois `scripts/publish-site.sh`
 # montam tudo em dist/site/, pronto para `rsync -av dist/site/ servidor:/var/www/the-coin.cloud/`
@@ -98,8 +104,9 @@ Adicionar mais nós à lista aumenta a disponibilidade da API.
 curl -s https://the-coin.cloud/api/v1/status | head
 ```
 
-Abra `https://the-coin.cloud/explorer.html` — os blocos devem aparecer e
-atualizar a cada 15 s.
+Abra `https://the-coin.cloud/explorer.html` — os blocos, as taxas e os alertas
+devem aparecer e atualizar a cada 15 s. Busque o endereço de um contrato TCCL
+para ver as funções e chamar views (POST `/api/v1/program/<endereço>/view`).
 
 ## Configuração da API no front-end
 
@@ -132,4 +139,7 @@ thecoind --network regtest --miner-address $(thecoin-wallet --network regtest ad
 - Todo conteúdo vindo da rede (memos, títulos de propostas, URLs) é escapado
   antes de ir para o HTML; links externos só são criados para `http(s)://`.
 - A CSP do nginx permite apenas recursos da própria origem (estilos inline são
-  liberados porque as barras de progresso usam `style="width:…"`).
+  liberados porque as barras de progresso usam `style="width:…"`). Não há
+  scripts inline nem handlers `onclick` em atributos.
+- Formulários que chamam a API (views de contratos, estimador de confirmações)
+  escrevem os resultados com `textContent`.
