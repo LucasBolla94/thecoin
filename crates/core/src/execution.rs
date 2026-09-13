@@ -337,6 +337,52 @@ pub fn apply_tx<R: StateReader + ?Sized>(
     Ok(receipt)
 }
 
+/// Like [`apply_tx`] but **without running contract code** — for mempool
+/// admission and re-validation, where executing every pending call would let
+/// anyone make nodes burn CPU for free.
+///
+/// Native transactions are applied exactly as in a block (they are cheap). For
+/// `Deploy`/`Invoke` it makes every check `apply_tx` makes before execution
+/// (expiry, minimum fee, nonce, spendable funds for fee + value) and applies
+/// the same account effects (fee and value debited, nonce incremented). The
+/// storage deposit and the contract's own effects are only known when the
+/// transaction is executed in a block, where a failing call still pays its fee.
+pub fn apply_tx_unexecuted<R: StateReader + ?Sized>(
+    p: &ChainParams,
+    state: &mut Overlay<'_, R>,
+    height: u64,
+    tx: &Transaction,
+    size: usize,
+) -> Result<(), TxError> {
+    let value = match &tx.body.action {
+        TxAction::Deploy { value, .. } | TxAction::Invoke { value, .. } => *value,
+        _ => return apply_tx(p, state, height, tx, size).map(|_| ()),
+    };
+    let body = &tx.body;
+    if body.expiry_height != 0 && height > body.expiry_height {
+        return Err(TxError::Expired { expiry: body.expiry_height });
+    }
+    let g = state.global()?;
+    let (required, _) = required_fee(&g.params, g.congestion_bp, size, tx.max_fuel());
+    if body.fee < required {
+        return Err(TxError::FeeTooLow { min: required, got: body.fee });
+    }
+    let sender = tx.sender();
+    let mut acc = state.account(&sender)?;
+    if body.nonce != acc.nonce {
+        return Err(TxError::BadNonce { expected: acc.nonce, got: body.nonce });
+    }
+    let needed = value.checked_add(body.fee).ok_or(TxError::Overflow)?;
+    let available = acc.spendable(height);
+    if needed > available {
+        return Err(TxError::InsufficientFunds { needed, available });
+    }
+    acc.balance -= needed;
+    acc.nonce = acc.nonce.checked_add(1).ok_or(TxError::Overflow)?;
+    state.put_account(&sender, &acc);
+    Ok(())
+}
+
 fn g_increment_contracts<R: StateReader + ?Sized>(state: &mut Overlay<'_, R>) -> Result<(), TxError> {
     let mut g = state.global()?;
     g.contract_count += 1;

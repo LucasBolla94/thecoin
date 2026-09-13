@@ -111,7 +111,7 @@ redb pré-alocou.
 | Módulo | Responsabilidade |
 |---|---|
 | `chain` | validação de cabeçalho (inclusive de cabeçalhos de compact blocks), fork choice por trabalho, reorg atômica, poda, órfãos, templates de bloco, locator, recibos |
-| `mempool` | pool validado por simulação (inclusive execução TCCL), ordenação por taxa por peso, RBF opt-in, registro de conflitos (gasto duplo), níveis de prioridade, limites |
+| `mempool` | pool validado contra o estado (nonce, saldo, taxa; código TCCL só é executado para envios pela API do próprio nó), ordenação por taxa por peso, RBF opt-in, registro de conflitos (gasto duplo), níveis de prioridade, limites |
 | `protocol` | mensagens e framing P2P (`CompactBlock`, `GetBlockTxs`, `BlockTxs`, `DoubleSpend`) |
 | `net` | conexões, handshake, sync, relay por compact blocks, alertas de gasto duplo, pipeline de PoW paralelo, banimento |
 | `addrman` | endereços de peers, back-off, persistência |
@@ -177,7 +177,7 @@ flowchart LR
     ST --> NONCE{nonce já pendente?}
     NONCE -->|substituível e taxa ≥ 125 %| SIM
     NONCE -->|não substituível| DS[registra conflito<br/>DoubleSpend aos peers<br/>/api/v1/alerts]
-    NONCE -->|não| SIM[simula pendentes do remetente<br/>em ordem de nonce sobre o tip<br/>inclusive execução TCCL]
+    NONCE -->|não| SIM[aplica pendentes do remetente<br/>em ordem de nonce sobre o tip<br/>sem executar TCCL; executa só<br/>para envios da API local]
     SIM -->|ok| POOL[(Mempool<br/>mempool.dat ao desligar)]
     SIM -->|erro ou contrato falharia| REJ[400 / misbehave se assinatura]
     POOL --> RELAY[Inv aos outros peers]
@@ -193,8 +193,10 @@ flowchart LR
   da transação final (maior nonce) de menor taxa por peso;
 * substituição só com `FLAG_REPLACEABLE` e taxa ≥ `taxa + taxa/4`; caso contrário,
   conflito registrado (1 por remetente+nonce, até 512) e alerta `DoubleSpend`;
-* a cada novo tip: remove confirmadas, expiradas, inválidas e contratos que agora
-  falhariam; transações apenas abaixo da taxa mínima por causa do
+* a cada novo tip: remove confirmadas, expiradas e inválidas (nonce, saldo), **sem
+  executar código de contrato** — executar tudo a cada bloco deixaria qualquer um
+  gastar a CPU dos nós de graça; o código roda ao montar o bloco e uma chamada que
+  falha ali paga a taxa; transações apenas abaixo da taxa mínima por causa do
   congestionamento **ficam** (com as seguintes do mesmo remetente); transações de
   blocos desconectados voltam;
 * níveis de prioridade de `/api/v1/fees` calculados a partir das taxas por peso pendentes;

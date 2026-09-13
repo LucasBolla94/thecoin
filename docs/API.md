@@ -531,8 +531,10 @@ Proposta `action.type`: `text`, `set_param`, `software_upgrade`.
 
 Corpo: `{"tx": "<Transaction em Borsh, hex>"}`. A transação é validada
 completamente contra o estado (assinatura, flags, nonce, saldo, taxa, regras do
-contrato/governança; chamadas TCCL são **simuladas** e recusadas se falhariam),
-entra no mempool e é propagada.
+contrato/governança; chamadas TCCL enviadas por esta API são **executadas uma vez**
+e recusadas se falhariam agora), entra no mempool e é propagada. Transações
+recebidas de outros nós não têm o código executado na admissão (só nonce, saldo e
+taxa): o código roda ao entrar num bloco, e uma chamada que falha ali paga a taxa.
 
 ```bash
 curl -X POST http://127.0.0.1:7334/api/v1/tx \

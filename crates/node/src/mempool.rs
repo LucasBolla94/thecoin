@@ -1,8 +1,14 @@
 //! Transaction pool.
 //!
-//! * Every transaction is fully validated before admission by simulating the
-//!   sender's pending transactions (in nonce order) on top of the current state.
-//!   Contract calls that would fail are refused (they would cost the user a fee).
+//! * Every transaction is validated before admission by applying the sender's
+//!   pending transactions (in nonce order) on top of the current state.
+//!   **Contract code is not executed** for transactions relayed by peers nor when
+//!   the pool is re-validated after a new block: only nonce, funds and fee are
+//!   checked ([`apply_tx_unexecuted`]). Otherwise anyone could make every node
+//!   run expensive calls that later fail and are dropped without paying. Code
+//!   runs when a block is built, and a call that fails there still pays its fee.
+//!   Submissions through this node's own API are executed once, so a call that
+//!   would fail right now is refused instead of costing the user a fee.
 //! * **Priority:** transactions are ordered by fee per weight unit
 //!   (`bytes + max_fuel / 100`); paying above the minimum confirms sooner.
 //! * **Replacement ("fee bump")** is only allowed when the original transaction
@@ -21,7 +27,7 @@ use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 use thecoin_core::api::{DoubleSpendView, PriorityView};
 use thecoin_core::error::TxError;
-use thecoin_core::execution::{apply_tx, check_tx_stateless, TxReceipt};
+use thecoin_core::execution::{apply_tx, apply_tx_unexecuted, check_tx_stateless, TxReceipt};
 use thecoin_core::hash::Hash32;
 use thecoin_core::state::{Overlay, StateReader};
 use thecoin_core::{Address, Network, Transaction};
@@ -233,7 +239,36 @@ impl Mempool {
         PriorityView { low_bp: 10_000, normal_bp: 12_500, high_bp: high, urgent_bp: urgent }
     }
 
-    /// Simulates `txs` (one sender, nonce order) on the tip state.
+    /// Checks `txs` (one sender, nonce order) on the tip state without running
+    /// contract code. Returns one result per transaction.
+    fn check_unexecuted<R: StateReader + ?Sized>(chain: &Chain, reader: &R, height: u64, txs: &[&Transaction]) -> Vec<Result<(), TxError>> {
+        let mut ov = Overlay::new(reader);
+        let mut out = Vec::with_capacity(txs.len());
+        let mut failed = false;
+        for tx in txs {
+            if failed {
+                out.push(Err(TxError::BadNonce { expected: 0, got: tx.body.nonce }));
+                continue;
+            }
+            let res = {
+                let mut child = Overlay::new(&ov);
+                apply_tx_unexecuted(chain.params, &mut child, height, tx, tx.size()).map(|()| child.into_changes())
+            };
+            match res {
+                Ok(changes) => {
+                    ov.absorb(changes);
+                    out.push(Ok(()));
+                }
+                Err(e) => {
+                    failed = true;
+                    out.push(Err(e));
+                }
+            }
+        }
+        out
+    }
+
+    /// Simulates `txs` (one sender, nonce order) on the tip state, running contract code.
     fn simulate<R: StateReader + ?Sized>(chain: &Chain, reader: &R, height: u64, txs: &[&Transaction]) -> Vec<SimResult> {
         let mut ov = Overlay::new(reader);
         let mut out = Vec::with_capacity(txs.len());
@@ -274,8 +309,9 @@ impl Mempool {
         Ok(results.pop().expect("one result per tx"))
     }
 
-    /// Validates and inserts a transaction.
-    pub fn add(&mut self, chain: &Chain, tx: Transaction) -> std::result::Result<Hash32, MempoolError> {
+    /// Validates and inserts a transaction. `execute`: also run contract code and
+    /// refuse calls that would fail now (only for this node's own API users).
+    pub fn add(&mut self, chain: &Chain, tx: Transaction, execute: bool) -> std::result::Result<Hash32, MempoolError> {
         let txid = tx.txid();
         if self.entries.contains_key(&txid) {
             return Err(MempoolError::AlreadyKnown);
@@ -306,12 +342,17 @@ impl Mempool {
             pending.sort_by_key(|t| t.body.nonce);
         }
         let refs: Vec<&Transaction> = pending.iter().collect();
-        let results = Self::simulate(chain, &reader, height, &refs);
         let my_pos = pending.iter().position(|t| t.txid() == txid).expect("inserted");
-        match &results[my_pos] {
-            Err(e) => return Err(MempoolError::Invalid(e.clone())),
-            Ok(r) if !r.success => return Err(MempoolError::ContractWouldFail(r.error.clone().unwrap_or_default())),
-            Ok(_) => {}
+        if let Err(e) = &Self::check_unexecuted(chain, &reader, height, &refs)[my_pos] {
+            return Err(MempoolError::Invalid(e.clone()));
+        }
+        if execute && matches!(tx.body.action, thecoin_core::TxAction::Deploy { .. } | thecoin_core::TxAction::Invoke { .. }) {
+            let results = Self::simulate(chain, &reader, height, &refs[..=my_pos]);
+            match &results[my_pos] {
+                Err(e) => return Err(MempoolError::Invalid(e.clone())),
+                Ok(r) if !r.success => return Err(MempoolError::ContractWouldFail(r.error.clone().unwrap_or_default())),
+                Ok(_) => {}
+            }
         }
         drop(reader);
 
@@ -367,10 +408,10 @@ impl Mempool {
         Some(e)
     }
 
-    /// Re-validates the pool against the new tip: removes confirmed,
-    /// conflicting, failing and expired transactions, keeps transactions that
-    /// are only underpriced because of congestion, and re-adds transactions
-    /// from disconnected blocks.
+    /// Re-validates the pool against the new tip (without running contract
+    /// code): removes confirmed, conflicting, invalid and expired transactions,
+    /// keeps transactions that are only underpriced because of congestion, and
+    /// re-adds transactions from disconnected blocks.
     pub fn on_new_tip(&mut self, chain: &Chain, disconnected: &[thecoin_core::Block], connected: &[thecoin_core::Block]) -> Result<()> {
         let confirmed: HashSet<Hash32> = connected.iter().flat_map(|b| b.txs.iter().map(|t| t.txid())).collect();
         for id in &confirmed {
@@ -388,14 +429,14 @@ impl Mempool {
         for sender in senders {
             let txs = self.sender_txs(&sender);
             let refs: Vec<&Transaction> = txs.iter().collect();
-            let results = Self::simulate(chain, &reader, height, &refs);
+            let results = Self::check_unexecuted(chain, &reader, height, &refs);
             let mut keep_rest = false;
             for (tx, r) in txs.iter().zip(results) {
                 if keep_rest {
                     continue;
                 }
                 match r {
-                    Ok(receipt) if receipt.success => {}
+                    Ok(()) => {}
                     Err(TxError::FeeTooLow { .. }) => keep_rest = true,
                     _ => {
                         self.remove(&tx.txid());
@@ -407,7 +448,7 @@ impl Mempool {
         for b in disconnected.iter().rev() {
             for tx in &b.txs {
                 if !confirmed.contains(&tx.txid()) {
-                    let _ = self.add(chain, tx.clone());
+                    let _ = self.add(chain, tx.clone(), false);
                 }
             }
         }

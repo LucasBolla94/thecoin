@@ -173,7 +173,7 @@ impl Node {
         let mut pool = self.mempool.lock();
         for bytes in txs {
             if let Ok(tx) = Transaction::from_bytes(&bytes) {
-                kept += usize::from(pool.add(&self.chain, tx).is_ok());
+                kept += usize::from(pool.add(&self.chain, tx, false).is_ok());
             }
         }
         info!(kept, dropped = total - kept, "restored pending transactions");
@@ -201,7 +201,8 @@ impl Node {
 
     /// Validates a transaction, adds it to the mempool and relays it.
     pub fn submit_tx(&self, tx: Transaction, source: Option<u64>) -> std::result::Result<Hash32, MempoolError> {
-        let result = self.mempool.lock().add(&self.chain, tx.clone());
+        // Contract code is executed at admission only for this node's own API users.
+        let result = self.mempool.lock().add(&self.chain, tx.clone(), source.is_none());
         let txid = match result {
             Ok(id) => id,
             Err(MempoolError::NotReplaceable { existing, new_conflict }) => {

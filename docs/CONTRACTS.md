@@ -326,9 +326,9 @@ Fee:      0.00001394 TCN (225 bytes, priority Normal)
 * **Falha = reversão com taxa.** Se o código falhar (`require`, falta de
   combustível, depósito acima do `max_deposit`…), tudo é revertido — valor
   enviado, escritas, pagamentos e eventos — mas a taxa é paga. Sem isso,
-  qualquer um faria a rede executar código que falha de graça. O nó recusa no
-  mempool chamadas que já falhariam na simulação, então isso só acontece quando
-  o estado muda entre o envio e o bloco.
+  qualquer um faria a rede executar código que falha de graça. A carteira e a API
+  do nó recusam chamadas que já falhariam agora, então isso só acontece quando o
+  estado muda entre o envio e o bloco (ou quando alguém envia direto pela rede P2P).
 * **Recibo:** `GET /api/v1/tx/{txid}` mostra `success`, `error`, `fuel_used`,
   `logs` (eventos), `return_value` e, no deploy, `program`.
 

@@ -607,3 +607,44 @@ fn tccl_compile_errors_and_limits() {
     let zero = dev.tx(TxAction::Invoke { contract: addr, function: "fill".into(), args: vec![], value: 0, max_fuel: 0, max_deposit: 0 });
     assert!(matches!(tx_error(c.mine(miner, vec![zero])), TxError::BadContractTx(_)));
 }
+
+#[test]
+fn unexecuted_check_matches_pre_execution_rules() {
+    use thecoin_core::execution::{apply_tx, apply_tx_unexecuted};
+    let (mut c, mut rich) = funded();
+    let mut dev = Wallet::new(8);
+    let miner = Wallet::new(99).addr;
+    c.mine(rich.addr, vec![rich.pay(&dev.addr, 10 * COIN)]).unwrap();
+    let spin = "contract Spin\naction go():\n    while true:\n        pass\n";
+    let addr = program_address(&dev.addr, dev.nonce);
+    c.mine(miner, vec![deploy_tx(&mut dev, spin)]).unwrap();
+    let before = c.account(&dev.addr);
+    let h = c.height + 1;
+
+    // A call that runs out of fuel is still admissible: nonce, funds and fee are fine.
+    let go = invoke_tx(&mut dev, addr, "go", vec![], 0);
+    let mut ov = Overlay::new(&c.state);
+    apply_tx_unexecuted(c.p, &mut ov, h, &go, go.size()).unwrap();
+    let after = ov.account(&dev.addr).unwrap();
+    assert_eq!(after.nonce, before.nonce + 1);
+    assert_eq!(after.balance, before.balance - go.body.fee);
+    // In a block it executes, fails and pays exactly that fee.
+    let mut ov2 = Overlay::new(&c.state);
+    let r = apply_tx(c.p, &mut ov2, h, &go, go.size()).unwrap();
+    assert!(!r.success);
+    assert_eq!(ov2.account(&dev.addr).unwrap().balance, after.balance);
+
+    // The same rejections as apply_tx before execution.
+    let wrong_nonce = invoke_tx(&mut dev, addr, "go", vec![], 0);
+    let mut ov = Overlay::new(&c.state);
+    assert!(matches!(apply_tx_unexecuted(c.p, &mut ov, h, &wrong_nonce, wrong_nonce.size()), Err(TxError::BadNonce { .. })));
+    dev.nonce = before.nonce;
+    let too_much = invoke_tx(&mut dev, addr, "go", vec![], 100 * COIN);
+    let mut ov = Overlay::new(&c.state);
+    assert!(matches!(apply_tx_unexecuted(c.p, &mut ov, h, &too_much, too_much.size()), Err(TxError::InsufficientFunds { .. })));
+    let mut cheap = go.clone();
+    cheap.body.fee = 1;
+    let cheap = cheap.body.sign(&dev.key);
+    let mut ov = Overlay::new(&c.state);
+    assert!(matches!(apply_tx_unexecuted(c.p, &mut ov, h, &cheap, cheap.size()), Err(TxError::FeeTooLow { .. })));
+}
