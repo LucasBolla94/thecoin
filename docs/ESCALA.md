@@ -142,8 +142,9 @@ transações.
 
 ### 4.2 Medidas adotadas
 
-1. **Poda ligada por padrão** em nós normais: guarda os blocos recentes (7 dias) e o estado completo.
-   Um nó comum fica na casa de poucos GB para sempre. Nós de arquivo (exploradores) guardam tudo.
+1. **Poda ligada por padrão** em nós normais (implementado): guarda uma semana de blocos
+   (40 320 blocos de 15 s) e o estado completo. Um nó comum fica na casa de poucos GB para sempre.
+   Nós de arquivo, como exploradores, instalam com `--archive` e guardam tudo.
 2. **Sincronização por estado verificado (nova).** A raiz de estado no cabeçalho usa LtHash, que é
    *homomórfica*: dá para baixar o estado inteiro de um parceiro, recalcular a raiz e comparar com o
    cabeçalho. Um nó novo entra na rede em minutos, sem baixar o histórico, e **sem confiar em ninguém**.
@@ -171,8 +172,9 @@ transações.
 | 2. Blocos de 15 s com emissão recalibrada (mesmo teto e mesma curva no tempo) | **pronto** |
 | 3. Tios: cabeçalho, validação, recompensa e peso | **pronto** |
 | 4. Finalidade assinada pelos mineradores | **pronto** |
-| 5. Poda por padrão e sincronização por estado verificado | em andamento |
-| 6. TCCL v2 e canais de sessão para jogos | em andamento |
+| 5. Poda ligada por padrão (uma semana de blocos) | **pronto** |
+| 6. Sincronização por estado verificado (LtHash) | próxima |
+| 7. TCCL v2 e canais de sessão para jogos | em andamento |
 
 ---
 

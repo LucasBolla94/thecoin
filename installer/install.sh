@@ -29,6 +29,7 @@
 #   --threads <n>                   THECOIN_THREADS   (0 = cores-1)
 #   --version <x.y.z|latest>        THECOIN_VERSION
 #   --from-source                   THECOIN_FROM_SOURCE=1
+#   --archive                       THECOIN_ARCHIVE=1 (keep the whole history)
 #   --public-api                    THECOIN_PUBLIC_API=1 (bind API on 0.0.0.0)
 #   --yes, -y                       non-interactive: never ask, accept defaults
 # =============================================================================
@@ -41,6 +42,7 @@ THREADS="${THECOIN_THREADS:-0}"
 VERSION="${THECOIN_VERSION:-latest}"
 FROM_SOURCE="${THECOIN_FROM_SOURCE:-0}"
 PUBLIC_API="${THECOIN_PUBLIC_API:-0}"
+ARCHIVE="${THECOIN_ARCHIVE:-0}"
 ASSUME_YES="${THECOIN_YES:-0}"
 SITE_URL="${THECOIN_SITE_URL:-https://the-coin.cloud}"
 SITE_RELEASES="${THECOIN_RELEASES_URL:-$SITE_URL/releases}"
@@ -68,6 +70,7 @@ while [ $# -gt 0 ]; do
     --threads) THREADS="${2:?--threads needs a value}"; shift 2 ;;
     --version) VERSION="${2:?--version needs a value}"; shift 2 ;;
     --from-source) FROM_SOURCE=1; shift ;;
+    --archive) ARCHIVE=1; shift ;;
     --public-api) PUBLIC_API=1; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     -h|--help) sed -n '2,36p' "$0" 2>/dev/null || echo "see https://the-coin.cloud/validator.html"; exit 0 ;;
@@ -363,6 +366,7 @@ fi
 # --------------------------------------------------------------- config ----
 API_BIND="127.0.0.1:$API_PORT"; [ "$PUBLIC_API" = 1 ] && API_BIND="0.0.0.0:$API_PORT"
 MINING_ENABLED=true; [ "$NO_MINE" = 1 ] && MINING_ENABLED=false
+PRUNE=true; [ "$ARCHIVE" = 1 ] && PRUNE=false
 # Sets `key = value` inside the [mining] section of the existing config.
 set_mining_key() {
   awk -v key="$1" -v val="$2" '
@@ -406,7 +410,10 @@ signal = []
 
 [storage]
 cache_mb = 64
-prune = false
+# Ordinary nodes keep one week of block bodies (about 40 320 blocks) and the
+# full state. Explorers and archives set prune = false to keep everything.
+prune = $PRUNE
+prune_keep = 40320
 address_index = true
 
 [mempool]

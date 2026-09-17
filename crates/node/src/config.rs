@@ -87,10 +87,12 @@ fn available_memory_mib() -> Option<u64> {
 #[serde(default, deny_unknown_fields)]
 pub struct StorageConfig {
     pub cache_mb: usize,
-    /// Delete old block bodies, keeping `prune_keep` recent blocks.
+    /// Delete old block bodies, keeping `prune_keep` recent blocks. On by
+    /// default: an ordinary node then uses a few GB for ever, while explorers
+    /// and archives set it to false (see docs/ESCALA.md §4).
     pub prune: bool,
     pub prune_keep: u64,
-    /// Maintain the address history index.
+    /// Maintain the address history index (archive nodes only).
     pub address_index: bool,
 }
 
@@ -134,7 +136,8 @@ impl Default for MiningConfig {
 
 impl Default for StorageConfig {
     fn default() -> Self {
-        StorageConfig { cache_mb: 64, prune: false, prune_keep: 10_000, address_index: true }
+        // 40 320 blocks = one week at 15 s.
+        StorageConfig { cache_mb: 64, prune: true, prune_keep: 40_320, address_index: true }
     }
 }
 
