@@ -58,6 +58,29 @@ pub struct MiningConfig {
     pub threads: usize,
     /// Proposal ids (hex) this miner supports in governance signalling.
     pub signal: Vec<String>,
+    /// RandomX mining mode: "auto" (fast when the machine has ~3 GiB of free
+    /// memory), "fast" (2 GiB dataset, several times faster) or "light"
+    /// (256 MiB, same memory as verification).
+    pub mode: String,
+}
+
+impl MiningConfig {
+    /// Whether to build the 2 GiB dataset, reading the free memory for "auto".
+    pub fn use_fast_mode(&self) -> bool {
+        match self.mode.trim().to_ascii_lowercase().as_str() {
+            "fast" | "full" => true,
+            "light" | "off" => false,
+            _ => available_memory_mib().is_some_and(|mib| mib >= 3_072),
+        }
+    }
+}
+
+/// Free memory (MiB) according to `/proc/meminfo`.
+fn available_memory_mib() -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let line = text.lines().find(|l| l.starts_with("MemAvailable:"))?;
+    let kib: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kib / 1024)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -105,7 +128,7 @@ impl Default for RpcConfig {
 
 impl Default for MiningConfig {
     fn default() -> Self {
-        MiningConfig { enabled: true, address: String::new(), threads: 0, signal: vec![] }
+        MiningConfig { enabled: true, address: String::new(), threads: 0, signal: vec![], mode: "auto".into() }
     }
 }
 

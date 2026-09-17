@@ -51,9 +51,10 @@ impl BlockHeader {
         u256_from_bytes(&self.target)
     }
 
-    /// Computes CoinHash and checks it against the header target.
+    /// Computes CoinHash (RandomX with this height's epoch key) and checks it
+    /// against the header target.
     pub fn check_pow(&self, hasher: &mut PowHasher) -> bool {
-        let h = hasher.hash(&self.to_bytes());
+        let h = hasher.hash(self.height, &self.to_bytes());
         crate::pow::meets_target(&h, &self.target_u256())
     }
 }

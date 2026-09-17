@@ -4,7 +4,8 @@
 //!   the API and the rest of the machine stay responsive.
 //! * Default thread count is CPU cores − 1 (at least 1).
 //! * Mining pauses while the node is catching up with the network.
-//! * Each worker keeps its own 16 MiB CoinHash buffer.
+//! * Workers share the RandomX memory: one 256 MiB cache per epoch, plus the
+//!   2 GiB dataset when fast mode is on (`[mining] mode`).
 
 use crate::chain::now_secs;
 use crate::node::{BlockJob, Node};
@@ -12,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thecoin_core::hash::Hash32;
-use thecoin_core::pow::{meets_target, PowHasher};
+use thecoin_core::pow::{meets_target, PowHasher, PowMode};
 use thecoin_core::{Address, Block, U256};
 use tracing::{debug, info, warn};
 
@@ -143,7 +144,12 @@ fn lower_priority() {}
 
 fn worker(node: Arc<Node>) {
     lower_priority();
-    let mut hasher = PowHasher::new(node.params.pow);
+    let mode = if node.config.mining.use_fast_mode() { PowMode::Fast } else { PowMode::Light };
+    let height = node.chain.tip().height;
+    let mut hasher = PowHasher::with_mode(node.params.chain_id, node.params.pow, height, mode);
+    if mode == PowMode::Fast && hasher.mode() != PowMode::Fast {
+        warn!("not enough memory for the 2 GiB RandomX dataset: mining in light mode");
+    }
     loop {
         if node.is_stopping() {
             return;
@@ -160,7 +166,7 @@ fn worker(node: Arc<Node>) {
         loop {
             header.nonce = nonce;
             nonce = nonce.wrapping_add(1);
-            let hash = hasher.hash(&header.to_bytes());
+            let hash = hasher.hash(header.height, &header.to_bytes());
             local_hashes += 1;
             if meets_target(&hash, &job.target) {
                 node.miner.hashes.fetch_add(local_hashes, Ordering::Relaxed);

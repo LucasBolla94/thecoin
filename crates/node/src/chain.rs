@@ -212,7 +212,7 @@ impl Chain {
             params,
             db,
             opts,
-            inner: Mutex::new(Inner { lthash, hasher: PowHasher::new(params.pow), orphans: Vec::new() }),
+            inner: Mutex::new(Inner { lthash, hasher: PowHasher::new(params.chain_id, params.pow), orphans: Vec::new() }),
             tip: RwLock::new(tip),
         })
     }

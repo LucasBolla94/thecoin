@@ -675,10 +675,10 @@ async fn handle_message(node: &Arc<Node>, peer: &Arc<Peer>, msg: Message, block_
                 if !matches!(status, RelayedHeader::Valid) {
                     return Ok(Some(status));
                 }
-                let pow = node2.params.pow;
+                let params = node2.params;
                 let ok = POW_HASHER.with(|cell| {
                     let mut slot = cell.borrow_mut();
-                    header.check_pow(slot.get_or_insert_with(|| PowHasher::new(pow)))
+                    header.check_pow(slot.get_or_insert_with(|| PowHasher::new(params.chain_id, params.pow)))
                 });
                 Ok(if ok { None } else { Some(RelayedHeader::Invalid(thecoin_core::BlockError::BadPow)) })
             })
@@ -941,11 +941,11 @@ async fn block_pipeline(node: Arc<Node>, peer_id: u64, mut rx: mpsc::Receiver<Bl
             }
         };
         let Some(block) = next else { break };
-        let pow = node.params.pow;
+        let params = node.params;
         pending.push_back(tokio::task::spawn_blocking(move || {
             let ok = POW_HASHER.with(|cell| {
                 let mut slot = cell.borrow_mut();
-                let hasher = slot.get_or_insert_with(|| PowHasher::new(pow));
+                let hasher = slot.get_or_insert_with(|| PowHasher::new(params.chain_id, params.pow));
                 block.header.check_pow(hasher)
             });
             (block, ok)

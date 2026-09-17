@@ -232,15 +232,15 @@ fn genesis_vectors() {
     for (n, hash, prev, root, header, coinhash) in [
         (
             Network::Mainnet,
-            "e46f323de0ebf9168f5b65bad54710cb025263cf38038c1eca2895565360091d",
+            "0ba45c29c569537d18a438646562b6112c2368af17d9f233b2595fbea946ba99",
             "628153829eca06c2fef7546b35d52d4308bc7d73e857b7c0d192518d3fa10de7",
             "8e944d5c888c688ab07397bd7b9053ec4c95dfa50951258e26da9058cc0cb032",
-            "010000000000000000000000628153829eca06c2fef7546b35d52d4308bc7d73e857b7c0d192518d3fa10de75740f3f044b5290cbda05ef48cf56fad55c4cab20e8202b66cbb84c7968e9fc18e944d5c888c688ab07397bd7b9053ec4c95dfa50951258e26da9058cc0cb03280e7a56a000000000007ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
-            "b036510a55da453b7e7e221c2ea59edf66df8a85ae654add27436f4b6d8086d7",
+            "010000000000000000000000628153829eca06c2fef7546b35d52d4308bc7d73e857b7c0d192518d3fa10de75740f3f044b5290cbda05ef48cf56fad55c4cab20e8202b66cbb84c7968e9fc18e944d5c888c688ab07397bd7b9053ec4c95dfa50951258e26da9058cc0cb03280e7a56a00000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
+            "4b84fc12eebb7755174fdf9bce27ec6a76e47825a21174dad9ca32601b35cfea",
         ),
         (
             Network::Testnet,
-            "b26ef97d496d11b218dd430a96515c7a48aecb24156610a69ba74acc861642a8",
+            "ca5dd440c2e30d1b1743a78dca19d87f4812ab113e6537d1d6f3222330a4da2c",
             "8c4c3fc095f0fd4447d797cef32537b87b91ecc70ab422f237efe6f49460ef09",
             "890d5ea84fd146f3f2d932b878215f80651889efe45d4c0a4aed216364276767",
             "",
@@ -252,7 +252,7 @@ fn genesis_vectors() {
             "770efbde639a4320419a8fb4c18ac2d2fb57c5e6d6a38d77b870945adbe7ca72",
             "b87872c9e9506f8be2d05dce0b41b6d7cefcfb8c9c59c7071ceb53d1e31cf04f",
             "010000000000000000000000770efbde639a4320419a8fb4c18ac2d2fb57c5e6d6a38d77b870945adbe7ca725740f3f044b5290cbda05ef48cf56fad55c4cab20e8202b66cbb84c7968e9fc1b87872c9e9506f8be2d05dce0b41b6d7cefcfb8c9c59c7071ceb53d1e31cf04f80e7a56a00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
-            "fe79348dd5c7d846c9a08d750a30d810f7adf71fc867cdc7d1f91123d7f46b81",
+            "c5ad86693615df362eedb6e9568e1b1401e35444f53b0f1cc90b68eaa033c546",
         ),
     ] {
         let p = n.params();
@@ -264,7 +264,7 @@ fn genesis_vectors() {
             let bytes = g.header.to_bytes();
             assert_eq!(bytes.len(), 180);
             v.check(&format!("{n} header"), hex::encode(&bytes), header);
-            v.check(&format!("{n} CoinHash"), hex::encode(pow_hash(p.pow, &bytes)), coinhash);
+            v.check(&format!("{n} CoinHash"), hex::encode(pow_hash(p.chain_id, p.pow, 0, &bytes)), coinhash);
         }
     }
     v.finish();
