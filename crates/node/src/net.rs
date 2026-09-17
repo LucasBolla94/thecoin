@@ -796,6 +796,51 @@ async fn handle_message(node: &Arc<Node>, peer: &Arc<Peer>, msg: Message, block_
                 node.broadcast_double_spend(&first, &second, Some(peer.id));
             }
         }
+        Message::FinalityVote(vote) => {
+            let node2 = node.clone();
+            let v = (*vote).clone();
+            let params = node.params;
+            let outcome = tokio::task::spawn_blocking(move || -> Result<Option<(u64, thecoin_core::Hash32)>> {
+                // The voted block must be known: its parent gives the voting window.
+                let known = {
+                    let r = node2.chain.read()?;
+                    // Count votes only for blocks of our own main chain.
+                    match r.header(&v.block)? {
+                        Some(rec) if r.main_hash(rec.header.height)? == Some(v.block) => Some(rec),
+                        other => other.and(None),
+                    }
+                };
+                let Some(rec) = known else {
+                    // The vote arrived before the block: keep it for a moment.
+                    if v.verify(params.chain_id) {
+                        node2.finality.lock().park(v);
+                    }
+                    return Ok(None);
+                };
+                if rec.header.height != v.height {
+                    return Ok(None);
+                }
+                let full = params.finality_window;
+                let window = node2.chain.signer_window(&rec.header.prev_hash, full)?;
+                let tip = node2.chain.tip().height;
+                match node2.finality.lock().add(v.clone(), params.chain_id, tip, &window, full) {
+                    Ok(true) => Ok(Some((v.height, v.block))),
+                    Ok(false) => Ok(Some((0, thecoin_core::Hash32::ZERO))),
+                    Err(crate::finality::VoteError::BadSignature) => bail!("finality vote with a bad signature"),
+                    Err(_) => Ok(None),
+                }
+            })
+            .await??;
+            match outcome {
+                None => {}
+                Some((0, _)) => node.broadcast_finality_vote(&vote, Some(peer.id)),
+                Some((height, hash)) => {
+                    node.chain.set_finalized(height, hash)?;
+                    info!(height, %hash, "block finalised by the miners' votes");
+                    node.broadcast_finality_vote(&vote, Some(peer.id));
+                }
+            }
+        }
         Message::GetMempool => {
             let ids = node.mempool.lock().txids(MAX_INV_ITEMS);
             if !ids.is_empty() {

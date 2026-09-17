@@ -215,6 +215,7 @@ async fn status(State(node): State<AppState>) -> ApiResult<StatusView> {
             supply: supply_view(node, &g, tip.height),
             params: g.params,
             congestion_bp: g.congestion_bp,
+            finalized_height: node.chain.finalized().map(|(h, _)| h).unwrap_or(0),
             software_upgrade_required: required_upgrade(&r),
         })
     })
@@ -343,8 +344,23 @@ async fn block(State(node): State<AppState>, Path(id): Path<String>) -> ApiResul
                 target: hex::encode(rec.header.target),
                 nonce: rec.header.nonce.to_string(),
                 confirmations,
+                finalized: on_main && node.chain.finalized().is_some_and(|(h, _)| rec.header.height <= h),
                 subsidy: block_subsidy(node.params, rec.header.height),
                 fees,
+                uncles: b
+                    .uncles
+                    .iter()
+                    .map(|u| {
+                        let depth = rec.header.height - u.height;
+                        thecoin_core::api::UncleView {
+                            hash: u.hash(),
+                            height: u.height,
+                            miner: u.miner.encode(n),
+                            depth,
+                            reward: thecoin_core::block::uncle_reward(block_subsidy(node.params, rec.header.height), depth),
+                        }
+                    })
+                    .collect(),
                 txs: tx_views,
             })
         })

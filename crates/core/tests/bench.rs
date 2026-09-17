@@ -72,6 +72,7 @@ fn bench_block_validation() {
         miner: Address::ZERO,
         signal: 0,
         uncles_root: thecoin_core::block::uncles_root(&[]),
+        signer: [0u8; 32],
     };
     let block = Block { header, txs, uncles: Vec::new() };
     println!("block: {} txs, {} bytes", block.txs.len(), block.serialized_size());

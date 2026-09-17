@@ -30,6 +30,7 @@ pub mod difficulty;
 pub mod emission;
 pub mod error;
 pub mod execution;
+pub mod finality;
 pub mod genesis;
 pub mod governance;
 pub mod hash;

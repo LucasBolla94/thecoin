@@ -61,7 +61,7 @@ fn storage_fuel_cost() {
                 }
             }
         }
-        let mut b = chain.build_template(&addr, &[], &txs).unwrap();
+        let mut b = chain.build_template(&addr, [0u8; 32], &[], &txs).unwrap();
         assert_eq!(b.txs.len(), txs.len(), "all txs must be included");
         ts += 1;
         b.header.timestamp = ts;

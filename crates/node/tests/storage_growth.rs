@@ -24,7 +24,7 @@ fn build(opts: ChainOptions, blocks: u64, per_block: u64, memo: &str) -> (u64, u
     let funder_addr = Address::from_public_key(&funder.public_key());
     let mut ts = params.genesis_timestamp;
     let mut mine = |txs: Vec<Transaction>| {
-        let mut b = chain.build_template(&funder_addr, &[], &txs).unwrap();
+        let mut b = chain.build_template(&funder_addr, [0u8; 32], &[], &txs).unwrap();
         assert_eq!(b.txs.len(), txs.len(), "all txs must fit");
         ts += 1;
         b.header.timestamp = ts;

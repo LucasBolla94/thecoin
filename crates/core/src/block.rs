@@ -36,6 +36,9 @@ pub struct BlockHeader {
     pub signal: u32,
     /// Merkle root of the uncle headers carried by this block (see [`Block::uncles`]).
     pub uncles_root: Hash32,
+    /// Public key this miner uses to vote on finality (see [`crate::finality`]).
+    /// All zeros when the miner does not take part.
+    pub signer: [u8; 32],
 }
 
 impl BlockHeader {
@@ -142,7 +145,8 @@ mod tests {
             miner: Address::ZERO,
             signal: 0,
             uncles_root: Hash32::ZERO,
+            signer: [0u8; 32],
         };
-        assert_eq!(h.to_bytes().len(), 212);
+        assert_eq!(h.to_bytes().len(), 244);
     }
 }

@@ -116,6 +116,8 @@ pub struct ChainParams {
     pub lwma_window: u64,
     /// Maximum seconds a block timestamp may be ahead of local time.
     pub max_future_drift: u64,
+    /// Blocks whose miners may vote on finality (see [`crate::finality`]).
+    pub finality_window: u64,
 
     // ---- Emission ------------------------------------------------------
     pub initial_reward: u64,
@@ -213,6 +215,7 @@ pub static MAINNET: ChainParams = ChainParams {
     target_block_time: 15,
     lwma_window: 120,
     max_future_drift: 180,
+    finality_window: 200,
     // 10 TCN every 15 s = the same 40 TCN per minute as a 60 s block, and the
     // halving interval is four times longer, so the schedule in *time* and the
     // 50 000 000 TCN cap are unchanged.
@@ -242,6 +245,7 @@ pub static TESTNET: ChainParams = ChainParams {
     target_block_time: 15,
     lwma_window: 120,
     max_future_drift: 180,
+    finality_window: 200,
     // 10 TCN every 15 s = the same 40 TCN per minute as a 60 s block, and the
     // halving interval is four times longer, so the schedule in *time* and the
     // 50 000 000 TCN cap are unchanged.
@@ -279,6 +283,7 @@ pub static REGTEST: ChainParams = ChainParams {
     target_block_time: 60,
     lwma_window: 60,
     max_future_drift: 180,
+    finality_window: 20,
     initial_reward: 40 * COIN,
     halving_interval: 150,
     coinbase_maturity: 5,

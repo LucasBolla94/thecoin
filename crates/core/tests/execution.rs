@@ -46,6 +46,7 @@ impl TestChain {
             miner,
             signal,
             uncles_root: thecoin_core::block::uncles_root(&[]),
+            signer: [0u8; 32],
         };
         let block = Block { header, txs, uncles: Vec::new() };
         let (receipt, diff) = {

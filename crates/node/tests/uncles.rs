@@ -29,7 +29,7 @@ impl Net {
 
     /// Builds and submits a block; returns it.
     fn mine(&mut self, miner: Address) -> Block {
-        let mut b = self.chain.build_template(&miner, &[], &[]).unwrap();
+        let mut b = self.chain.build_template(&miner, [0u8; 32], &[], &[]).unwrap();
         self.ts += 1;
         b.header.timestamp = self.ts;
         let r = self.chain.submit_block(b.clone(), true).unwrap();
@@ -91,7 +91,7 @@ fn losing_block_becomes_an_uncle_and_is_paid() {
     assert_eq!(net.balance(&rival), expected, "uncle miner paid");
 
     // The same uncle cannot be included twice.
-    let again = net.chain.build_template(&main, &[], &[]).unwrap();
+    let again = net.chain.build_template(&main, [0u8; 32], &[], &[]).unwrap();
     assert!(again.uncles.iter().all(|u| u.hash() != losing_hash));
 }
 
@@ -105,7 +105,7 @@ fn uncle_rules_are_enforced() {
     assert!(matches!(net.chain.submit_block(losing.clone(), true).unwrap(), ProcessResult::SideChain));
 
     // The template already carries the uncle; hiding it from the header is refused.
-    let good = net.chain.build_template(&main, &[], &[]).unwrap();
+    let good = net.chain.build_template(&main, [0u8; 32], &[], &[]).unwrap();
     assert_eq!(good.uncles.len(), 1);
     let mut hidden = good.clone();
     hidden.header.timestamp = net.ts + 1;
@@ -114,7 +114,7 @@ fn uncle_rules_are_enforced() {
     assert!(matches!(r, ProcessResult::Invalid(thecoin_core::BlockError::BadUncle(_))), "{r:?}");
 
     // Too many uncles.
-    let mut many = net.chain.build_template(&main, &[], &[]).unwrap();
+    let mut many = net.chain.build_template(&main, [0u8; 32], &[], &[]).unwrap();
     many.header.timestamp = net.ts + 2;
     many.uncles = (0..=MAX_UNCLES).map(|i| net.competitor(&first, addr(10 + i as u8)).header).collect();
     many.header.uncles_root = thecoin_core::block::uncles_root(&many.uncles);
@@ -125,7 +125,7 @@ fn uncle_rules_are_enforced() {
     for _ in 0..(MAX_UNCLE_DEPTH + 1) {
         net.mine(main);
     }
-    let mut old = net.chain.build_template(&main, &[], &[]).unwrap();
+    let mut old = net.chain.build_template(&main, [0u8; 32], &[], &[]).unwrap();
     old.header.timestamp = net.ts + 3;
     old.uncles = vec![losing.header.clone()];
     old.header.uncles_root = thecoin_core::block::uncles_root(&old.uncles);

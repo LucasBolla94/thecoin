@@ -25,7 +25,7 @@ fn bench_chain_growth() {
     let n_empty = 10_000u64;
     let t = Instant::now();
     for i in 0..n_empty {
-        let mut b = chain.build_template(&miner, &[], &[]).unwrap();
+        let mut b = chain.build_template(&miner, [0u8; 32], &[], &[]).unwrap();
         b.header.timestamp = params.genesis_timestamp + if i < 20 { i + 1 } else { 21 + (i - 20) / 4 };
         match chain.submit_block(b, true).unwrap() {
             ProcessResult::NewTip { .. } => {}
@@ -86,7 +86,7 @@ fn bench_chain_growth() {
                 tx
             })
             .collect();
-        let mut b = chain.build_template(&miner, &[], &txs).unwrap();
+        let mut b = chain.build_template(&miner, [0u8; 32], &[], &txs).unwrap();
         assert_eq!(b.txs.len() as u64, per_block);
         b.header.timestamp = params.genesis_timestamp + 22 + n_empty / 4 + i;
         assert!(matches!(chain.submit_block(b, true).unwrap(), ProcessResult::NewTip { .. }));

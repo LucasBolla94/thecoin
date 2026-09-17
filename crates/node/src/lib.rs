@@ -15,6 +15,7 @@
 pub mod addrman;
 pub mod chain;
 pub mod config;
+pub mod finality;
 pub mod mempool;
 pub mod miner;
 pub mod net;

@@ -100,7 +100,7 @@ async fn coordinator(node: Arc<Node>, address: Address) {
             let built = tokio::task::spawn_blocking(move || {
                 let max = n.chain.global().map(|g| g.params.max_block_bytes as usize).unwrap_or(1_000_000);
                 let candidates = n.mempool.lock().ordered_for_block(max);
-                n.chain.build_template(&address, &n.miner.signal, &candidates)
+                n.chain.build_template(&address, n.finality_key.public_key(), &n.miner.signal, &candidates)
             })
             .await;
             match built {

@@ -16,7 +16,7 @@ use std::time::Instant;
 use thecoin_core::hash::Hash32;
 use thecoin_core::params::ChainParams;
 use thecoin_core::{Address, Block, Transaction};
-use thecoin_storage::DbOptions;
+use thecoin_storage::{DbOptions, DbRead};
 use tokio::sync::{mpsc, watch, Notify};
 use tracing::{debug, info, warn};
 
@@ -35,6 +35,14 @@ pub struct Node {
     pub chain: Arc<Chain>,
     pub mempool: NodeMutex<Mempool>,
     pub miner: MinerState,
+    /// Key used to vote on finality; its public key goes in mined blocks.
+    pub finality_key: thecoin_core::crypto::SecretKey,
+    /// Finality votes seen for the recent blocks.
+    pub finality: NodeMutex<crate::finality::Tally>,
+    /// Highest block this node has voted for. A node never signs two blocks at
+    /// the same height (that is what others punish as misbehaviour), so after a
+    /// reorganisation it simply does not vote again at that height.
+    pub last_voted: AtomicU64,
     pub started: Instant,
 
     // networking
@@ -83,6 +91,7 @@ impl Node {
             warn!("mining enabled but no mining.address configured; mining is disabled");
         }
 
+        let finality_key = crate::finality::load_key(&config.data_dir)?;
         let (block_tx, block_rx) = mpsc::channel::<BlockJob>(2048);
         let (tip_tx, _) = watch::channel(chain.tip().hash);
         let (shutdown, _) = watch::channel(false);
@@ -92,6 +101,9 @@ impl Node {
             params,
             mempool: NodeMutex::new(Mempool::new(config.mempool.max_mb.max(1) * 1024 * 1024)),
             miner: MinerState::new(miner_address, config.mining_threads(), signal),
+            finality_key,
+            finality: NodeMutex::new(crate::finality::Tally::new()),
+            last_voted: AtomicU64::new(0),
             started: Instant::now(),
             peers: NodeRwLock::new(HashMap::new()),
             next_peer_id: AtomicU64::new(1),
@@ -111,6 +123,9 @@ impl Node {
         });
 
         node.load_mempool();
+        if let Some((h, hash)) = node.chain.finalized() {
+            node.finality.lock().set_finalized(h, hash);
+        }
         spawn_block_processor(node.clone(), block_rx);
         if node.config.p2p.enabled {
             crate::net::start(node.clone()).await?;
@@ -222,6 +237,75 @@ impl Node {
         Ok(txid)
     }
 
+    /// Votes for the **parent** of the current tip: with one block of work on
+    /// top, every node already agrees on it, so votes do not chase blocks that
+    /// are about to lose a race (which could finalise a branch that dies and
+    /// split the network).
+    pub fn vote_on_confirmed_block(&self) -> Option<thecoin_core::finality::FinalityVote> {
+        use thecoin_core::finality::FinalityVote;
+        let tip = self.chain.tip();
+        if tip.height == 0 {
+            return None;
+        }
+        let height = tip.height - 1;
+        let hash = tip.header.prev_hash;
+        let prev = {
+            let r = self.chain.read().ok()?;
+            // Only vote for blocks of our own main chain.
+            if r.main_hash(height).ok()? != Some(hash) {
+                return None;
+            }
+            r.header(&hash).ok()??.header.prev_hash
+        };
+        let full = self.params.finality_window;
+        let window = self.chain.signer_window(&prev, full).ok()?;
+        if !window.contains(&self.finality_key.public_key()) {
+            return None; // this node did not mine recently: its vote has no weight
+        }
+        // One vote per height, ever.
+        let previous = self.last_voted.load(Ordering::SeqCst);
+        let vote = if height > previous {
+            self.last_voted.store(height, Ordering::SeqCst);
+            Some(FinalityVote::sign(self.params.chain_id, height, hash, &self.finality_key))
+        } else {
+            None
+        };
+        let final_now = {
+            let mut tally = self.finality.lock();
+            let mut result = Ok(false);
+            if let Some(v) = vote.clone() {
+                result = tally.add(v, self.params.chain_id, height, &window, full);
+            }
+            // Votes that arrived before this block can be counted now.
+            for parked in tally.take_parked(&hash) {
+                if let Ok(true) = tally.add(parked, self.params.chain_id, height, &window, full) {
+                    result = Ok(true);
+                }
+            }
+            result
+        };
+        if let Ok(true) = final_now {
+            if let Err(e) = self.chain.set_finalized(height, hash) {
+                warn!(error = %e, "could not store the finality checkpoint");
+            } else {
+                info!(height, %hash, "block finalised by the miners' votes");
+            }
+        }
+        let vote = vote?;
+        self.broadcast_finality_vote(&vote, None);
+        Some(vote)
+    }
+
+    pub fn broadcast_finality_vote(&self, vote: &thecoin_core::finality::FinalityVote, except: Option<u64>) {
+        let msg = Message::FinalityVote(Box::new(vote.clone()));
+        let peers: Vec<Arc<Peer>> = self.peers.read().values().cloned().collect();
+        for p in peers {
+            if Some(p.id) != except && p.is_ready() {
+                p.send(&msg);
+            }
+        }
+    }
+
     pub fn broadcast_double_spend(&self, first: &Transaction, second: &Transaction, except: Option<u64>) {
         let msg = Message::DoubleSpend { first: Box::new(first.clone()), second: Box::new(second.clone()) };
         let peers: Vec<Arc<Peer>> = self.peers.read().values().cloned().collect();
@@ -282,6 +366,7 @@ fn spawn_block_processor(node: Arc<Node>, mut rx: mpsc::Receiver<BlockJob>) {
                             warn!(error = %e, "mempool update failed");
                         }
                         let _ = node.tip_tx.send(tip.hash);
+                        node.vote_on_confirmed_block();
                         let recent = now_secs().saturating_sub(tip.header.timestamp) < 3600;
                         if local || recent || last_log.elapsed().as_secs() >= 10 {
                             info!(height = tip.height, hash = %tip.hash, txs = tx_count, local, "new tip");

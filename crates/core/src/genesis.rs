@@ -49,6 +49,7 @@ pub fn genesis_block(p: &ChainParams) -> Block {
         miner: Address::ZERO,
         signal: 0,
         uncles_root: merkle_root(&[]),
+        signer: [0u8; 32],
     };
     Block { header, txs: Vec::new(), uncles: Vec::new() }
 }

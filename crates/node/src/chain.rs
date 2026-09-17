@@ -110,6 +110,8 @@ struct Inner {
     /// Recent valid blocks that lost the race, candidates to be included as
     /// uncles by the next blocks (see `docs/ESCALA.md`).
     uncle_candidates: Vec<BlockHeader>,
+    /// Last block finalised by the miners' votes (see `crate::finality`).
+    finalized: Option<(u64, Hash32)>,
 }
 
 pub struct Chain {
@@ -209,6 +211,7 @@ impl Chain {
             return Err(anyhow!("state commitment does not match tip header; database is corrupt (delete the data directory to resync)"));
         }
         let tip = TipInfo { hash: tip_hash, height: rec.header.height, chainwork: u256_from_bytes(&rec.chainwork), header: rec.header };
+        let finalized = read_finalized(&r)?;
         drop(r);
         info!(height = tip.height, tip = %tip.hash, "chain loaded");
         Ok(Chain {
@@ -220,6 +223,7 @@ impl Chain {
                 hasher: PowHasher::new(params.chain_id, params.pow),
                 orphans: Vec::new(),
                 uncle_candidates: Vec::new(),
+                finalized,
             }),
             tip: RwLock::new(tip),
         })
@@ -551,6 +555,17 @@ impl Chain {
             }
         }
         branch.reverse();
+        if let Some((fh, _)) = inner.finalized {
+            if fork_height < fh {
+                // A branch that drops a block finalised by the miners' votes is
+                // ignored, however much work it carries (docs/ESCALA.md §3.3).
+                let w = self.db.write()?;
+                w.put_header(&hash, &record)?;
+                w.put_block_body(&hash, &block.txs, &block.uncles)?;
+                w.commit()?;
+                return Ok(ProcessResult::SideChain);
+            }
+        }
         let depth = tip.height - fork_height;
         if depth > self.params.max_reorg_depth {
             warn!(depth, fork_height, "refusing reorganization deeper than the maximum; ignoring block");
@@ -702,7 +717,13 @@ impl Chain {
 
     /// Builds a block template on top of the current tip. `candidates` must be
     /// ordered so that each sender's nonces are increasing (see the mempool).
-    pub fn build_template(&self, miner: &Address, signal_proposals: &[Hash32], candidates: &[Transaction]) -> Result<Block> {
+    pub fn build_template(
+        &self,
+        miner: &Address,
+        signer: [u8; 32],
+        signal_proposals: &[Hash32],
+        candidates: &[Transaction],
+    ) -> Result<Block> {
         let inner = self.inner.lock();
         let tip = self.tip();
         let r = self.db.read()?;
@@ -744,6 +765,7 @@ impl Chain {
             miner: *miner,
             signal,
             uncles_root: thecoin_core::block::uncles_root(&uncles),
+            signer,
         };
         Ok(Block { header, txs, uncles })
     }
@@ -785,6 +807,45 @@ impl Chain {
                 continue;
             }
             out.push(cand.clone());
+        }
+        Ok(out)
+    }
+
+    /// Last block finalised by the miners' votes, if any.
+    pub fn finalized(&self) -> Option<(u64, Hash32)> {
+        self.inner.lock().finalized
+    }
+
+    /// Records a new finality checkpoint (only ever moves forward).
+    pub fn set_finalized(&self, height: u64, hash: Hash32) -> Result<()> {
+        let mut inner = self.inner.lock();
+        if inner.finalized.is_some_and(|(h, _)| h >= height) {
+            return Ok(());
+        }
+        let mut bytes = height.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&hash.0);
+        let w = self.db.write()?;
+        w.set_meta(META_FINALIZED, &bytes)?;
+        w.commit()?;
+        inner.finalized = Some((height, hash));
+        Ok(())
+    }
+
+    /// Signing keys of the `len` blocks that end at `hash` (one entry per
+    /// block, repetitions included): the voters of the next block.
+    pub fn signer_window(&self, hash: &Hash32, len: u64) -> Result<Vec<[u8; 32]>> {
+        let r = self.db.read()?;
+        let mut out = Vec::new();
+        let mut cursor = *hash;
+        for _ in 0..len {
+            let Some(rec) = r.header(&cursor)? else { break };
+            if rec.header.signer != [0u8; 32] {
+                out.push(rec.header.signer);
+            }
+            if rec.header.height == 0 {
+                break;
+            }
+            cursor = rec.header.prev_hash;
         }
         Ok(out)
     }
@@ -883,4 +944,18 @@ fn remember_uncle(inner: &mut Inner, header: BlockHeader, tip_height: u64, p: &C
     while inner.uncle_candidates.len() > 16 {
         inner.uncle_candidates.remove(0);
     }
+}
+
+/// Key of the finality checkpoint in the database metadata.
+const META_FINALIZED: &str = "finalized";
+
+fn read_finalized<R: DbRead>(r: &R) -> Result<Option<(u64, Hash32)>> {
+    let Some(bytes) = r.get_meta(META_FINALIZED)? else { return Ok(None) };
+    if bytes.len() != 40 {
+        return Ok(None);
+    }
+    let height = u64::from_le_bytes(bytes[..8].try_into().expect("8 bytes"));
+    let mut hash = [0u8; 32];
+    hash.copy_from_slice(&bytes[8..]);
+    Ok(Some((height, Hash32(hash))))
 }

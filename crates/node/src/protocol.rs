@@ -106,6 +106,8 @@ pub enum Message {
     GetMempool,
     /// New block announced as header + short transaction ids (BIP-152 style).
     CompactBlock(Box<CompactBlock>),
+    /// A recent miner's signature saying a block is the chain (finality).
+    FinalityVote(Box<thecoin_core::finality::FinalityVote>),
     /// Asks for the transactions of a compact block the receiver is missing.
     GetBlockTxs {
         block: Hash32,
@@ -177,6 +179,7 @@ impl Message {
             Message::GetBlockTxs { .. } => "getblocktxs",
             Message::BlockTxs { .. } => "blocktxs",
             Message::DoubleSpend { .. } => "doublespend",
+            Message::FinalityVote(_) => "finalityvote",
         }
     }
 

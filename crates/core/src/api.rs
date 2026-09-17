@@ -38,6 +38,9 @@ pub struct StatusView {
     pub params: GovParams,
     /// Current congestion fee multiplier (10 000 = 1.0×).
     pub congestion_bp: u64,
+    /// Height of the last block finalised by the miners' votes (0 = none yet).
+    /// Blocks up to this height are irreversible.
+    pub finalized_height: u64,
     pub software_upgrade_required: Option<String>,
 }
 
@@ -67,6 +70,18 @@ pub struct BlockSummaryView {
     pub signal: u32,
 }
 
+/// An uncle carried by a block: a recent block that lost the race.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UncleView {
+    pub hash: Hash32,
+    pub height: u64,
+    pub miner: String,
+    /// How many blocks older than the block that carries it.
+    pub depth: u64,
+    /// Part of the subsidy paid to its miner.
+    pub reward: u64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockView {
     #[serde(flatten)]
@@ -78,8 +93,12 @@ pub struct BlockView {
     /// Decimal string: u64 nonces exceed JavaScript's safe integer range.
     pub nonce: String,
     pub confirmations: u64,
+    /// True when the miners' votes made this block irreversible.
+    pub finalized: bool,
     pub subsidy: u64,
     pub fees: u64,
+    /// Headers of the uncles carried by this block, with their miner and reward.
+    pub uncles: Vec<UncleView>,
     pub txs: Vec<TxView>,
 }
 
