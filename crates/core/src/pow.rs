@@ -60,6 +60,8 @@ unsafe impl<T> Sync for Shared<T> {}
 
 type SharedCache = Arc<Shared<RandomXCache>>;
 type SharedDataset = Arc<Shared<RandomXDataset>>;
+type CacheRegistry = Mutex<Vec<([u8; 32], SharedCache)>>;
+type DatasetRegistry = Mutex<Option<([u8; 32], SharedDataset)>>;
 
 fn light_flags() -> RandomXFlag {
     RandomXFlag::get_recommended_flags()
@@ -67,8 +69,8 @@ fn light_flags() -> RandomXFlag {
 
 /// Caches in use, newest last. Two are kept so that blocks around an epoch
 /// boundary (and short reorganisations) do not rebuild the cache every time.
-fn cache_registry() -> &'static Mutex<Vec<([u8; 32], SharedCache)>> {
-    static R: OnceLock<Mutex<Vec<([u8; 32], SharedCache)>>> = OnceLock::new();
+fn cache_registry() -> &'static CacheRegistry {
+    static R: OnceLock<CacheRegistry> = OnceLock::new();
     R.get_or_init(|| Mutex::new(Vec::new()))
 }
 
@@ -167,8 +169,8 @@ impl PowHasher {
 }
 
 /// Datasets are huge (2 GiB), so at most one is kept.
-fn dataset_registry() -> &'static Mutex<Option<([u8; 32], SharedDataset)>> {
-    static R: OnceLock<Mutex<Option<([u8; 32], SharedDataset)>>> = OnceLock::new();
+fn dataset_registry() -> &'static DatasetRegistry {
+    static R: OnceLock<DatasetRegistry> = OnceLock::new();
     R.get_or_init(|| Mutex::new(None))
 }
 
