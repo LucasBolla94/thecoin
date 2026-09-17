@@ -3,7 +3,8 @@
 #   dist/thecoin-<target>.tar.gz and dist/thecoin-<target>.tar.gz.sha256
 #
 # Usage: scripts/package.sh [target]    (default: host target)
-#   e.g. scripts/package.sh x86_64-unknown-linux-musl   (needs: rustup target add ... + musl-tools)
+#   e.g. scripts/package.sh aarch64-unknown-linux-gnu   (needs: rustup target add ... + a C++ cross toolchain,
+#   because the RandomX proof of work is a C++ library built with cmake)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TARGET="${1:-}"
