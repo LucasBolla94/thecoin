@@ -9,7 +9,14 @@ compatibilidade (novas mensagens no fim do enum, bits de serviço).
 
 * TCP, `TCP_NODELAY` ligado. Porta padrão: **7333** (mainnet), 17333 (testnet), 27333 (regtest).
 * Sem criptografia na v0.2 (dados são públicos e autenticados por PoW/assinaturas). Transporte cifrado (estilo BIP‑324) está no roadmap.
-* A versão do protocolo continua `1`, mas nós v0.1 não entendem as mensagens 13–16 (nem as regras de consenso da v0.2): as duas versões não formam a mesma rede.
+* A versão do protocolo continua `1`, mas nós v0.1 não entendem as mensagens 13–17 (nem as regras de consenso da v0.2): as duas versões não formam a mesma rede.
+
+> **Mudança de numeração na v0.2:** a mensagem `FinalityVote` entrou no índice
+> **14**, entre `CompactBlock` e `GetBlockTxs`, e empurrou `GetBlockTxs`,
+> `BlockTxs` e `DoubleSpend` para 15, 16 e 17. Como o consenso da v0.2 já é
+> incompatível com o da v0.1 (gênese e regras diferentes), as duas versões nunca
+> conversam — mas implementações independentes precisam usar os índices desta
+> tabela, não os da v0.1.
 
 Cada mensagem é um frame:
 
@@ -55,9 +62,10 @@ Regras de rejeição (desconexão imediata, sem banimento):
 | 11 | `Tx` | `Transaction` | transação |
 | 12 | `GetMempool` | — | pede um `Inv` do mempool do peer |
 | 13 | `CompactBlock` | `CompactBlock` | novo bloco anunciado como cabeçalho + ids curtos das transações (§7.1) |
-| 14 | `GetBlockTxs` | `block: Hash32`, `indexes: Vec<u32>` | pede as transações de um compact block que faltam no mempool |
-| 15 | `BlockTxs` | `block: Hash32`, `txs: Vec<Transaction>` | resposta a `GetBlockTxs`, na ordem dos índices pedidos |
-| 16 | `DoubleSpend` | `first: Transaction`, `second: Transaction` | alerta de gasto duplo: duas transações do mesmo remetente e nonce (§7.3) |
+| 14 | `FinalityVote` | `FinalityVote` | assinatura de um minerador recente dizendo que um bloco é a cadeia (§7.5) |
+| 15 | `GetBlockTxs` | `block: Hash32`, `indexes: Vec<u32>` | pede as transações de um compact block que faltam no mempool |
+| 16 | `BlockTxs` | `block: Hash32`, `txs: Vec<Transaction>` | resposta a `GetBlockTxs`, na ordem dos índices pedidos |
+| 17 | `DoubleSpend` | `first: Transaction`, `second: Transaction` | alerta de gasto duplo: duas transações do mesmo remetente e nonce (§7.3) |
 
 ```rust
 struct VersionMsg {
@@ -78,18 +86,36 @@ struct InvItem { kind: InvKind, hash: Hash32 }     // hash = txid ou block hash
 struct NetAddr { ip: [u8; 16], port: u16 }        // IPv6; IPv4 como ::ffff:a.b.c.d
 
 struct CompactBlock {
-    header: BlockHeader,              // 180 bytes (PROTOCOL.md §6)
+    header: BlockHeader,              // 244 bytes (PROTOCOL.md §6)
     short_ids: Vec<[u8; 6]>,          // short_id(block_hash, txid) de cada transação, na ordem do bloco
     prefilled: Vec<(u32, Transaction)>, // transações enviadas inteiras: (índice, tx); o nó de referência envia vazio
+    uncles: Vec<BlockHeader>,         // tios do bloco (≤ 2 × 244 bytes), sempre inteiros — nunca reconstruídos
 }
 
 short_id(block_hash, txid) = tagged_hash("short-id", block_hash(32) || txid(32))[0..6]
+
+struct FinalityVote {                 // 136 bytes
+    height: u64,                      // altura do bloco votado
+    block: Hash32,                    // hash do bloco votado
+    signer: [u8; 32],                 // chave pública anunciada pelo minerador no campo `signer` dos blocos que minerou
+    signature: [u8; 64],              // Ed25519 sobre vote_message(...)
+}
+
+vote_message(chain_id, height, block) =
+    tagged_hash("finality-vote", chain_id(4 LE) || height(8 LE) || block(32))
+id(voto) =
+    tagged_hash("finality-vote-id", signer(32) || height(8 LE) || block(32))
 ```
 
-Codificação Borsh de exemplo: `CompactBlock` = `0x0d || header(180) || u32_le(n) || n × 6 bytes || u32_le(k) || k × (u32_le(índice) || Transaction)`;
-`GetBlockTxs` = `0x0e || block(32) || u32_le(m) || m × u32_le(índice)`;
-`BlockTxs` = `0x0f || block(32) || u32_le(m) || m × Transaction`;
-`DoubleSpend` = `0x10 || Transaction || Transaction` (`Box<T>` é codificado como `T`).
+Codificação Borsh de exemplo: `CompactBlock` = `0x0d || header(244) || u32_le(n) || n × 6 bytes || u32_le(k) || k × (u32_le(índice) || Transaction) || u32_le(u) || u × header(244)`;
+`FinalityVote` = `0x0e || u64_le(height) || block(32) || signer(32) || signature(64)`;
+`GetBlockTxs` = `0x0f || block(32) || u32_le(m) || m × u32_le(índice)`;
+`BlockTxs` = `0x10 || block(32) || u32_le(m) || m × Transaction`;
+`DoubleSpend` = `0x11 || Transaction || Transaction` (`Box<T>` é codificado como `T`).
+
+A mensagem `Block` (índice 10) carrega o bloco inteiro — `header`, `txs` **e**
+`uncles` (`Block { header, txs, uncles }`, [PROTOCOL.md §6](PROTOCOL.md)). No banco
+o corpo é gravado como `BlockBody { txs, uncles }`.
 
 ## 3. Limites
 
@@ -101,8 +127,11 @@ Codificação Borsh de exemplo: `CompactBlock` = `0x0d || header(180) || u32_le(
 | entradas no locator | 64 |
 | hashes por resposta a `GetBlocks` | 500 |
 | `short_ids` em `CompactBlock` / índices em `GetBlockTxs` | 65 536 (e `prefilled` ≤ `short_ids`) |
+| `uncles` em `CompactBlock` | sem limite na decodificação (só o frame de 9 MiB); o consenso recusa mais de 2 e o cabeçalho é validado antes (§7.1) |
 | compact blocks aguardando transações, por peer | 8 (o mais antigo é descartado) |
 | alertas de gasto duplo guardados | 512, no máximo 1 por (remetente, nonce) |
+| votos de finalidade "estacionados" (bloco ainda desconhecido) | 512 (o mais antigo é descartado) |
+| distância máxima de um voto até o topo | 64 blocos (`MAX_VOTE_DISTANCE`) |
 | `user_agent` | 256 bytes |
 | fila de escrita por peer | 4 096 frames **e** 32 MiB de dados não enviados (acima disso o peer é desconectado) |
 | envio de blocos em massa (`GetData`) | pausa enquanto houver > 4 MiB na fila do peer; após 60 s sem o peer ler, desconecta |
@@ -206,7 +235,9 @@ anúncios de transações (`Inv` de tx) são ignorados.
 Quando o tip muda — se o bloco foi minerado localmente ou se o timestamp do tip
 está a menos de 1 hora (evita inundar a rede durante o sync) — o nó envia o
 novo bloco como `CompactBlock` (cabeçalho + um id curto de 6 bytes por
-transação) a todos os peers prontos que não conhecem o hash, exceto a origem.
+transação + os cabeçalhos dos **tios**) a todos os peers prontos que não conhecem
+o hash, exceto a origem. Os tios vão **inteiros** (no máximo 2 × 244 bytes) porque
+não estão no mempool e não há como reconstruí-los.
 Se o último bloco conectado não for o próprio tip, envia `Inv([tip])` como antes.
 
 Os ids curtos usam o **hash do bloco como sal** (`tagged_hash("short-id", …)`),
@@ -217,19 +248,20 @@ não existe. Quem recebe:
 sequenceDiagram
     participant A as Nó que minerou/recebeu
     participant B as Peer
-    A->>B: CompactBlock(header, short_ids)
+    A->>B: CompactBlock(header, short_ids, uncles)
     Note over B: 1. cabeçalho já conhecido → ignora<br/>2. valida contexto (altura, MTP, alvo LWMA, checkpoints) e CoinHash<br/>3. preenche slots com transações do mempool
     alt faltam transações
         B->>A: GetBlockTxs(block, índices)
         A->>B: BlockTxs(block, txs)
     end
-    Note over B: monta o bloco; tx_root confere → pipeline normal de blocos<br/>tx_root não confere → GetData(Block) (bloco inteiro)
+    Note over B: monta o bloco; tx_root e uncles_root conferem → pipeline normal<br/>algum dos dois não confere → GetData(Block) (bloco inteiro)
 ```
 
 1. Marca o hash como conhecido pelo peer.
 2. **Valida o cabeçalho antes de alocar qualquer coisa:** alvo acima de
    `pow_limit` → inválido; cabeçalho já armazenado → ignora; pai desconhecido →
-   pede o bloco inteiro com `GetData` (fluxo de órfãos); bloco mais de 720 blocos
+   pede o bloco inteiro com `GetData` (fluxo de órfãos); bloco mais de
+   `max_reorg_depth` blocos (2 880 na mainnet/testnet, 720 na regtest)
    abaixo do tip → ignora; checagens de contexto de cabeçalho
    ([PROTOCOL.md §19.1](PROTOCOL.md#191-checagens-de-cabeçalho--antes-de-aplicar-o-corpo)
    itens 1–5) e **prova de trabalho**. Cabeçalho inválido → 100 pontos de mau
@@ -243,9 +275,12 @@ sequenceDiagram
    desconhecido → `NotFound([Block])`.
 6. `BlockTxs`: preenche os slots vazios na ordem; se sobrar ou faltar
    transação, pede o bloco inteiro (`GetData`).
-7. Bloco montado: se o `tx_root` não confere (colisão de id curto ou transação
-   errada), pede o bloco inteiro; senão o bloco entra no mesmo pipeline dos
-   blocos completos (verificação de PoW e processamento em ordem).
+7. Bloco montado: se o `tx_root` **ou** o `uncles_root` não conferem (colisão de
+   id curto, transação errada ou tios errados), pede o bloco inteiro; senão o
+   bloco entra no mesmo pipeline dos blocos completos (verificação de PoW e
+   processamento em ordem). As regras de consenso dos tios (no máximo 2, idade
+   ≤ 6, PoW válida, pai na cadeia) são verificadas na aplicação do bloco, não
+   aqui — ver [PROTOCOL.md](PROTOCOL.md).
 
 Blocos completos continuam sendo servidos por `GetData` (sincronização, órfãos e fallback).
 
@@ -280,8 +315,62 @@ mesmo que a segunda transação nunca chegue ao seu mempool.
 
 ### 7.4 `GetData`
 Blocos são servidos do banco (qualquer bloco armazenado com corpo); transações
-do mempool. Itens ausentes voltam em `NotFound`. Nós podados não servem blocos
-antigos (não anunciam o bit `ARCHIVE`).
+do mempool. Itens ausentes voltam em `NotFound`. Nós podados (padrão desde a
+v0.2, [OPERATIONS.md §10](OPERATIONS.md)) não servem blocos antigos e não anunciam
+o bit `ARCHIVE`.
+
+### 7.5 Votos de finalidade (`FinalityVote`)
+
+Cada nó tem uma chave de assinatura (`<data-dir>/finality.key`) e publica a chave
+pública no campo `signer` dos blocos que minera. Os **eleitores** de um bloco são
+os mineradores dos `finality_window` blocos anteriores a ele (200 na mainnet e na
+testnet, 20 na regtest), com peso igual ao número de blocos que mineraram nessa
+janela. As regras de consenso estão em [PROTOCOL.md](PROTOCOL.md) e o desenho em
+[ESCALA.md §3.3](ESCALA.md); aqui está só o que trafega na rede.
+
+**Quando um nó emite um voto.** Sempre que aceita um novo tip, o nó vota no
+**bloco anterior ao tip** (`altura = tip − 1`), nunca no próprio tip: com um bloco
+de trabalho em cima, todos já concordam sobre ele, então os votos não perseguem
+blocos que estão perdendo uma corrida. O nó só vota se:
+
+* o bloco votado está na **sua** cadeia principal;
+* a chave pública dele aparece na janela (senão o voto não teria peso);
+* ele ainda não votou nessa altura — **um voto por altura**, mesmo depois de uma
+  reorganização. O contador da última altura votada vive em memória: um nó
+  reiniciado volta a poder votar em alturas antigas, e por isso não se deve
+  reiniciar um minerador repetidamente durante uma reorganização
+  ([OPERATIONS.md §9.1](OPERATIONS.md)).
+
+O voto é enviado a todos os peers prontos.
+
+**Ao receber um `FinalityVote`:**
+
+1. O bloco votado precisa ser conhecido **e** estar na cadeia principal do
+   receptor. Se for desconhecido, o voto é *estacionado* (no máximo 512, o mais
+   antigo sai) — só depois de verificar a assinatura — e recontado quando o bloco
+   chegar. Se o bloco é conhecido mas a altura do voto não bate com a do bloco, o
+   voto é ignorado sem retransmissão.
+2. A janela de eleitores é lida da cadeia: as chaves `signer` dos
+   `finality_window` blocos que terminam no **pai** do bloco votado (blocos sem
+   `signer` não entram).
+3. O voto é recusado (e **não** retransmitido) se:
+   * a altura está a mais de 64 blocos do topo, ou acima de `topo + 1`
+     (`MAX_VOTE_DISTANCE`);
+   * a altura já é menor ou igual à última finalizada;
+   * o assinante não está na janela (voto sem peso);
+   * é repetição de um voto já contado;
+   * o assinante já foi banido por **equívoco**.
+4. **Equívoco:** assinar dois blocos diferentes na mesma altura bane a chave para
+   sempre naquele nó e apaga todos os votos dela.
+5. Assinatura inválida → erro de mensagem (**20 pontos**, §8).
+6. Voto válido e novo → contado e retransmitido a todos os outros peers.
+7. Quando os votos somam **≥ 2/3 do peso da janela**
+   (`ceil(blocos_da_janela × 6667 / 10000)`) **e** a janela está cheia com pelo
+   menos **4 mineradores diferentes**, o bloco é gravado como final
+   (`finalized_height` na API) e nenhum ramo que o remova é aceito depois disso.
+
+Nada disso trava a cadeia: sem votos suficientes ela continua pelo peso de
+trabalho, apenas sem o carimbo de finalidade.
 
 ## 8. Mau comportamento e banimento
 
@@ -293,7 +382,7 @@ antigos (não anunciam o bit `ARCHIVE`).
 | peer de sync sem progresso por 90 s | 50 (e desconexão) |
 | bloco com PoW inválida | 100 |
 | transação com assinatura inválida | 10 |
-| erro ao tratar mensagem (ex.: `Version` duplicado, `DoubleSpend` inválido, índice fora do intervalo em `GetBlockTxs`) | 20 |
+| erro ao tratar mensagem (ex.: `Version` duplicado, `DoubleSpend` inválido, `FinalityVote` com assinatura inválida, índice fora do intervalo em `GetBlockTxs`) | 20 |
 
 Ao atingir **100 pontos** o peer é desconectado; se o IP for roteável
 (público), fica **banido por 24 h** (conexões de entrada recusadas e sem

@@ -240,11 +240,15 @@ GET /api/v1/security?amount=<motes>
 **Quantas confirmações?** Use `GET /api/v1/security?amount=` (ou
 `thecoin-wallet confirmations <valor>`): recomenda `N` blocos tal que as
 recompensas que um atacante abandonaria (`N × recompensa do bloco`) sejam pelo
-menos o dobro do valor, entre 1 e 720. Exemplo real (regtest, recompensa 40 TCN):
-500 TCN → 25 confirmações; 1 TCN → 1.
+menos o dobro do valor, entre 1 e a profundidade máxima de reorganização (2 880
+blocos ≈ 12 h). Exemplo (regtest, recompensa 40 TCN): 500 TCN → 25
+confirmações; 1 TCN → 1. Quando os mineradores estão assinando blocos
+(finalidade), a resposta traz `blocks_to_finality` e a recomendação cai para
+esse número — normalmente 2 blocos, ≈ 30 s — porque um bloco final nunca é
+revertido, qualquer que seja o valor.
 
-Recompensas de mineração: 25 % gastáveis após 100 blocos e o restante após
-1 000 blocos (`immature` na API mostra o que ainda está em cooldown).
+Recompensas de mineração: 25 % gastáveis após 400 blocos e o restante após
+4 000 blocos (`immature` na API mostra o que ainda está em cooldown).
 
 ### 4.7 Substituição (RBF), gasto duplo e expiração
 
@@ -607,7 +611,7 @@ carteiras de desktop podem ler/gravar o mesmo arquivo.
   Keychain, Android Keystore). Apague buffers de chave da memória após o uso.
 * Exiba ao usuário, antes de assinar: destino completo, valor, taxa (e
   prioridade), memo, se é substituível e, para contratos, as condições (prazos
-  em blocos convertidos para tempo aproximado: 1 bloco ≈ 1 minuto), `value`,
+  em blocos convertidos para tempo aproximado: 1 bloco ≈ 15 segundos), `value`,
   `max_fuel` e `max_deposit`.
 * Simule toda chamada de contrato antes de enviar (§6.3).
 * Valide endereço e HRP da rede; nunca "corrija" checksums automaticamente.

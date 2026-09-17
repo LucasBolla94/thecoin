@@ -24,6 +24,17 @@ referência em Rust (`crates/core` e `crates/tccl`).
 > depósitos de armazenamento e aquecimento do LWMA. O roteiro de consenso de longo
 > prazo (PoW → híbrido → PoS) está em [ROADMAP.md](ROADMAP.md).
 
+> **Mudanças de consenso depois do v0.2.0 publicado** (ver [CHANGELOG.md](../CHANGELOG.md)):
+> a prova de trabalho passou a ser **RandomX** com chave por época (§7), o tempo
+> de bloco caiu para **15 s** com a mesma emissão no tempo e o mesmo teto (§10),
+> o cabeçalho ganhou `uncles_root` e `signer` e passou a ter **244 bytes** (§6.1),
+> blocos carregam até **2 tios** (§6.3), existe **finalidade assinada pelos
+> mineradores** (§19.3), o estado ganhou o registro `0x0A ProgramAdmin` (§11) e a
+> TCCL passou a compilar na **versão de linguagem 2**, com as ações `Upgrade` e
+> `SetUpgradeAuthority` (§17). O estudo que motivou os itens de escala está em
+> [ESCALA.md](ESCALA.md). Tudo isso muda o gênese e é incompatível com qualquer
+> cadeia anterior.
+
 Índice
 
 1. [Unidades e valores](#1-unidades-e-valores)
@@ -80,14 +91,18 @@ Tags definidas:
 | `tx-sign` | mensagem assinada de uma transação |
 | `txid` | identificador de transação |
 | `block` | hash (id) de bloco |
-| `merkle-leaf`, `merkle-node`, `merkle-empty` | árvore de Merkle |
+| `merkle-leaf`, `merkle-node`, `merkle-empty` | árvore de Merkle (txids e tios) |
 | `address` | derivação de endereço |
 | `contract-id` | id de contrato de pagamento nativo |
 | `proposal-id` | id de proposta |
 | `program-address` | endereço de contrato TCCL (§17.1) |
 | `tccl-source` | hash do código-fonte TCCL (`ProgramMeta.source_hash`) |
+| `program-code` | hash do código compilado (`expected_code_hash`, §17.11) |
+| `randomx-key` | chave de época da prova de trabalho (§7) |
+| `finality-vote` | mensagem assinada de um voto de finalidade (§19.3) |
 | `state-root` | raiz de estado a partir do LtHash |
 | `genesis` | `prev_hash` do bloco gênese |
+| `finality-vote-id` | id de voto de finalidade (só relay, não é consenso) |
 | `p2p` | checksum de frames P2P (não é consenso) |
 | `short-id` | ids curtos de compact blocks (não é consenso, ver [P2P.md](P2P.md)) |
 
@@ -175,11 +190,14 @@ Layout do `TxBody` (antes da ação):
 | Bit | Constante | Significado |
 |---|---|---|
 | `0x01` | `FLAG_REPLACEABLE` | o remetente permite que a transação seja substituída **no mempool** por outra com o mesmo nonce e taxa maior (*replace-by-fee* opt-in) |
+| `0x02` | `FLAG_FINAL_DEPLOY` | numa ação `Deploy`, implanta um contrato que **nunca** poderá ser atualizado (nenhum registro `ProgramAdmin` é criado, §17.11) |
 
-`KNOWN_FLAGS = 0x01`. `flags & !KNOWN_FLAGS != 0` → transação inválida. O bit
-não muda a validade on-chain; a regra de substituição (taxa ≥ 125 %) é política
-de mempool (ver [API.md](API.md#post-apiv1tx)). Receptores de pagamentos **sem**
-o bit podem confiar na primeira versão vista.
+`KNOWN_FLAGS = 0x03`. `flags & !KNOWN_FLAGS != 0` → transação inválida.
+`FLAG_REPLACEABLE` não muda a validade on-chain; a regra de substituição
+(taxa ≥ 125 %) é política de mempool (ver [API.md](API.md#post-apiv1tx)).
+Receptores de pagamentos **sem** o bit podem confiar na primeira versão vista.
+`FLAG_FINAL_DEPLOY` **é** consenso: ele decide se o registro `0x0A` é gravado no
+deploy; em qualquer outra ação o bit é simplesmente ignorado.
 
 ### 5.3 `TxAction` 🧩
 
@@ -193,6 +211,8 @@ o bit podem confiar na primeira versão vista.
 | 5 | `Vote` | `proposal: Hash32`, `choice: VoteChoice`, `weight: u64` |
 | 6 | `Deploy` | `source: String`, `init_args: Vec<Value>`, `value: u64`, `max_fuel: u64`, `max_deposit: u64` |
 | 7 | `Invoke` | `contract: Address`, `function: String`, `args: Vec<Value>`, `value: u64`, `max_fuel: u64`, `max_deposit: u64` |
+| 8 | `Upgrade` | `contract: Address`, `source: String`, `expected_code_hash: Hash32`, `args: Vec<Value>`, `max_fuel: u64`, `max_deposit: u64` |
+| 9 | `SetUpgradeAuthority` | `contract: Address`, `new_authority: Option<Address>`, `expected_code_hash: Hash32` |
 
 `TransferOutput { to: Address, amount: u64 }`.
 
@@ -297,7 +317,7 @@ assinam de novo com a taxa calculada pela fórmula da §14.3.
 
 (`core/src/block.rs`)
 
-### 6.1 Cabeçalho — 180 bytes fixos 🔒
+### 6.1 Cabeçalho — 244 bytes fixos 🔒
 
 | Offset | Tamanho | Campo | Descrição |
 |---|---|---|---|
@@ -311,14 +331,18 @@ assinam de novo com a taxa calculada pela fórmula da §14.3.
 | 148 | 8 | `nonce: u64` | espaço de busca do minerador |
 | 156 | 20 | `miner: Address` | recebe subsídio + taxas (após o cooldown, §10) |
 | 176 | 4 | `signal: u32` | bits de sinalização de governança |
-| **180** | | | fim |
+| 180 | 32 | `uncles_root: Hash32` | raiz de Merkle dos cabeçalhos dos tios (§6.3) |
+| 212 | 32 | `signer: [u8; 32]` | chave pública Ed25519 com que este minerador vota na finalidade (§19.3); 32 zeros = não participa |
+| **244** | | | fim |
 
 ```rust
-struct Block { header: BlockHeader, txs: Vec<Transaction> }
+struct Block     { header: BlockHeader, txs: Vec<Transaction>, uncles: Vec<BlockHeader> }
+struct BlockBody { txs: Vec<Transaction>, uncles: Vec<BlockHeader> }   // corpo como é armazenado/relayado
 ```
 
-Tamanho serializado de um bloco = `180 + 4 + Σ tamanho(tx)`. Um bloco vazio tem
-**184 bytes**.
+Tamanho serializado de um bloco =
+`244 + 4 + Σ tamanho(tx) + 4 + 244 × número de tios`. Um bloco vazio e sem tios
+tem **252 bytes**; com 2 tios, 740 bytes.
 
 ### 6.2 Hash do bloco 🔒
 
@@ -327,29 +351,84 @@ block_hash = tagged_hash("block", borsh(BlockHeader))
 ```
 
 É o identificador usado em toda parte (P2P, índices, `prev_hash`). Barato de
-calcular — **não** é o hash da prova de trabalho.
+calcular — **não** é o hash da prova de trabalho. Um tio é identificado pelo
+mesmo hash do seu cabeçalho.
+
+### 6.3 Tios (*uncles*) 🔒
+
+(`core/src/block.rs`, `node/src/chain.rs::check_uncles`, `core/src/execution.rs`)
+
+Um **tio** é um bloco válido que perdeu a corrida: ele não está na cadeia, mas
+um bloco posterior pode carregar o **cabeçalho** dele e pagar parte do subsídio
+ao seu minerador. Isso tira do minerador pequeno o prejuízo de perder corridas
+por milissegundos, que com blocos de 15 s seria grande (motivação e medições em
+[ESCALA.md](ESCALA.md#2-blocos-órfãos)).
+
+```
+uncles_root = merkle_root([ hash(uncle_0), hash(uncle_1) ])       // §13; lista vazia = tagged_hash("merkle-empty")
+MAX_UNCLES = 2            MAX_UNCLE_DEPTH = 6
+depth(uncle) = bloco.height − uncle.height
+uncle_reward(subsidy, depth) = floor(subsidy × (7 − depth) / 24)  // 0 se depth == 0 ou depth > 6
+```
+
+`uncle_reward` vale 25 % do subsídio em `depth = 1` e cai até 4 % em `depth = 6`.
+
+**Regras de validade** de cada tio de um bloco na altura `h` (todas obrigatórias):
+
+1. `header.uncles_root` é igual à raiz calculada sobre os tios do corpo, e
+   `len(uncles) <= 2`.
+2. Nenhum tio repetido dentro do bloco.
+3. `uncle.height < h` e `h − uncle.height <= 6`.
+4. `uncle.version == BLOCK_VERSION`.
+5. O tio **não** pode já estar na cadeia nem ter sido incluído como tio por
+   algum dos **6** blocos anteriores deste ramo.
+6. `uncle.prev_hash` é um dos 6 blocos anteriores deste ramo (o tio realmente
+   saiu desta cadeia) e `pai.height + 1 == uncle.height`.
+7. `uncle.target` é exatamente o alvo exigido para a altura dele (§8) e
+   `uncle.timestamp` respeita MTP e deriva futura como um bloco normal (§9).
+8. `CoinHash(uncle) <= uncle.target` — o tio tem prova de trabalho válida.
+
+**Pagamento:** o total pago aos tios é **descontado do subsídio do bloco** —
+a emissão por bloco não aumenta e o teto de 50 000 000 TCN não muda (§10). Se
+`Σ uncle_reward > subsidy` o bloco é inválido.
+
+**Peso da cadeia:** o trabalho dos tios entra no `chainwork` do bloco que os
+inclui (§19.2), o que dá ao minerador o incentivo de incluí-los e encarece
+reorganizações.
 
 ## 7. Prova de trabalho — CoinHash
 
 🔒 (`core/src/pow.rs`)
 
+**CoinHash é RandomX** com uma chave que gira por época:
+
 ```
-CoinHash(header) = Argon2id(
-    password = borsh(BlockHeader)   // 180 bytes
-    salt     = "TheCoin/PoW/v1.."   // 16 bytes ASCII fixos
-    m        = pow.mem_kib (KiB)
-    t        = pow.iterations
-    p        = 1 (lanes)
-    version  = 0x13
-    tag_len  = 32
-)
+epoch          = height / pow.epoch_blocks
+key            = tagged_hash("randomx-key", u32_le(chain_id) || u64_le(epoch))
+CoinHash(head) = RandomX(key, borsh(BlockHeader))      // 244 bytes de entrada, 32 de saída
 ```
 
-| Rede | `mem_kib` | `iterations` |
+| Rede | `pow.epoch_blocks` | Época em segundos |
 |---|---|---|
-| mainnet | 16 384 (16 MiB) | 1 |
-| testnet | 16 384 (16 MiB) | 1 |
-| regtest | 64 | 1 |
+| mainnet | 2 048 | ≈ 8,5 h (15 s por bloco) |
+| testnet | 2 048 | ≈ 8,5 h |
+| regtest | 64 | — |
+
+* A chave depende **apenas** de `chain_id` e da altura, então qualquer nó
+  verifica um cabeçalho sabendo só a altura dele, sem ler a cadeia, e uma
+  reorganização nunca muda a chave de um bloco.
+* **Modo leve** (todo nó, para verificar): cache de **256 MiB** compartilhado
+  por todas as threads, ≈ 30 ms por bloco numa VPS de 2 vCPU.
+* **Modo rápido** (opcional, só para minerar): dataset de **2 GiB**, várias
+  vezes mais rápido; escolhido em `[mining] mode = auto|fast|light`
+  (`auto` = rápido quando há ~3 GiB livres). O modo **não** é consenso: o
+  resultado do hash é idêntico nos dois.
+* **Por que RandomX:** Argon2id é limitado por *banda* de memória, e uma placa
+  de vídeo tem ~1 000 GB/s contra ~2 GB/s de um servidor pequeno — uma GPU
+  valeria de 20 a 100 CPUs. RandomX executa um programa aleatório feito das
+  operações em que uma CPU é boa, então GPU ≈ CPU e a mineração continua nos
+  computadores comuns. Medições:
+  `cargo test -p thecoin-core --release --test pow_bench -- --ignored --nocapture`.
 
 **Validade:** interpretar os 32 bytes do CoinHash como inteiro de 256 bits
 big-endian `H`. O bloco é válido se `H <= target`.
@@ -366,12 +445,13 @@ Dificuldade exibida em APIs = `work(target)` como `f64` (informativo).
 
 ## 8. Ajuste de dificuldade — LWMA-1
 
-🔒 Recalculado **a cada bloco** (`core/src/difficulty.rs`). Parâmetros:
-`T = target_block_time = 60`, `N = lwma_window = 60`, `LWMA_MIN_WINDOW = 6`.
+🔒 Recalculado **a cada bloco** (`core/src/difficulty.rs`). Parâmetros de
+mainnet/testnet: `T = target_block_time = 15`, `N = lwma_window = 120`,
+`LWMA_MIN_WINDOW = 6` (regtest não reajusta, §20).
 
 Seja `next_height` a altura do bloco sendo validado e `ancestors` a lista de
 cabeçalhos do mesmo ramo, do mais antigo ao mais novo, terminando no **pai**
-(o nó passa até `N + 1 = 61` ancestrais; perto do gênese, todos os disponíveis).
+(o nó passa até `N + 1 = 121` ancestrais; perto do gênese, todos os disponíveis).
 
 ```
 função next_target(next_height, ancestors):
@@ -382,7 +462,7 @@ função next_target(next_height, ancestors):
     se n < LWMA_MIN_WINDOW (6)           → retorna genesis_target
 
     window = últimos n+1 elementos de ancestors        // window[0] .. window[n]
-    k = n × (n + 1) × T / 2                            // n = 60: 109 800
+    k = n × (n + 1) × T / 2                            // n = 120, T = 15: 108 900
     prev_ts = window[0].timestamp
     weighted = 0 (u64)
     sum_targets = 0 (U512)
@@ -405,7 +485,7 @@ função next_target(next_height, ancestors):
 ```
 
 * Com retarget ativo, os blocos de altura **1 a 6** usam `genesis_target`; a
-  partir da altura 7 o LWMA já ajusta (com janela crescente até 60 blocos).
+  partir da altura 7 o LWMA já ajusta (com janela crescente até 120 blocos).
 * O limite de ±2× suaviza a janela curta do aquecimento e limita o efeito de
   timestamps manipulados.
 * `pow_limit = U256::MAX >> pow_limit_shift` (alvo mais fácil permitido).
@@ -433,23 +513,35 @@ subsidy(0)      = 0                                         // gênese sem recom
 subsidy(h >= 1) = initial_reward >> ((h − 1) / halving_interval)   (0 se shift >= 64)
 ```
 
-Mainnet/testnet: `initial_reward = 40 TCN`, `halving_interval = 625 000` blocos
-(≈ 434 dias). Alturas `1..=625 000` pagam 40 TCN, `625 001..=1 250 000` pagam
-20 TCN, etc. Emissão total = 49 999 999,99… TCN < 50 000 000 TCN. As 4 primeiras
-eras (≈ 4,76 anos) emitem 93,75 % do supply.
+Mainnet/testnet: `initial_reward = 10 TCN`, `halving_interval = 2 500 000` blocos
+(≈ 434 dias a 15 s por bloco). Alturas `1..=2 500 000` pagam 10 TCN,
+`2 500 001..=5 000 000` pagam 5 TCN, etc. Emissão total = 49 999 999,99… TCN
+< 50 000 000 TCN. As 4 primeiras eras (≈ 4,76 anos) emitem 93,75 % do supply.
 
-**Recompensa do bloco** `R(h) = subsidy(h) + Σ (fee − burned)` das transações do
-bloco (a sobretaxa de congestionamento `burned` é destruída, §14.3). Ela fica
-**pendente** no estado (`PendingReward { miner, amount: R, released: 0 }`) e é
-liberada em duas partes (**cooldown**):
+> 10 TCN a cada 15 s são os mesmos **40 TCN por minuto** do cronograma antigo de
+> 60 s, e o intervalo de halving é 4× maior — a curva **no tempo** e o teto de
+> 50 000 000 TCN são exatamente os mesmos de antes da mudança para 15 s.
+
+**Recompensa do bloco** `R(h) = subsidy(h) − Σ uncle_reward + Σ (fee − burned)`
+das transações do bloco (a sobretaxa de congestionamento `burned` é destruída,
+§14.3; os tios recebem `uncle_reward` do próprio subsídio, §6.3). Tudo fica
+**pendente** no estado num único registro por altura:
+
+```rust
+struct PendingReward { payouts: Vec<Payout> }         // o minerador primeiro, depois os tios
+struct Payout { who: Address, amount: u64, released: u64 }
+locked(r) = Σ (amount − released)
+```
+
+e é liberado em duas partes (**cooldown**), para cada `Payout`:
 
 | Quando (início do bloco) | Libera | Mainnet/testnet | Regtest |
 |---|---|---|---|
-| `h + coinbase_maturity` | `floor(R / 4)` (25 %) | +100 blocos | +5 |
-| `h + reward_unlock_blocks` | o restante `R − released` | +1 000 blocos | +12 |
+| `h + coinbase_maturity` | `floor(amount / 4)` (25 %) | +400 blocos (≈ 100 min) | +5 |
+| `h + reward_unlock_blocks` | o restante `amount − released` | +4 000 blocos (≈ 16,7 h) | +12 |
 
-`reward_unlock_blocks` (1 000) é maior que a reorganização máxima (720): a maior
-parte da recompensa de um bloco que ainda pode ser reorganizado nunca está
+`reward_unlock_blocks` (4 000) é maior que a reorganização máxima (2 880): a
+maior parte da recompensa de um bloco que ainda pode ser reorganizado nunca está
 gastável, o que desestimula ataques de reescrita por mineradores. Ver §15.
 
 **Checagem de teto:** após somar o subsídio a `ChainGlobal.emitted`, se
@@ -470,6 +562,7 @@ gastável, o que desestimula ataques de reescrita por mineradores. Ver §15.
 | `0x07` | `0x07 || program_address(20)` | `ProgramMeta` |
 | `0x08` | `0x08 || program_address(20)` | programa TCCL compilado: `borsh(Program)` |
 | `0x09` | `0x09 || program_address(20) || chave_local` | valor do armazenamento do contrato (§17.4) |
+| `0x0A` | `0x0A || program_address(20)` | `ProgramAdmin` — quem pode atualizar o código (§17.11). **Registro ausente = contrato final** |
 
 Todos os registros — inclusive código, metadados e armazenamento de contratos
 TCCL — entram no compromisso de estado (§12).
@@ -490,11 +583,14 @@ spendable(h) = if h <= locked_until { balance.saturating_sub(locked) } else { ba
 // O saldo em TCN de um contrato TCCL é a Account no endereço do contrato.
 
 struct PendingReward {
-    miner: Address,
-    amount: u64,             // subsídio + taxas do minerador do bloco
+    payouts: Vec<Payout>,    // [0] = minerador do bloco (subsídio menos tios + taxas); depois um por tio
+}
+struct Payout {
+    who: Address,
+    amount: u64,
     released: u64,           // parte já liberada (o quarto inicial)
 }
-locked(r) = amount − released
+locked(r) = Σ (amount − released)
 
 struct ChainGlobal {
     emitted: u64,
@@ -542,6 +638,13 @@ struct ProgramMeta {
     deposit: u64,            // depósito reembolsável mantido por state_bytes
 }
 
+struct ProgramAdmin {        // registro 0x0A; AUSENTE = contrato final (§17.11)
+    authority: Option<Address>,   // quem pode trocar o código
+    code_version: u32,            // 1 no deploy, +1 a cada Upgrade
+    language: u16,                // versão da linguagem TCCL do código guardado
+    previous_code_hash: Hash32,   // code_hash anterior ao último Upgrade (zeros no deploy)
+}
+
 struct Proposal {
     id: Hash32, proposer: Address, spec: ProposalSpec, deposit: u64,
     created_height: u64, end_height: u64, signal_bit: u8,
@@ -560,7 +663,7 @@ struct VoteRecord { choice: VoteChoice, weight: u64, height: u64 }
 Σ Account.balance
   + Σ (Contract.balance + Contract.deposit)
   + Σ ProgramMeta.deposit
-  + Σ (PendingReward.amount − PendingReward.released)
+  + Σ (Payout.amount − Payout.released) de todos os PendingReward
   + Σ deposit das propostas com status Voting
   ==  emitted − burned
 ```
@@ -588,7 +691,7 @@ Observação: o prefixo do XOF é o literal `"TheCoin:lthash16\0"` — **não** 
 por `tagged_hash`.
 
 O LtHash do estado é a soma de `element(k, v)` para todos os registros da §11
-(todos os prefixos `0x01`–`0x09`). Ao aplicar um bloco, para cada chave
+(todos os prefixos `0x01`–`0x0A`). Ao aplicar um bloco, para cada chave
 alterada: `remove(k, old)` se existia e `insert(k, new)` se continua existindo.
 O `state_root` do cabeçalho deve ser igual ao valor calculado **depois** de
 aplicar o bloco inteiro. Escritas que não mudam o valor não alteram o hash.
@@ -614,10 +717,13 @@ repetir até restar 1 → root
 
 ### 14.1 Checagens independentes de estado 🔒
 
-1. `size <= MAX_DEPLOY_TX_BYTES = 64 000` para `Deploy`; `size <= MAX_TX_BYTES = 16 384` para as demais ações.
+1. `size <= MAX_DEPLOY_TX_BYTES = 64 000` **apenas** para `Deploy`;
+   `size <= MAX_TX_BYTES = 16 384` para todas as demais ações — inclusive
+   `Upgrade`, que também carrega código-fonte e portanto só aceita contratos
+   cujo fonte caiba em ~16 kB.
 2. `version == 1`.
 3. `chain_id == params.chain_id`.
-4. `flags & !0x01 == 0`.
+4. `flags & !0x03 == 0` (§5.2).
 5. Por ação:
    * `Transfer`: `amount > 0`; `len(memo) <= 256`.
    * `BatchTransfer`: `1 <= len(outputs) <= 128`; todo `amount > 0`; `len(memo) <= 256`; soma sem overflow.
@@ -627,6 +733,8 @@ repetir até restar 1 → root
    * `Vote`: `weight > 0`.
    * `Deploy`: `source.trim()` não vazio; `1 <= max_fuel <= MAX_TX_FUEL = 10 000 000`; `len(init_args) <= 32`.
    * `Invoke`: `1 <= len(function) <= 64` bytes; `1 <= max_fuel <= 10 000 000`; `len(args) <= 32`.
+   * `Upgrade`: `source.trim()` não vazio; `1 <= max_fuel <= 10 000 000`; `len(args) <= 32`.
+   * `SetUpgradeAuthority`: nenhuma checagem estática (tudo depende do estado, §17.11).
 6. Assinatura Ed25519 estrita sobre `signing_hash`.
 
 ### 14.2 Aplicação (dependente de estado) 🔒
@@ -642,15 +750,18 @@ Na altura `h` do bloco, com `g = ChainGlobal` corrente:
    * `CreateContract`: `funding(spec)` (§16);
    * `CallContract`: `amount` se `MultisigDeposit`, senão 0;
    * `Propose`: `g.params.proposal_deposit`; `Vote`: 0;
-   * `Deploy` / `Invoke`: `value`.
+   * `Deploy` / `Invoke`: `value`;
+   * `Upgrade` / `SetUpgradeAuthority`: 0 (o depósito de armazenamento de um
+     `Upgrade` é cobrado dentro da execução, §17.7).
 5. `debit + fee <= spendable(h)`, senão inválida. Então `nonce += 1` e:
    * ações nativas: `balance −= debit + fee`;
-   * `Deploy` / `Invoke`: `balance −= fee` apenas (o `value` e o depósito de
-     armazenamento são movidos dentro da execução reversível, §17).
+   * `Deploy` / `Invoke` / `Upgrade`: `balance −= fee` apenas (o `value` e o
+     depósito de armazenamento são movidos dentro da execução reversível, §17).
 6. Executa a ação (crédito a destinatários, criação/chamada de contrato,
    proposta, voto, execução TCCL). Créditos criam a conta se não existir.
-7. **Ações nativas:** se qualquer passo falhar, a transação é **inválida** e o
-   bloco que a contém é inválido. **`Deploy`/`Invoke`:** se as checagens 1–5
+7. **Ações nativas** (inclusive `SetUpgradeAuthority`, que não executa código):
+   se qualquer passo falhar, a transação é **inválida** e o bloco que a contém é
+   inválido. **`Deploy`/`Invoke`/`Upgrade`:** se as checagens 1–5
    passam, a transação é **sempre incluível**: uma falha do código do contrato
    (require, falta de combustível, erro de compilação, depósito acima de
    `max_deposit`…) mantém a taxa e o nonce, reverte todo o resto e é registrada
@@ -697,7 +808,8 @@ next_congestion(cur, usage, params):
     retorna clamp(next, CONGESTION_MIN_BP = 10 000, CONGESTION_MAX_BP = 10 000 000)
 ```
 
-`usage.bytes` = tamanho serializado do bloco (inclui os 184 bytes fixos);
+`usage.bytes` = tamanho serializado do bloco (inclui os 252 bytes fixos de um
+bloco vazio e 244 bytes por tio, §6.1);
 `usage.fuel` = `Σ max_fuel` das transações. Alvo: blocos 50 % cheios. O
 multiplicador sobe no máximo 12,5 % por bloco (bloco 100 % cheio), desce no
 máximo 12,5 % (bloco vazio) e fica entre 1× e 1000×. O gênese começa em 10 000.
@@ -712,13 +824,18 @@ máximo 12,5 % (bloco vazio) e fica entre 1× e 1000×. O gênese começa em 10 
 4. `mask` = OR de `1 << bit` para cada `(bit, _)` em `g.voting`.
    `header.signal & !mask` deve ser 0 (bits não atribuídos devem ser zero).
    A máscara é calculada **antes** das transações do bloco.
+4b. **Tios:** `len(uncles) <= 2`, `uncles_root` confere, nenhum tio repetido e
+   `1 <= h − uncle.height <= 6` (as demais regras da §6.3 — trabalho, alvo,
+   ancestralidade e não repetição entre blocos — são checadas pelo gerenciador
+   de cadeia antes de aplicar o corpo, §19.1).
 5. **begin (cooldown de recompensas):**
    1. se `h > coinbase_maturity`: leia `PendingReward` em
-      `0x05 || u64_be(h − coinbase_maturity)`; se existir, `released == 0` e
-      `floor(amount/4) > 0`: credite `floor(amount/4)` a `miner`, grave `released = floor(amount/4)`;
+      `0x05 || u64_be(h − coinbase_maturity)`; para cada `Payout` com
+      `released == 0` e `floor(amount/4) > 0`: credite `floor(amount/4)` a
+      `payout.who` e grave `released = floor(amount/4)`;
    2. se `h > reward_unlock_blocks`: leia `PendingReward` em
       `0x05 || u64_be(h − reward_unlock_blocks)`; se existir: apague o registro e
-      credite `amount − released` a `miner`.
+      credite `amount − released` a cada `payout.who`.
 6. **transações**, em ordem. `txid` duplicado no bloco → inválido. Cada uma:
    checagens §14.1 e aplicação §14.2. `fees += fee − burned`; `burned_total += burned`.
 7. **end:**
@@ -727,7 +844,12 @@ máximo 12,5 % (bloco vazio) e fica entre 1× e 1000×. O gênese começa em 10 
    3. `emitted += subsidy(h)`; se `emitted > MAX_SUPPLY` → inválido.
    4. `burned += burned_total`.
    5. `congestion_bp = next_congestion(congestion_bp, {bytes: len(borsh(Block)), fuel: Σ max_fuel}, params_before)`.
-   6. Se `subsidy(h) + fees > 0`: grava `PendingReward { miner, amount: subsidy(h) + fees, released: 0 }` em `0x05 || u64_be(h)`.
+   6. **Pagamentos** (§6.3, §10): `to_uncles = Σ uncle_reward(subsidy(h), depth)`
+      (pagamentos de valor 0 não geram entrada); se `to_uncles > subsidy(h)` →
+      bloco inválido. Grava em `0x05 || u64_be(h)` um `PendingReward` cujos
+      `payouts` são `[{ miner, subsidy(h) − to_uncles + fees }]` (só se esse
+      valor for > 0) seguidos de um `Payout` por tio pago. Se não houver nenhum
+      pagamento, nada é gravado.
 8. `state_root` calculado (§12) deve ser igual a `header.state_root`.
 
 ## 16. Contratos de pagamento
@@ -820,12 +942,17 @@ regravado. Um `Multisig` só é apagado por `MultisigClose`.
 
 ## 17. Contratos inteligentes TCCL
 
-🔒 (`core/src/programs.rs`, `crates/tccl`) A linguagem **TCCL** (The Coin Cloud
-Language) e sua VM determinística fazem parte do consenso: a transação
-`Deploy` carrega o **código-fonte**, e todo nó o compila de forma idêntica. A
-referência completa da linguagem, dos tipos, das funções embutidas e da tabela
-de combustível está em [docs/tccl/TCCL.md](tccl/TCCL.md); aqui ficam as regras
-de integração com a cadeia.
+🔒 (`core/src/programs.rs`, crate `tccl`) A linguagem **TCCL** (The Coin Cloud
+Language) e sua VM determinística fazem parte do consenso: as transações
+`Deploy` e `Upgrade` carregam o **código-fonte**, e todo nó o compila de forma
+idêntica. A referência completa da linguagem, dos tipos, das funções embutidas e
+da tabela de combustível está em [docs/tccl/TCCL.md](tccl/TCCL.md); aqui ficam as
+regras de integração com a cadeia.
+
+> **A TCCL agora é um repositório separado:** <https://github.com/LucasBolla94/tccl>,
+> fixado no `Cargo.toml` da The Coin na **tag `v0.3.0`**. A tag faz parte do
+> consenso na prática: dois nós só compilam o mesmo fonte para o mesmo
+> `borsh(Program)` se usarem a mesma versão do compilador.
 
 ### 17.1 Endereço e identificação
 
@@ -839,16 +966,29 @@ endereço (qualquer um pode enviar TCN a ele com `Transfer`).
 
 ### 17.2 Compilação e limites
 
-* `compile(source, address_prefixes = [HRP da rede])` produz um `Program`
-  totalmente resolvido e verificado por tipos (`tccl::compile`). O formato
-  `borsh(Program)` é consenso e fica em `0x08 || endereço`. `LANGUAGE_VERSION = 1`.
+* `compile(source, address_prefixes = [HRP da rede], version = LANGUAGE_VERSION)`
+  produz um `Program` totalmente resolvido e verificado por tipos
+  (`tccl::compile`). O formato `borsh(Program)` é consenso e fica em
+  `0x08 || endereço`.
+* **`LANGUAGE_VERSION = 2`** (`MIN_LANGUAGE_VERSION = 1`): novos deploys
+  compilam na versão 2 — registros, enums com transições, papéis (*roles*),
+  interfaces, módulos, biblioteca padrão e preços de combustível fixos. Programas
+  já implantados na versão 1 continuam rodando exatamente como na v0.2.0.
+* **Chamadas entre contratos** (versão 2): um contrato chama outro por uma
+  interface, dentro da **mesma transação atômica**. O chamado vê o contrato
+  chamador como `caller` (o `origin` continua sendo quem assinou), o combustível
+  é compartilhado, qualquer falha aborta a transação inteira, e **reentrância é
+  sempre recusada** (um contrato que já está rodando na transação não pode ser
+  chamado de novo — erro `R018`). Profundidade máxima de contratos
+  `MAX_CONTRACT_DEPTH = 8`.
 * Código-fonte ≤ 48 000 bytes (limite do analisador léxico); programa compilado
   ≤ `MAX_PROGRAM_BYTES = 262 144` bytes; até 256 funções, 256 variáveis de
   estado, 1 024 locais por função; aninhamento de blocos, expressões e tipos
   ≤ 32; no máximo 64 operadores encadeados por nível de precedência e árvore de
   expressão com profundidade ≤ 128 (fontes que excedem são erro de compilação);
-  profundidade de chamada 16, listas até 4 096 itens e valores até 65 536 bytes;
-  até `MAX_EVENTS_PER_CALL = 64` eventos por chamada.
+  profundidade de chamada `MAX_CALL_DEPTH = 16`, listas até 4 096 itens e valores
+  até 65 536 bytes; memória viva de uma execução ≤ 16 MiB
+  (`MAX_MEMORY_BYTES`); até `MAX_EVENTS_PER_CALL = 64` eventos por chamada.
 
 ### 17.3 Combustível (*fuel*)
 
@@ -892,11 +1032,17 @@ se existe ProgramMeta em addr ou Account(addr).nonce > 0 → falha "contract add
 meta = { creator: sender, created_height: h, deploy_txid: txid, source_hash, name: program.name,
          state_bytes: len(code), storage_items: 0, deposit: 0 }
 em um overlay filho:
+    se flags & FLAG_FINAL_DEPLOY == 0:                      // contrato atualizável
+        grava 0x0A || addr → ProgramAdmin { authority: Some(sender), code_version: 1,
+                                            language: program.version, previous_code_hash: 0…0 }
     grava 0x08 || addr → code
     run(Mode::Deploy, "init", init_args, fuel = max_fuel − compile_fuel)     // §17.7
 sucesso → aplica o overlay; fuel_used += compile_fuel; receipt.program = addr; contract_count += 1
 falha   → descarta o overlay;  fuel_used += compile_fuel
 ```
+
+Com `FLAG_FINAL_DEPLOY` (§5.2) **nenhum** registro `0x0A` é criado: o contrato
+nasce final e seu código nunca poderá mudar.
 
 No modo Deploy a VM grava os valores iniciais constantes das variáveis de estado
 e chama `init(init_args)` se existir. Sem `init`, `init_args` deve ser vazio e
@@ -933,7 +1079,8 @@ run(mode, function, args, fuel):
         (a VM só chega aqui com o armazenamento vazio: `destroy` apaga as variáveis
          escalares e falha com StorageNotEmpty se ainda houver entradas de listas/mapas,
          portanto não restam registros 0x09||addr||…)
-    senão:
+    senão, para CADA contrato tocado pela transação (versão 2 permite que um
+    contrato chame outros, §17.2 — todos compartilham o MESMO max_deposit):
         new_bytes = meta.state_bytes
         se mode == Deploy ou new_bytes > old_bytes:
             required = ceil(new_bytes / 1000) × g.params.storage_deposit_per_kb

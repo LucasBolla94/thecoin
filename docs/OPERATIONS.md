@@ -62,38 +62,74 @@ Guia ilustrado para novos usuários: <https://the-coin.cloud/validator.html>.
 | Recurso | Mínimo | Recomendado |
 |---|---|---|
 | CPU | 1 vCPU x86_64 ou ARM64 | 2 vCPU |
-| RAM | 1 GB (+ swap de 1 GB) | 2–4 GB |
+| RAM | 1 GB (+ swap de 1 GB) | 2 GB |
 | Disco | 5 GB livres | 20 GB SSD |
 | SO | Linux com systemd | Ubuntu/Debian LTS |
 | Rede | porta TCP 7333 aberta para entrada | IP público fixo |
 | Relógio | NTP ativo (`timedatectl`) | — |
 
+> **A memória mudou na v0.2:** a prova de trabalho é **RandomX** (§1.1). Verificar blocos
+> exige um cache de **256 MiB**, compartilhado por todas as threads — por isso o mínimo
+> prático passou a ser ~1 GB de RAM e o recomendado 2 GB. Minerar em **modo rápido**
+> (dataset de 2 GiB) só faz sentido em máquinas com ~3 GiB livres.
+
 Consumo medido (VPS 2 vCPU Haswell, 3,7 GB RAM):
 
 | Métrica | Valor |
 |---|---|
-| Memória do nó minerando com 1 thread | ≈ 42 MB RSS |
-| CoinHash | ≈ 12 ms/hash → 83–87 H/s por thread |
+| Memória do nó minerando com 1 thread (modo leve) | ≈ 280 MB RSS (256 MiB são o cache RandomX) |
+| CoinHash (RandomX, modo leve) | ≈ 30 ms por hash/bloco |
 | Verificação de assinaturas | ≈ 14 400 transações/s por núcleo |
 | Aplicar bloco com 5 000 tx (790 kB) | 0,39 s + 62 ms de LtHash |
 | Contratos TCCL no pior caso | bloco cheio (50 M de combustível) ≈ 1 s de CPU |
-| Disco por bloco vazio | ≈ 765 bytes (~400 MB/ano) |
-| Disco por transação — nó arquivo **com** índice de endereços | ≈ 430 bytes de dados (≈ 792 bytes alocados no arquivo) |
-| Disco por transação — nó arquivo **sem** índice de endereços | ≈ 348 bytes de dados (≈ 633 bytes alocados) |
+| Disco por bloco vazio (banco + índices) | ≈ 436 bytes (≈ 0,92 GB/ano com blocos de 15 s) |
+| Disco por transação — nó arquivo **com** índice de endereços | ≈ 430 bytes |
+| Disco por transação — nó arquivo **sem** índice de endereços | ≈ 348 bytes |
 | Transferência simples (sem memo) | 159 bytes |
 
-Os números de disco vêm de 100 000 transferências na regtest (v0.2):
+Projeções completas de disco (blocos, transações, poda) estão em
+[ESCALA.md §4](ESCALA.md). Com a poda ligada por padrão (§10) um nó comum fica na
+casa de poucos GB para sempre.
+
+Os números de disco vêm de 100 000 transferências na regtest e o custo do
+CoinHash do benchmark de prova de trabalho:
 
 ```bash
 GROWTH_BLOCKS=500 cargo test -p thecoin-node --release --test storage_growth -- --ignored --nocapture
+cargo test -p thecoin-core --release --test pow_bench -- --ignored --nocapture
 ```
 
 *Dados* é o que o banco realmente usa (blocos comprimidos, estado, undo, índices
-e recibos). *Alocados* são os blocos de disco do arquivo `chain.redb`: o redb
-cresce o arquivo em dobras e reserva espaço à frente, então o arquivo ocupa mais
-que os dados. Esse excesso é recuperável com `thecoind compact` (nó parado, §10).
+e recibos). O arquivo `chain.redb` ocupa mais que os dados: o redb cresce em
+dobras e reserva espaço à frente. Esse excesso é recuperável com
+`thecoind compact` (nó parado, §10).
 
-Cada thread de mineração usa 16 MiB para o CoinHash.
+### 1.1 Memória da prova de trabalho (RandomX)
+
+O CoinHash é o **RandomX** com uma chave que gira a cada época
+(`epoch = altura / 2048` na mainnet e na testnet, 64 na regtest; ver
+[PROTOCOL.md](PROTOCOL.md)). A memória não é por thread — é compartilhada:
+
+| Modo | Memória | Para quê |
+|---|---|---|
+| **Leve** (`light`) | cache de **256 MiB**, compartilhado por todas as threads | verificar blocos — é o que **todo** nó faz, inclusive VPS pequenas |
+| **Rápido** (`fast`) | dataset de **2 GiB** | minerar bem mais rápido, só se sobrar memória |
+
+* Todo nó que valida blocos aloca o cache de 256 MiB, mesmo sem minerar.
+* O nó mantém **até dois caches** ao mesmo tempo (o da época atual e o anterior),
+  para não reconstruir tudo na virada de época; nesse instante o pico chega a
+  512 MiB. Construir um cache leva cerca de 1 s.
+* Threads de mineração **não** multiplicam esse custo: todas usam o mesmo cache
+  (ou o mesmo dataset).
+* O modo é escolhido em `[mining] mode` (§4). Em `auto` (padrão) o nó usa o modo
+  rápido só quando `MemAvailable` do `/proc/meminfo` for **≥ 3 072 MiB**; caso
+  contrário fica no modo leve. Se o dataset não couber na memória, o nó cai
+  sozinho para o modo leve e registra
+  `not enough memory for the 2 GiB RandomX dataset: mining in light mode`.
+
+Por que RandomX: ele executa um programa aleatório feito das operações em que a
+CPU é boa, então uma placa de vídeo ganha pouco ou nada — mineração continua nos
+computadores comuns. Ver [ESCALA.md §5](ESCALA.md).
 
 ## 2. Instalação
 
@@ -140,6 +176,7 @@ Opções (também por variável de ambiente):
 | `--threads N` | `THECOIN_THREADS` | threads de mineração (0 = núcleos − 1) |
 | `--version x.y.z` | `THECOIN_VERSION` | versão específica |
 | `--from-source` | `THECOIN_FROM_SOURCE=1` | compila localmente |
+| `--archive` | `THECOIN_ARCHIVE=1` | **nó arquivo**: grava `prune = false` e guarda todo o histórico (necessário para exploradores e para servir histórico por endereço; §10) |
 | `--public-api` | `THECOIN_PUBLIC_API=1` | API em `0.0.0.0` (só para seeds/explorador) |
 | — | `THECOIN_RELEASES_URL` | outra origem dos binários (espelho/testes) |
 | — | `THECOIN_SITE_URL` | outra origem do comando `thecoin` e do desinstalador |
@@ -149,8 +186,8 @@ Exemplos:
 ```bash
 # minerar para um endereço existente
 curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --miner-address tc1seuendereco...
-# nó seed que serve a API ao site
-curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --no-mine --public-api
+# nó seed que serve a API ao site (arquivo: guarda todo o histórico)
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --no-mine --public-api --archive
 # sem acesso ao site
 curl -fsSL https://raw.githubusercontent.com/LucasBolla94/thecoin/main/installer/install.sh | sudo bash -s -- --yes
 ```
@@ -202,8 +239,12 @@ thecoind [OPÇÕES] [run|init|params|compact]
 | `--rpc <ip:porta>` | API |
 | `--peer <host:porta>` | peer extra (repetível) |
 | `--connect-only` | conecta **somente** aos `--peer` |
-| `--prune` | poda corpos antigos de blocos |
+| `--prune` | poda corpos antigos de blocos — **redundante desde a v0.2**, a poda já vem ligada por padrão (§10) |
 | `--log-level <nível>` | `error`…`trace` (padrão `info`) — env `THECOIN_LOG` |
+
+> Não existe opção de linha de comando para **desligar** a poda: um nó arquivo
+> precisa de `[storage] prune = false` no `thecoind.toml` (ou da instalação com
+> `--archive`, §2.1).
 
 | Subcomando | Função |
 |---|---|
@@ -242,12 +283,13 @@ enabled = true
 address = ""                   # vazio = sem mineração
 threads = 0                    # 0 = núcleos − 1 (mínimo 1)
 signal = []                    # ids (hex) de propostas de governança apoiadas
+mode = "auto"                  # RandomX: auto | fast | light (§1.1)
 
 [storage]
 cache_mb = 64                  # cache de páginas do banco
-prune = false                  # true = guarda só os últimos prune_keep blocos
-prune_keep = 10000             # mínimo efetivo 1000
-address_index = true           # histórico por endereço (necessário para /address/{a}/txs; ignorado em nós podados)
+prune = true                   # padrão: guarda só os últimos prune_keep blocos
+prune_keep = 40320             # uma semana de blocos de 15 s (mínimo efetivo 1000)
+address_index = true           # histórico por endereço (necessário para /address/{a}/txs; forçado a false em nós podados)
 
 [mempool]
 max_mb = 32
@@ -270,12 +312,13 @@ max_mb = 32
 | `rpc.max_concurrency` | 64 | requisições simultâneas |
 | `mining.enabled` | `true` | só minera se `address` estiver preenchido |
 | `mining.address` | `""` | bech32m da rede |
-| `mining.threads` | 0 | |
+| `mining.threads` | 0 | as threads compartilham a memória do RandomX (§1.1) |
 | `mining.signal` | `[]` | ids de propostas apoiadas; também `--signal` e `thecoin signal <id>`; ver [GOVERNANCE.md](GOVERNANCE.md#44-sinalizar-mineradores) |
+| `mining.mode` | `"auto"` | `auto` = rápido quando houver ≥ 3 072 MiB de memória livre; `fast` = dataset de 2 GiB; `light`/`off` = só o cache de 256 MiB (§1.1) |
 | `storage.cache_mb` | 64 | reduza para 16–32 em máquinas de 1 GB |
-| `storage.prune` | `false` | nós seed e explorador devem ser **arquivo** (sem poda) |
-| `storage.prune_keep` | 10 000 | |
-| `storage.address_index` | `true` | pode desligar em mineradores para economizar disco (≈ 82 bytes por transação); nós podados nunca mantêm o índice |
+| `storage.prune` | `true` | **ligada por padrão**; nós seed e explorador devem ser **arquivo** (`false`) |
+| `storage.prune_keep` | 40 320 | uma semana de blocos de 15 s; valores abaixo de 1 000 são elevados a 1 000 |
+| `storage.address_index` | `true` | pode desligar em mineradores para economizar disco (≈ 82 bytes por transação); em nós **podados** o nó o desliga sozinho ao abrir o banco |
 | `mempool.max_mb` | 32 | |
 
 ## 5. Portas e firewall
@@ -303,7 +346,8 @@ Os seeds são o ponto de entrada de novos nós e a fonte de dados do site.
 1. **DNS:** registros `A` (e `AAAA` se houver IPv6) para `seed1.the-coin.cloud`
    e `seed2.the-coin.cloud` apontando para as duas VPS. Para testnet:
    `testnet-seed1/2.the-coin.cloud`. TTL baixo (300 s) facilita trocas.
-2. **Instalação:** instalador com `--public-api` (ou edite `rpc.listen = "0.0.0.0:7334"`).
+2. **Instalação:** instalador com `--public-api --archive` (ou edite
+   `rpc.listen = "0.0.0.0:7334"` e `prune = false`).
 3. **Configuração recomendada:**
    ```toml
    [p2p]
@@ -313,7 +357,7 @@ Os seeds são o ponto de entrada de novos nós e a fonte de dados do site.
    listen = "0.0.0.0:7334"
    cors_origins = ["https://the-coin.cloud"]
    [storage]
-   prune = false
+   prune = false          # obrigatório: com a poda ligada o índice de endereços é desligado
    address_index = true
    ```
 4. **Firewall:** 7333 aberta; 7334 somente para o servidor web (§5).
@@ -343,7 +387,7 @@ rsync -av --delete dist/site/ usuario@maquina-do-site:/var/www/the-coin.cloud/
 systemctl status thecoind
 journalctl -u thecoind -f                          # logs ao vivo
 journalctl -u thecoind --since "1 hour ago" | grep -E "WARN|ERROR"
-curl -s http://127.0.0.1:7334/api/v1/status | jq '{height, peers, syncing, mempool_txs, congestion_bp, software_upgrade_required}'
+curl -s http://127.0.0.1:7334/api/v1/status | jq '{height, finalized_height, peers, syncing, mempool_txs, congestion_bp, software_upgrade_required}'
 curl -s http://127.0.0.1:7334/api/v1/mining  | jq '{hashrate, blocks_found, signal_proposals}'
 curl -s http://127.0.0.1:7334/api/v1/peers   | jq length
 curl -s http://127.0.0.1:7334/api/v1/alerts  | jq length                # tentativas de gasto duplo vistas
@@ -357,7 +401,9 @@ Mensagens de log importantes:
 | `block found!` | seu minerador achou um bloco |
 | `starting block sync` / `block sync finished` | sincronização |
 | `chain reorganization depth=…` | troca de ramo (normal com profundidade 1–2) |
-| `refusing reorganization deeper than the maximum` | ramo alternativo com > 720 blocos — investigar |
+| `refusing reorganization deeper than the maximum` | ramo alternativo com > 2 880 blocos (720 na regtest) — investigar |
+| `block finalised by the miners' votes height=…` | a altura ficou **irreversível** pela finalidade assinada (§9.1) |
+| `not enough memory for the 2 GiB RandomX dataset: mining in light mode` | o modo rápido não coube na memória; a mineração continua no modo leve (§1.1) |
 | `rejected invalid block` | peer enviou bloco inválido (é banido) |
 | `peer misbehaving` | pontuação de mau comportamento |
 | `double spend attempt` / `double spend attempt reported by peer` | duas transações do mesmo remetente e nonce (alerta listado em `/api/v1/alerts`) |
@@ -366,7 +412,9 @@ Mensagens de log importantes:
 
 Alertas sugeridos: `peers == 0` por mais de 10 min; altura parada por mais de
 15 min; `software_upgrade_required != null`; disco > 80 %; `congestion_bp` alto
-por muito tempo (blocos cheios: considere propor aumento de limites).
+por muito tempo (blocos cheios: considere propor aumento de limites);
+`height − finalized_height` crescendo sem parar (a finalidade travou — veja §9.1;
+a cadeia continua funcionando pelo trabalho, só sem o carimbo de finalidade).
 
 ### 8.1 Governança: sinalizar como minerador
 
@@ -394,23 +442,70 @@ Sem o comando `thecoin`: `thecoind --signal <id>` (repetível) ou
   desligamento abrupto (queda de energia, `kill -9`) perde o mempool, que é
   reconstruído pela rede.
 * **Configuração:** `/etc/thecoin/thecoind.toml`.
+* **Chave de finalidade:** `<data-dir>/finality.key` (§9.1).
 
-## 10. Poda (economia de disco)
+### 9.1 Chave de finalidade (`finality.key`)
+
+Desde a v0.2 os blocos carregam a **chave pública de assinatura** do minerador, e
+os mineradores dos últimos `finality_window` blocos (200 na mainnet e na testnet,
+20 na regtest) assinam o bloco **anterior ao topo**. Quando as assinaturas somam
+2/3 do peso da janela — e a janela tem pelo menos 4 mineradores diferentes — o
+bloco vira **final** e nenhum nó aceita um ramo que o remova
+([ESCALA.md §3.3](ESCALA.md)).
+
+* O nó cria `<data-dir>/finality.key` (32 bytes em hexadecimal, permissão `0600`)
+  na primeira inicialização, e a reusa depois. Nada a configurar.
+* A chave pública vai no campo `signer` de cada bloco que este nó minera. Um nó
+  que **não** minerou nenhum bloco da janela não emite votos — eles não teriam
+  peso. Nós que só validam continuam recebendo e retransmitindo os votos dos
+  outros e contam a finalidade normalmente.
+* **Nunca copie o mesmo `finality.key` para dois nós.** Assinar dois blocos
+  diferentes na mesma altura é prova pública de má-fé: a chave é banida por todos
+  os nós e aquele minerador perde o direito de votar.
+* Pelo mesmo motivo, **evite reiniciar o nó em laço durante uma reorganização**:
+  o controle de "um voto por altura" fica em memória e é zerado no boot, então um
+  nó reiniciado pode votar de novo numa altura em que já votou. Um reinício
+  normal (atualização, `thecoin restart`) é seguro.
+* Ao migrar um nó de máquina, leve o `finality.key` junto **ou** deixe o novo nó
+  criar outro — mas nunca deixe os dois rodando.
+* Acompanhe `finalized_height` em `/api/v1/status` e o campo `finalized` de cada
+  bloco em `/api/v1/block/{id}`.
+
+## 10. Poda (padrão) e nós arquivo
+
+A poda vem **ligada por padrão** desde a v0.2:
 
 ```toml
 [storage]
-prune = true
-prune_keep = 10000      # ~7 dias de blocos
+prune = true            # padrão
+prune_keep = 40320      # uma semana de blocos de 15 s
 ```
 
 O nó continua validando tudo, mas apaga corpos de blocos mais antigos que
-`prune_keep` (mínimo 1 000, para suportar reorganizações) e, junto com cada
+`prune_keep` (valores abaixo de 1 000 são elevados a 1 000) e, junto com cada
 corpo, as entradas do índice de transações e os **recibos** daquele bloco. Nós
-podados não servem blocos antigos a outros peers, não respondem
-`/api/v1/tx/{txid}` nem `/api/v1/block/{id}` para blocos antigos e **não mantêm o
-índice de endereços** (histórico por endereço é papel de nós arquivo/exploradores).
-Cabeçalhos e estado completo são mantidos. Dados de *undo* só são guardados
-para os últimos 736 blocos em qualquer modo.
+podados não servem blocos antigos a outros peers (não anunciam o bit `ARCHIVE`),
+não respondem `/api/v1/tx/{txid}` nem `/api/v1/block/{id}` para blocos antigos e
+**não mantêm o índice de endereços**: ao abrir o banco com poda ligada o nó força
+`address_index = false`, porque o índice apontaria para corpos apagados. Histórico
+por endereço é papel de nós arquivo/exploradores.
+
+Cabeçalhos e estado completo são sempre mantidos. Dados de *undo* (para
+reorganizações) são guardados para os últimos `max_reorg_depth + 16` blocos em
+qualquer modo — **2 896** na mainnet e na testnet, 736 na regtest.
+
+**Nó arquivo** (explorador, seed que serve o site, quem precisa de histórico):
+
+```bash
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --archive
+```
+
+ou, manualmente, `prune = false` no `thecoind.toml` — não há opção de linha de
+comando para desligar a poda. Um nó que já rodou podado **não recupera** os
+corpos apagados: para virar arquivo é preciso ressincronizar do zero.
+
+Quanto isso economiza, e por que a poda foi ligada por padrão:
+[ESCALA.md §4](ESCALA.md).
 
 Após ativar a poda (ou apagar muitos dados), recupere espaço do arquivo:
 
@@ -429,7 +524,8 @@ thecoind --version
 
 * Acompanhe propostas `SoftwareUpgrade` na governança: após ativação, nós
   antigos exibem `software_upgrade_required` e podem ficar incompatíveis.
-* Atualize durante o `activation_delay` (≈ 2 dias na mainnet).
+* Atualize durante o `activation_delay` (2 880 blocos ≈ **12 h** na mainnet, com
+  blocos de 15 s).
 * Se uma versão mudar o esquema do banco, o nó informa
   `unsupported database schema version; resync required`: pare, apague
   `chain.redb` e reinicie para sincronizar de novo. **A v0.2 usa o esquema 2 e
@@ -449,6 +545,9 @@ thecoind --version
 | `mining enabled but no mining.address configured` | preencha `[mining] address` |
 | hashrate 0 | nó sincronizando (mineração pausada) ou `threads` = 0 com 1 núcleo? veja `/api/v1/mining` |
 | máquina lenta | reduza `mining.threads`; o minerador já roda com prioridade mínima (nice 19) |
+| nó morre por falta de memória (OOM) ao minerar | o modo rápido do RandomX pede 2 GiB; force `[mining] mode = "light"` (§1.1) |
+| `not enough memory for the 2 GiB RandomX dataset` | esperado em máquinas pequenas: o nó já caiu sozinho para o modo leve |
+| `finalized_height` parado em 0 | a janela ainda não tem 4 mineradores diferentes, ou este nó nunca minerou; é normal em redes pequenas (§9.1) |
 | compilação morre (OOM) | ative swap e use `CARGO_BUILD_JOBS=1` |
 | `invalid mining.address: address belongs to another network` | endereço `tct1…` na mainnet ou vice-versa |
 
@@ -463,14 +562,18 @@ thecoind --version
    `thecoin-<target>.tar.gz` + `.sha256` no GitHub Releases e em
    `https://the-coin.cloud/releases/`.
 4. **DNS** de `seed1`/`seed2.the-coin.cloud` e firewall conforme §5–6.
-5. **Subir seed1 e seed2** (minerando) antes do anúncio; confirmar que se
-   conectam (`/api/v1/peers`) e produzem blocos.
+5. **Subir seed1 e seed2** (minerando, e como **arquivo**: `--archive`) antes do
+   anúncio; confirmar que se conectam (`/api/v1/peers`) e produzem blocos.
+   Com apenas dois mineradores **não existe finalidade assinada** — ela só começa
+   quando a janela de 200 blocos tiver 4 mineradores diferentes (§9.1), o que é
+   esperado: até lá `finalized_height` fica em 0 e a cadeia vale pelo trabalho.
 6. **Site** no ar com proxy para os seeds e o instalador em `/install.sh`.
 7. **Anúncio** com o hash do gênese e instruções de instalação.
 8. Nos blocos 1 a 6 a dificuldade fica no valor de gênese; a partir do bloco 7
-   o LWMA ajusta a cada bloco (janela crescente até 60 blocos, no máximo 2× por
-   bloco). Acompanhe o tempo médio de bloco (alvo 60 s). Lembre que recompensas
-   só ficam 25 % gastáveis após 100 blocos e 100 % após 1 000.
+   o LWMA ajusta a cada bloco (janela crescente até 120 blocos, no máximo 2× por
+   bloco). Acompanhe o tempo médio de bloco (**alvo 15 s**). Lembre que
+   recompensas só ficam 25 % gastáveis após **400 blocos** (≈ 100 min) e 100 %
+   após **4 000 blocos** (≈ 16,7 h).
 9. **Checkpoints:** após algumas semanas, adicionar em `checkpoints` alturas
    profundamente confirmadas numa versão nova (protege contra reescritas longas).
 10. Documentar responsáveis por segurança (`security@the-coin.cloud`) e

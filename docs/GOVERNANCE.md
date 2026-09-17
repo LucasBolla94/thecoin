@@ -26,7 +26,7 @@ stateDiagram-v2
     Activated --> [*]
     note right of Voting
         vote_period blocos
-        (mainnet 20 160 ≈ 14 dias)
+        (mainnet 80 640 ≈ 14 dias)
     end note
 ```
 
@@ -38,24 +38,28 @@ stateDiagram-v2
 4. **Depósito** — devolvido se houve quórum (aprovada ou não); **queimado** se
    não houve quórum (anti-spam).
 5. **Ativação** — propostas aprovadas ativam `activation_delay` blocos depois
-   (mainnet: 2 880 ≈ 2 dias), dando tempo para os operadores atualizarem.
+   (mainnet: 2 880 ≈ 12 horas), dando tempo para os operadores atualizarem.
 
 ## 2. Limiares (mainnet)
+
+Todos os prazos abaixo contam **blocos de 15 segundos** (4 blocos por minuto,
+5 760 por dia).
 
 | Parâmetro | Valor padrão | Significado |
 |---|---|---|
 | `proposal_deposit` | 100 TCN | depósito para abrir proposta |
-| `vote_period` | 20 160 blocos (≈ 14 dias) | duração da votação |
+| `vote_period` | 80 640 blocos (≈ 14 dias) | duração da votação |
 | `quorum_bp` | 1 000 (10 %) | votos totais (sim+não+abstenção) ≥ 10 % do supply circulante |
 | `approval_bp` | 6 667 (66,67 %) | `sim / (sim + não)` ≥ 2/3 |
 | `miner_approval_bp` | 6 000 (60 %) | blocos sinalizando ≥ 60 % dos blocos do período |
-| `activation_delay` | 2 880 blocos (≈ 2 dias) | espera entre aprovação e ativação |
+| `activation_delay` | 2 880 blocos (≈ 12 horas) | espera entre aprovação e ativação |
 
 Abstenções contam para o quórum mas não para a aprovação. No máximo **32
 propostas** podem estar em votação ao mesmo tempo.
 
-Testnet usa valores mais curtos (votação de 1 440 blocos, depósito 10 TCN,
-quórum 5 %, mineradores 50 %).
+Testnet usa valores mais curtos (votação de 5 760 blocos ≈ 1 dia, ativação em
+720 blocos ≈ 3 horas, depósito 10 TCN, quórum 5 %, mineradores 50 %). Regtest
+vota em 20 blocos e ativa em 5, com depósito de 1 TCN.
 
 ## 3. O que pode e o que não pode mudar
 
@@ -70,11 +74,11 @@ quórum 5 %, mineradores 50 %).
 | `fee_per_kfuel` — taxa por 1 000 de combustível reservado | 1 000 motes | 1 – 100 000 000 motes |
 | `storage_deposit_per_kb` — depósito reembolsável por kB de estado de contrato | 100 000 motes (0,001 TCN) | 0 – 1 000 000 000 motes |
 | `proposal_deposit` | 100 TCN | 1 – 1 000 000 TCN |
-| `vote_period` | 20 160 blocos | 1 440 – 201 600 blocos |
+| `vote_period` | 80 640 blocos (≈ 14 dias) | 5 760 – 806 400 blocos (≈ 1 dia – 140 dias) |
 | `quorum_bp` | 1 000 (10 %) | 1 % – 50 % |
 | `approval_bp` | 6 667 (66,67 %) | 50,01 % – 95 % |
 | `miner_approval_bp` | 6 000 (60 %) | 50 % – 95 % |
-| `activation_delay` | 2 880 blocos | 720 – 43 200 blocos |
+| `activation_delay` | 2 880 blocos (≈ 12 horas) | 720 – 172 800 blocos (≈ 3 horas – 30 dias) |
 
 Taxas e depósitos são cotados em **motes**: se o TCN valorizar muito, a
 comunidade pode reduzir `base_fee`, `fee_per_kb`, `fee_per_kfuel` e
@@ -96,8 +100,12 @@ Além disso:
 **Não pode — nunca, por votação:**
 
 * o **supply máximo de 50 milhões** de TCN e a curva de emissão (halvings);
-* o tempo de bloco, o algoritmo de prova de trabalho (CoinHash) e o ajuste de dificuldade;
-* o cooldown das recompensas (25 % após 100 blocos, o resto após 1 000) e a profundidade máxima de reorganização;
+* o tempo de bloco (15 s), o algoritmo de prova de trabalho (CoinHash = RandomX com
+  chave por época) e o ajuste de dificuldade;
+* as regras de tios (até 2 por bloco, `(7 − idade)/24` do subsídio) e a finalidade
+  assinada pelos mineradores (2/3 da janela de 200 blocos);
+* o cooldown das recompensas (25 % após 400 blocos, o resto após 4 000) e a
+  profundidade máxima de reorganização (2 880 blocos ≈ 12 horas);
 * a tabela de combustível da VM TCCL e os limites absolutos de transação, programa e bloco;
 * saldos de qualquer pessoa.
 
@@ -207,16 +215,16 @@ Situação na apuração (mainnet):
 |---|---|
 | Supply circulante | 8 000 000 TCN |
 | Votos sim / não / abstenção | 700 000 / 250 000 / 50 000 TCN |
-| Blocos no período | 20 160, dos quais 13 000 sinalizaram |
+| Blocos no período | 80 640, dos quais 52 000 sinalizaram |
 
 1. **Quórum:** 700 000 + 250 000 + 50 000 = 1 000 000 TCN = 12,5 % ≥ 10 % ✅
 2. **Detentores:** 700 000 / (700 000 + 250 000) = 73,7 % ≥ 66,67 % ✅
-3. **Mineradores:** 13 000 / 20 160 = 64,5 % ≥ 60 % ✅
+3. **Mineradores:** 52 000 / 80 640 = 64,5 % ≥ 60 % ✅
 
-→ **Aprovada.** Depósito de 100 TCN devolvido. Com `end_height = 520 000`, ativa
-no bloco 520 000 + 2 880 = 522 880; o novo valor vale a partir do bloco 522 881.
+→ **Aprovada.** Depósito de 100 TCN devolvido. Com `end_height = 2 000 000`, ativa
+no bloco 2 000 000 + 2 880 = 2 002 880; o novo valor vale a partir do bloco 2 002 881.
 
-Se apenas 11 000 blocos tivessem sinalizado (54,6 %), a proposta seria
+Se apenas 44 000 blocos tivessem sinalizado (54,6 %), a proposta seria
 **rejeitada** mesmo com apoio dos detentores (depósito devolvido, pois houve
 quórum). Se só 600 000 TCN tivessem votado (7,5 %), seria rejeitada **e** o
 depósito queimado.
