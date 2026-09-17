@@ -99,7 +99,7 @@ Além disso:
 
 **Não pode — nunca, por votação:**
 
-* o **supply máximo de 50 milhões** de TCN e a curva de emissão (halvings);
+* o **supply máximo de 100 milhões** de TCN e a curva de emissão (halvings);
 * o tempo de bloco (15 s), o algoritmo de prova de trabalho (CoinHash = RandomX com
   chave por época) e o ajuste de dificuldade;
 * as regras de tios (até 2 por bloco, `(7 − idade)/24` do subsídio) e a finalidade

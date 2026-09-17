@@ -27,7 +27,8 @@ referência em Rust (`crates/core` e a linguagem TCCL,
 
 > **Mudanças de consenso depois do v0.2.0 publicado** (ver [CHANGELOG.md](../CHANGELOG.md)):
 > a prova de trabalho passou a ser **RandomX** com chave por época (§7), o tempo
-> de bloco caiu para **15 s** com a mesma emissão no tempo e o mesmo teto (§10),
+> de bloco caiu para **15 s** (20 TCN por bloco) com eras de mesma duração e o dobro
+> da emissão por minuto (80 TCN), o que dobrou o teto para **100 000 000 TCN** (§10),
 > o cabeçalho ganhou `uncles_root` e `signer` e passou a ter **244 bytes** (§6.1),
 > blocos carregam até **2 tios** (§6.3), existe **finalidade assinada pelos
 > mineradores** (§19.3), o estado ganhou o registro `0x0A ProgramAdmin` (§11) e a
@@ -70,7 +71,7 @@ referência em Rust (`crates/core` e a linguagem TCCL,
 | Ticker | `TCN` |
 | Menor unidade | **mote** |
 | 1 TCN | `100 000 000` motes (8 casas decimais) (`core/src/amount.rs`) |
-| Supply máximo 🔒 | `50 000 000 TCN` = `5 000 000 000 000 000` motes (`MAX_SUPPLY`) |
+| Supply máximo 🔒 | `100 000 000 TCN` = `10 000 000 000 000 000` motes (`MAX_SUPPLY`) |
 
 Todos os valores no protocolo são `u64` em motes. Ponto flutuante nunca é usado
 em consenso. Toda aritmética é **checada**: um overflow torna a transação/bloco
@@ -390,7 +391,7 @@ uncle_reward(subsidy, depth) = floor(subsidy × (7 − depth) / 24)  // 0 se dep
 8. `CoinHash(uncle) <= uncle.target` — o tio tem prova de trabalho válida.
 
 **Pagamento:** o total pago aos tios é **descontado do subsídio do bloco** —
-a emissão por bloco não aumenta e o teto de 50 000 000 TCN não muda (§10). Se
+a emissão por bloco não aumenta e o teto de 100 000 000 TCN não muda (§10). Se
 `Σ uncle_reward > subsidy` o bloco é inválido.
 
 **Peso da cadeia:** o trabalho dos tios entra no `chainwork` do bloco que os
@@ -514,14 +515,15 @@ subsidy(0)      = 0                                         // gênese sem recom
 subsidy(h >= 1) = initial_reward >> ((h − 1) / halving_interval)   (0 se shift >= 64)
 ```
 
-Mainnet/testnet: `initial_reward = 10 TCN`, `halving_interval = 2 500 000` blocos
-(≈ 434 dias a 15 s por bloco). Alturas `1..=2 500 000` pagam 10 TCN,
-`2 500 001..=5 000 000` pagam 5 TCN, etc. Emissão total = 49 999 999,99… TCN
-< 50 000 000 TCN. As 4 primeiras eras (≈ 4,76 anos) emitem 93,75 % do supply.
+Mainnet/testnet: `initial_reward = 20 TCN`, `halving_interval = 2 500 000` blocos
+(≈ 434 dias a 15 s por bloco). Alturas `1..=2 500 000` pagam 20 TCN,
+`2 500 001..=5 000 000` pagam 10 TCN, etc. Emissão total = 99 999 999,675 TCN
+< 100 000 000 TCN. As 4 primeiras eras (≈ 4,75 anos) emitem 93,75 % do supply.
 
-> 10 TCN a cada 15 s são os mesmos **40 TCN por minuto** do cronograma antigo de
-> 60 s, e o intervalo de halving é 4× maior — a curva **no tempo** e o teto de
-> 50 000 000 TCN são exatamente os mesmos de antes da mudança para 15 s.
+> 20 TCN a cada 15 s são **80 TCN por minuto**, o dobro dos 40 TCN por minuto do
+> cronograma antigo de 60 s (40 TCN por bloco, halving a cada 625 000 blocos). As
+> eras têm a mesma duração (≈ 1,19 ano) e a curva no tempo tem a mesma forma, mas
+> os valores e o teto dobraram: 100 000 000 TCN (eram 50 000 000).
 
 **Recompensa do bloco** `R(h) = subsidy(h) − Σ uncle_reward + Σ (fee − burned)`
 das transações do bloco (a sobretaxa de congestionamento `burned` é destruída,
@@ -1349,7 +1351,7 @@ passa a recusar qualquer ramo que desconecte esse bloco (§19.2).
 | tempo de bloco / janela LWMA / janela mínima 🔒 | 15 s / 120 / 6 | 15 s / 120 / 6 | 60 s / 60 / 6 |
 | deriva futura máxima | 180 s | 180 s | 180 s |
 | `finality_window` (§19.3) | 200 | 200 | 20 |
-| recompensa inicial 🔒 | 10 TCN | 10 TCN | 40 TCN |
+| recompensa inicial 🔒 | 20 TCN | 20 TCN | 40 TCN |
 | halving 🔒 | 2 500 000 | 2 500 000 | 150 |
 | `coinbase_maturity` (libera 25 %) 🔒 | 400 | 400 | 5 |
 | `reward_unlock_blocks` (libera o resto) 🔒 | 4 000 | 4 000 | 12 |

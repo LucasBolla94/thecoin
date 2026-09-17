@@ -66,7 +66,7 @@ justa pelas recompensas de mineração.
 - **Segura:** Ed25519 estrito, hashes BLAKE3 com separação de domínio, compromisso de estado em cada bloco,
   banco de dados ACID, proteções contra DoS pensadas para máquinas pequenas, **cooldown** das recompensas
   (25 % após 400 blocos, o resto após 4 000) e **alertas de gasto duplo** propagados pela rede.
-- **Oferta limitada:** 50 milhões de TCN, sem pré-mineração, halvings ao estilo Bitcoin num ciclo de
+- **Oferta limitada:** 100 milhões de TCN, sem pré-mineração, halvings ao estilo Bitcoin num ciclo de
   estabilização de ≈ 5 anos.
 - **Taxas justas:** taxa mínima por transação, por kB e por combustível; multiplicador de congestionamento
   cuja sobretaxa é **queimada**; **prioridade** (`low`/`normal`/`high`/`urgent`) e **substituição por taxa
@@ -88,7 +88,7 @@ Motivação e medições no estudo [ESCALA.md](docs/ESCALA.md).
 | Recurso | Onde ler |
 |---|---|
 | **RandomX** no lugar do Argon2id (com Argon2id uma GPU valia de 20 a 100 CPUs), chave por época de 2 048 blocos, verificação no modo leve (256 MiB) e `[mining] mode = auto\|fast\|light` | [PROTOCOL.md §7](docs/PROTOCOL.md#7-prova-de-trabalho--coinhash), [OPERATIONS.md §1.1](docs/OPERATIONS.md#11-memória-da-prova-de-trabalho-randomx) |
-| **Blocos de 15 s** com 10 TCN por bloco e halving a cada 2 500 000 blocos — mesma curva no tempo e mesmo teto | [PROTOCOL.md §10](docs/PROTOCOL.md#10-emissão-e-recompensas) |
+| **Blocos de 15 s** com 20 TCN por bloco (80 TCN por minuto) e halving a cada 2 500 000 blocos — mesma duração das eras, teto de 100 000 000 TCN | [PROTOCOL.md §10](docs/PROTOCOL.md#10-emissão-e-recompensas) |
 | **Tios** (*uncles*): até 2 por bloco, pagos com parte do subsídio, trabalho somado ao peso da cadeia | [PROTOCOL.md §6.3](docs/PROTOCOL.md#63-tios-uncles-), [ESCALA.md §2](docs/ESCALA.md#2-blocos-órfãos) |
 | **Finalidade assinada pelos mineradores**: pagamento irreversível em ~30 s (`finalized_height`, `finalized`, `blocks_to_finality`) | [ESCALA.md §3.3](docs/ESCALA.md#33-camada-2--finalidade-assinada-pelos-mineradores-novo), [OPERATIONS.md §9.1](docs/OPERATIONS.md#91-chave-de-finalidade-finalitykey), [P2P.md §7.5](docs/P2P.md#75-votos-de-finalidade-finalityvote) |
 | Reorganização máxima de **2 880 blocos** (≈ 12 h) e cooldown de recompensas de **400 / 4 000 blocos** | [PROTOCOL.md §10](docs/PROTOCOL.md#10-emissão-e-recompensas) |
@@ -116,11 +116,11 @@ Motivação e medições no estudo [ESCALA.md](docs/ESCALA.md).
 | Item | Valor |
 |---|---|
 | Ticker / menor unidade | **TCN** / *mote* (1 TCN = 100 000 000 motes) |
-| Oferta máxima | **50 000 000 TCN** (sem pré-mineração) |
+| Oferta máxima | **100 000 000 TCN** (sem pré-mineração) |
 | Tempo de bloco | 15 segundos |
 | Ajuste de dificuldade | LWMA-1 a cada bloco (janela de até 120 blocos, ativo a partir do bloco 7, máx. 2× por bloco) |
 | Prova de trabalho | CoinHash = RandomX, chave por época de 2 048 blocos (derivada da altura); verificação no modo leve (cache de 256 MiB, ≈ 30 ms por hash numa VPS de 2 vCPU); mineração opcional no modo rápido (dataset de 2 GiB) |
-| Recompensa inicial | 10 TCN por bloco; 25 % liberados após 400 blocos (≈ 1 h 40 min), o resto após 4 000 (≈ 16 h 40 min) |
+| Recompensa inicial | 20 TCN por bloco; 25 % liberados após 400 blocos (≈ 1 h 40 min), o resto após 4 000 (≈ 16 h 40 min) |
 | Halving | a cada 2 500 000 blocos (≈ 1,19 ano) |
 | Tios (*uncles*) | até 2 por bloco, com até 6 blocos de idade; o minerador do tio recebe (7 − idade)/24 do subsídio, descontado do subsídio do bloco |
 | Finalidade | assinada pelos mineradores dos últimos 200 blocos: final com 2/3 da janela e ≥ 4 mineradores distintos (≈ 30 s) |
@@ -141,20 +141,20 @@ Execute `thecoind params` para ver os parâmetros de qualquer rede, incluindo o 
 
 ```
 subsídio(h) = 0                                     se h = 0 (gênese)
-subsídio(h) = 10 TCN >> floor((h − 1) / 2 500 000)  caso contrário
+subsídio(h) = 20 TCN >> floor((h − 1) / 2 500 000)  caso contrário
 ```
 
 | Era | Recompensa | Emitido na era | Acumulado | % da oferta | Fim (anos) |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 10 TCN | 25 000 000 | 25 000 000 | 50,00% | 1,19 |
-| 2 | 5 TCN | 12 500 000 | 37 500 000 | 75,00% | 2,38 |
-| 3 | 2,5 TCN | 6 250 000 | 43 750 000 | 87,50% | 3,56 |
-| 4 | 1,25 TCN | 3 125 000 | 46 875 000 | **93,75%** | **4,75** |
-| 5 | 0,625 TCN | 1 562 500 | 48 437 500 | 96,88% | 5,94 |
-| … | … | … | → 50 000 000 | → 100% | … |
+| 1 | 20 TCN | 50 000 000 | 50 000 000 | 50,00% | 1,19 |
+| 2 | 10 TCN | 25 000 000 | 75 000 000 | 75,00% | 2,38 |
+| 3 | 5 TCN | 12 500 000 | 87 500 000 | 87,50% | 3,56 |
+| 4 | 2,5 TCN | 6 250 000 | 93 750 000 | **93,75%** | **4,75** |
+| 5 | 1,25 TCN | 3 125 000 | 96 875 000 | 96,88% | 5,94 |
+| … | … | … | → 100 000 000 | → 100% | … |
 
-- 10 TCN a cada 15 s são os mesmos 40 TCN por minuto dos antigos blocos de 60 s, e cada era tem 4× mais
-  blocos: a curva **no tempo** e o teto são os mesmos de antes.
+- 20 TCN a cada 15 s são **80 TCN por minuto**, e cada era tem 2 500 000 blocos (≈ 1,19 ano); a emissão total
+  fica em 99 999 999,675 TCN, abaixo do teto de 100 000 000 TCN.
 - As quatro primeiras eras formam o **ciclo de estabilização** (≈ 4,75 anos).
 - Depois disso a emissão continua caindo pela metade e a segurança passa a ser paga pelas taxas
   (e, no futuro, por stake — ver o [roteiro](docs/ROADMAP.md)).
@@ -165,7 +165,7 @@ subsídio(h) = 10 TCN >> floor((h − 1) / 2 500 000)  caso contrário
   **descontado do subsídio** do bloco que o inclui — a emissão por bloco não aumenta.
 - A recompensa do bloco (subsídio + taxas) e a dos tios ficam em **cooldown**: 25 % gastáveis após 400 blocos
   (≈ 1 h 40 min) e o restante após 4 000 blocos (≈ 16 h 40 min) — mais que a reorganização máxima.
-- O teto de 50 milhões é verificado por todos os nós em cada bloco e **não pode ser alterado por votação**.
+- O teto de 100 milhões é verificado por todos os nós em cada bloco e **não pode ser alterado por votação**.
 
 ## 4. Arquitetura
 
@@ -522,7 +522,7 @@ Uma proposta só é aprovada se **as duas câmaras** concordarem:
 - Depósito de 100 TCN: devolvido se houver quórum, queimado caso contrário.
 - Pode mudar: tamanho e combustível do bloco, taxas (`base_fee`, `fee_per_kb`, `fee_per_kfuel`), depósito de
   armazenamento, depósito de proposta, prazos, quórum e limiares (sempre dentro de limites fixos).
-- **Não pode mudar:** teto de 50M, emissão, prova de trabalho e regras de validade.
+- **Não pode mudar:** teto de 100M, emissão, prova de trabalho e regras de validade.
 - Transições futuras de consenso (PoW → híbrido → PoS) também passam por aqui: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ```bash
@@ -638,7 +638,7 @@ cargo test --workspace
 cargo test -p thecoin-wallet --test vectors -- --nocapture     # vetores publicados em WALLET_DEVELOPERS.md
 ```
 
-A suíte cobre: emissão e teto de 50M, LWMA com aquecimento, taxas e queima, cooldown de recompensas, Merkle,
+A suíte cobre: emissão e teto de 100M, LWMA com aquecimento, taxas e queima, cooldown de recompensas, Merkle,
 LtHash, assinaturas, endereços, SLIP-0010 (vetores oficiais), keystore, URIs, todos os contratos nativos e seus
 depósitos, contratos TCCL na cadeia (depósitos, falhas com reversão, chamadas entre contratos, upgrades e
 contratos finais), governança completa (aprovação, rejeição, queima, bloqueio de votos), invariante de oferta

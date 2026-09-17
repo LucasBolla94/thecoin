@@ -755,7 +755,7 @@
       var motes = TC.parseTCN(document.getElementById("sec-amount").value);
       if (motes === null || BigInt(motes) > 9007199254740991n) {
         out.innerHTML =
-          '<p class="notice error" style="margin-top:12px">Enter a TCN amount, such as 250 or 12.5 (at most 50,000,000 TCN).</p>';
+          '<p class="notice error" style="margin-top:12px">Enter a TCN amount, such as 250 or 12.5 (at most 90,000,000 TCN).</p>';
         return;
       }
       out.innerHTML = '<p class="loading">Querying…</p>';

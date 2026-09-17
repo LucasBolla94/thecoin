@@ -11,7 +11,7 @@ JSON estão em `crates/core/src/api.rs` e podem ser reutilizados por clientes Ru
   halving a cada 150 blocos, cooldown de recompensas de 5/12 blocos, reorganização
   máxima de 720 blocos e parâmetros de taxa 10× menores.
 * Exemplos marcados **testnet** ou **mainnet** usam os parâmetros de consenso
-  atuais dessas redes: blocos de **15 s**, recompensa de **10 TCN**, halving a
+  atuais dessas redes: blocos de **15 s**, recompensa de **20 TCN**, halving a
   cada 2 500 000 blocos, cooldown de **400/4 000** blocos e reorganização máxima
   de **2 880** blocos (≈ 12 h). Ver [PROTOCOL.md §10](PROTOCOL.md#10-emissão-e-recompensas).
 
@@ -19,7 +19,7 @@ JSON estão em `crates/core/src/api.rs` e podem ser reutilizados por clientes Ru
 
 | Item | Formato |
 |---|---|
-| Valores | inteiros em **motes** (1 TCN = 100 000 000). O supply máximo (5·10¹⁵) cabe em inteiro seguro de JavaScript |
+| Valores | inteiros em **motes** (1 TCN = 100 000 000). O supply máximo (10¹⁶) passa do maior inteiro seguro de JavaScript (2⁵³ − 1 ≈ 9,007·10¹⁵, ≈ 90 milhões de TCN): clientes que precisem de exatidão perto desse limite devem ler os valores como `BigInt` |
 | Hashes / ids | hex minúsculo, 64 caracteres |
 | Endereços | bech32m (`tc1…`, `tct1…`, `tcr1…`) — endereços de outra rede são rejeitados |
 | Memos | `memo_hex` sempre; `memo_text` quando é UTF‑8 válido e não vazio |
@@ -135,7 +135,7 @@ curl http://127.0.0.1:7334/api/v1/status
   "mempool_bytes": 553,
   "syncing": false,
   "supply": {
-    "max_supply": 5000000000000000,
+    "max_supply": 10000000000000000,
     "emitted": 368000000000,
     "burned": 0,
     "circulating": 368000000000,
@@ -184,7 +184,7 @@ Mesmo objeto `supply` do `/status`. Regtest:
 
 ```json
 {
-  "max_supply": 5000000000000000,
+  "max_supply": 10000000000000000,
   "emitted": 432000000000,
   "burned": 0,
   "circulating": 432000000000,
@@ -196,16 +196,16 @@ Mesmo objeto `supply` do `/status`. Regtest:
 }
 ```
 
-Testnet (mesma emissão da mainnet: 10 TCN a cada 15 s = os mesmos 40 TCN por
-minuto do antigo bloco de 60 s, com halving 4× mais espaçado em blocos):
+Testnet (mesma emissão da mainnet: 20 TCN a cada 15 s = 80 TCN por minuto,
+halving a cada 2 500 000 blocos ≈ 1,19 ano):
 
 ```json
 {
-  "max_supply": 5000000000000000,
-  "emitted": 1456000000000,
+  "max_supply": 10000000000000000,
+  "emitted": 2912000000000,
   "burned": 0,
-  "circulating": 1456000000000,
-  "current_block_reward": 1000000000,
+  "circulating": 2912000000000,
+  "current_block_reward": 2000000000,
   "era": 0,
   "next_halving_height": 2500001,
   "halving_interval": 2500000,
@@ -420,7 +420,7 @@ curl http://127.0.0.1:7334/api/v1/block/106
 > `nonce` do cabeçalho é enviado como **string decimal**: é um `u64` e pode
 > passar do maior inteiro seguro de JavaScript (2⁵³).
 
-Exemplo ilustrativo com parâmetros da **testnet** (10 TCN, montado a partir do
+Exemplo ilustrativo com parâmetros da **testnet** (20 TCN, montado a partir do
 código; hashes fictícios) de um bloco que carrega um tio — um bloco válido da
 altura anterior que perdeu a corrida — e já foi finalizado pelos mineradores:
 
@@ -442,7 +442,7 @@ altura anterior que perdeu a corrida — e já foi finalizado pelos mineradores:
   "nonce": "4403291887150662017",
   "confirmations": 145,
   "finalized": true,
-  "subsidy": 1000000000,
+  "subsidy": 2000000000,
   "fees": 0,
   "uncles": [
     {
@@ -450,7 +450,7 @@ altura anterior que perdeu a corrida — e já foi finalizado pelos mineradores:
       "height": 1311,
       "miner": "tct1mwpgea9kf5s47tn7u40wrhj40hn7qp6felnt8p",
       "depth": 1,
-      "reward": 250000000
+      "reward": 500000000
     }
   ],
   "txs": []
@@ -1202,12 +1202,12 @@ curl "http://127.0.0.1:7334/api/v1/security?amount=50000000000"
 ```json
 {
   "amount": 50000000000,
-  "confirmations": 100,
-  "minutes": 25,
-  "value_per_block": 1000000000,
+  "confirmations": 50,
+  "minutes": 13,
+  "value_per_block": 2000000000,
   "network_hashrate": 47.561306223043744,
   "blocks_to_finality": null,
-  "explanation": "Reversing 100 block(s) means redoing their proof of work and giving up about 1000 TCN of rewards. For larger amounts wait for more confirmations; beyond 2880 blocks the chain never reorganizes."
+  "explanation": "Reversing 50 block(s) means redoing their proof of work and giving up about 1000 TCN of rewards. For larger amounts wait for more confirmations; beyond 2880 blocks the chain never reorganizes."
 }
 ```
 
@@ -1219,10 +1219,10 @@ do tip), mesmo valor — exemplo montado a partir do código:
   "amount": 50000000000,
   "confirmations": 2,
   "minutes": 1,
-  "value_per_block": 1000000000,
+  "value_per_block": 2000000000,
   "network_hashrate": 18342.7,
   "blocks_to_finality": 2,
-  "explanation": "The miners are signing blocks: this payment becomes irreversible about 2 block(s) after it is mined (roughly 30 seconds), whatever its value. Until then, reversing 100 block(s) means redoing their proof of work and giving up about 1000 TCN of rewards."
+  "explanation": "The miners are signing blocks: this payment becomes irreversible about 2 block(s) after it is mined (roughly 30 seconds), whatever its value. Until then, reversing 50 block(s) means redoing their proof of work and giving up about 1000 TCN of rewards."
 }
 ```
 
@@ -1265,8 +1265,8 @@ regtest.
 
 Sem finalidade, um atacante que reescreve `N` blocos abandona cerca de `N`
 recompensas e precisa superar a rede por esse tempo; a recomendação garante que
-isso vale pelo menos o dobro do pagamento (500 TCN com recompensa de 10 TCN →
-100 blocos ≈ 25 min na mainnet; com 40 TCN → 25 blocos na regtest). Com
+isso vale pelo menos o dobro do pagamento (500 TCN com recompensa de 20 TCN →
+50 blocos ≈ 13 min na mainnet; com 40 TCN → 25 blocos na regtest). Com
 finalidade, o pagamento vira irreversível cerca de 2 blocos depois de minerado
 (≈ 30 s na mainnet), qualquer que seja o valor: os votos de dois terços dos
 mineradores recentes o fixam e os nós recusam qualquer ramo que o descarte

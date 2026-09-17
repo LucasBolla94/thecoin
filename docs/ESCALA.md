@@ -58,7 +58,7 @@ rápidos e sem tratamento, a mineração escorre para os grandes — o contrári
 - O tio precisa ter prova de trabalho válida e o pai dele precisa ser um ancestral do bloco que o inclui.
 - **Recompensa:** cada tio recebe `subsídio × (7 − idade) / 24` — 25 % do subsídio quando é do bloco
   anterior, 4 % quando tem 6 blocos — **descontado do subsídio do bloco**. A emissão total por bloco
-  nunca aumenta, então o teto de 50 000 000 TCN e o cronograma continuam exatamente os mesmos.
+  nunca aumenta, então o teto de 100 000 000 TCN e o cronograma de emissão não mudam.
 - **Trabalho acumulado:** o trabalho dos tios entra no peso da cadeia, o que também encarece
   reorganizações.
 
@@ -177,7 +177,7 @@ transações.
 | Etapa | Estado |
 |---|---|
 | 1. RandomX no lugar do Argon2id | **pronto** |
-| 2. Blocos de 15 s com emissão recalibrada (mesmo teto e mesma curva no tempo) | **pronto** |
+| 2. Blocos de 15 s com emissão recalibrada (20 TCN por bloco, eras de ≈ 1,19 ano, teto de 100 000 000 TCN) | **pronto** |
 | 3. Tios: cabeçalho, validação, recompensa e peso | **pronto** |
 | 4. Finalidade assinada pelos mineradores | **pronto** |
 | 5. Poda ligada por padrão (uma semana de blocos) | **pronto** |

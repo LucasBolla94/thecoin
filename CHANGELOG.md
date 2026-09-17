@@ -17,7 +17,7 @@ mudanças: [docs/ESCALA.md](docs/ESCALA.md). A versão do `Cargo.toml` continua 
 ### Consenso
 - **Prova de trabalho RandomX:** o CoinHash passa a ser `RandomX(key, borsh(BlockHeader))` com `key = tagged_hash("randomx-key", chain_id || época)` e `época = altura / 2048` (regtest: 64), no lugar do Argon2id (16 MiB), em que uma GPU valia de 20 a 100 CPUs. A chave depende só da altura; verificação no modo leve (cache de 256 MiB, ≈ 30 ms por bloco numa VPS de 2 vCPU). O modo de mineração não é consenso.
 - **Blocos de 15 s** (mainnet/testnet; regtest continua em 60 s): LWMA-1 com janela de 120 blocos (era 60), ainda ajustando a partir do bloco 7 com limite de ±2× por bloco; alvo inicial recalibrado (`genesis_target_shift` 12 na mainnet, 9 na testnet).
-- **Emissão recalibrada, mesma curva no tempo:** 10 TCN por bloco (era 40) e halving a cada 2 500 000 blocos (era 625 000) — os mesmos 40 TCN por minuto, ≈ 1,19 ano por era e o mesmo teto de 50 000 000 TCN.
+- **Emissão recalibrada:** 20 TCN por bloco (era 40 a cada 60 s) e halving a cada 2 500 000 blocos (era 625 000) — mesma duração das eras (≈ 1,19 ano), **teto dobrado para 100 000 000 TCN** (era 50 000 000); 80 TCN por minuto.
 - **Cooldown de recompensas:** 25 % após `coinbase_maturity` = 400 blocos (≈ 1 h 40 min) e o restante após `reward_unlock_blocks` = 4 000 (≈ 16 h 40 min); regtest continua 5/12.
 - **Reorganização máxima:** 2 880 blocos (≈ 12 h; era 720). Regtest continua 720.
 - **Cabeçalho de 244 bytes** (era 180): novos campos `uncles_root` e `signer`; o corpo do bloco passa a ser `BlockBody { txs, uncles }`.

@@ -206,7 +206,7 @@ flowchart TD
   até 2 candidatos com no máximo 6 blocos de idade, cujo pai esteja nesta cadeia
   e que ainda não tenham sido incluídos;
 * cada tio recebe `subsídio × (7 − idade) / 24`, **descontado do subsídio** do
-  bloco que o inclui — a emissão por bloco e o teto de 50 000 000 TCN não mudam;
+  bloco que o inclui — a emissão por bloco e o teto de 100 000 000 TCN não mudam;
 * depois de cada novo tip o nó minerador assina um voto para o bloco **anterior**
   ao topo; quando os votos somam 2/3 do peso da janela (`finality_window`) e a
   janela tem ao menos 4 mineradores distintos, o bloco fica **final** e é gravado
@@ -378,7 +378,7 @@ fork, mantendo compatibilidade com versões anteriores sempre que possível.
 
 | Onde | O que cobre |
 |---|---|
-| testes unitários em cada módulo do core | hashes, endereços, valores, emissão (teto de 50 M, 93,75 % em 4 eras), LWMA com aquecimento, Merkle, LtHash, fórmula de taxa e congestionamento, contratos, parâmetros, **cabeçalho de 244 bytes**, chave de época do RandomX, recompensa de tios, votos e quórum de finalidade |
+| testes unitários em cada módulo do core | hashes, endereços, valores, emissão (teto de 100 M, 93,75 % em 4 eras), LWMA com aquecimento, Merkle, LtHash, fórmula de taxa e congestionamento, contratos, parâmetros, **cabeçalho de 244 bytes**, chave de época do RandomX, recompensa de tios, votos e quórum de finalidade |
 | `crates/core/tests/execution.rs` | transferências, cooldown de recompensas, replay, taxas e queima, flags, assinatura, expiração, batch, os 5 contratos e depósitos, contratos TCCL (sucesso, falha com taxa, depósitos, destroy, upgrade e autoridade), governança nas duas câmaras, queima de depósito; **invariante de supply e LtHash recalculado a cada bloco** |
 | `crates/core/tests/bench.rs` (ignorado) | desempenho de validação de blocos grandes |
 | `crates/core/tests/pow_bench.rs` (ignorado) | custo do CoinHash (RandomX) nos modos leve e rápido |

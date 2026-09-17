@@ -315,7 +315,7 @@ a map, copy it to a local, change it and store it back.
 | `caller` | `address` | signer of the transaction (zero address inside views) |
 | `value` | `int` | motes sent with the call (not available in views) |
 | `balance` | `int` | contract balance in motes, including `value` |
-| `height` | `int` | block height (≈ 1 block per minute) |
+| `height` | `int` | block height (≈ 1 block every 15 seconds on the current network) |
 | `self` | `address` | this contract's address |
 | `TCN` | `int` | 100 000 000 |
 

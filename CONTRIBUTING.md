@@ -125,7 +125,7 @@ Mudanças que alteram quais blocos/transações são válidos (formatos Borsh,
 hashes, PoW, dificuldade, emissão, regras de contratos/governança, parâmetros
 fixos) são **hard forks** e seguem regras mais rígidas:
 
-* **Proibido:** alterar o supply máximo de 50 milhões ou a curva de emissão.
+* **Proibido:** alterar o supply máximo de 100 milhões ou a curva de emissão.
 * Enums serializados (`TxAction`, `ContractSpec`, `ContractCall`,
   `ContractState`, `ProposalAction`, `GovParamId`, `VoteChoice`, `Message`)
   são **append-only**: nunca reordenar, remover ou inserir no meio.

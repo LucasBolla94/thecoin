@@ -21,8 +21,9 @@ usado quando é o mais seguro para o momento da rede.
 
 As alturas vêm direto da emissão (`crates/core/src/emission.rs`): cada era tem
 `halving_interval = 2 500 000` blocos e, a 15 s por bloco, dura ≈ 434 dias
-(≈ 1,19 ano). O cronograma **em tempo** é o mesmo de antes dos blocos de 15 s —
-o que mudou foi a contagem em blocos.
+(≈ 1,19 ano). As eras duram o mesmo tempo de antes dos blocos de 15 s — mudou a
+contagem em blocos —, mas a recompensa por minuto dobrou (80 TCN), e com ela o teto
+(100 000 000 TCN).
 
 ## Por que esta ordem
 
@@ -54,8 +55,8 @@ Já implementado:
   minerar pode usar o modo rápido (dataset de 2 GiB) quando há memória sobrando
   (`[mining] mode = auto|fast|light`). GPU ≈ CPU, que é o que mantém a mineração
   distribuída.
-- **Blocos de 15 s** com a mesma emissão no tempo e o mesmo teto de 50 000 000 TCN:
-  10 TCN por bloco, halving a cada 2 500 000 blocos.
+- **Blocos de 15 s** com eras de mesma duração (≈ 1,19 ano) e teto de 100 000 000 TCN:
+  20 TCN por bloco (80 TCN por minuto), halving a cada 2 500 000 blocos.
 - **Tios**: um bloco que perde a corrida por milissegundos entra na cadeia seguinte
   (até 2 por bloco, no máximo 6 blocos de idade), seu minerador recebe
   `subsídio × (7 − idade)/24` — descontado do subsídio, sem mexer no teto — e o
@@ -109,7 +110,7 @@ Próximos passos ainda dentro da fase 1 ([ESCALA.md §6](ESCALA.md)):
   que contêm, vence a de maior trabalho acumulado. Blocos finalizados nunca são revertidos.
 - **Recompensa**: começa 90% mineradores / 10% validadores e move 10 pontos percentuais
   por era, até no máximo 50/50 (se a fase 3 começar na altura mínima, a divisão chega a
-  70/30). A emissão total e o teto de 50 000 000 TCN não mudam.
+  70/30). A emissão total e o teto de 100 000 000 TCN não mudam.
 - **Punição (slashing)**: votar em dois checkpoints conflitantes na mesma época, ou
   votos que se "cercam", queima 10% do stake e remove o validador. Validadores
   inativos perdem recompensa (sem queima) — a rede nunca para porque o PoW continua.
@@ -152,7 +153,7 @@ Próximos passos ainda dentro da fase 1 ([ESCALA.md §6](ESCALA.md)):
 
 ## O que NÃO muda em nenhuma fase
 
-- Teto de 50 000 000 TCN e o cronograma de emissão.
+- Teto de 100 000 000 TCN e o cronograma de emissão.
 - Todo o histórico desde o bloco 0 continua público e verificável.
 - Endereços, carteiras, contratos e a linguagem TCCL.
 - Nenhuma fase é ativada sem votação dos detentores e sinalização da rede.
