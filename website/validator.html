@@ -110,16 +110,17 @@
             <span class="small-label">MEMORY</span>
             <h3>1 GB RAM</h3>
             <p>
-              Minimum, with swap. 2–4 GB recommended. Below 2 GB with no swap,
-              the installer creates a 1 GB swap file.
+              Minimum, with swap. 2–4 GB recommended. The node uses about 270 MB,
+              mostly the RandomX cache. Below 2 GB with no swap, the installer
+              creates a 1 GB swap file.
             </p>
           </div>
           <div class="card">
             <span class="small-label">DISK · NETWORK</span>
             <h3>5 GB to start</h3>
             <p>
-              20 GB SSD recommended. TCP port 7333 open to the internet for
-              mainnet peers.
+              20 GB SSD recommended; old blocks are pruned by default. TCP port
+              7333 open to the internet for mainnet peers.
             </p>
           </div>
         </div>
@@ -233,7 +234,8 @@
               unprivileged <code>thecoin</code> user with its data in
               <code>/var/lib/thecoin</code>, isolated from the rest of the
               system and at a lower priority so it does not slow the server
-              down.
+              down. The node keeps one week of blocks and the full state
+              (pruning); <code>--archive</code> keeps the whole history.
             </p>
           </div>
         </div>
@@ -294,20 +296,29 @@ thecoin help              # all commands</code></pre>
           <div class="card">
             <h3>Who earns</h3>
             <p>
-              Each new block pays a TCN reward to the node that found it, plus
-              the fees of the block’s transactions (minus the congestion
-              surcharge, which is burned). Your chance of finding a block is
-              proportional to your machine’s share of the network’s work: more
-              cores, more chances. Rewards are not guaranteed.
+              A new block arrives about every 15 seconds and pays a 10 TCN
+              reward to the node that found it, plus the fees of the block’s
+              transactions (minus the congestion surcharge, which is burned).
+              Your chance of finding a block is proportional to your machine’s
+              share of the network’s work: more cores, more chances. Rewards
+              are not guaranteed.
+            </p>
+            <p>
+              Lost a close race? A valid block that arrives second can be
+              included by a later block as an <strong>uncle</strong> (up to 2
+              per block, up to 6 blocks behind). Its miner still receives
+              (7 − depth)/24 of the block reward — a quarter when it is one block
+              behind — and its work counts for the chain. That keeps home
+              miners with slower connections on equal terms with fast blocks.
             </p>
           </div>
           <div class="card">
             <h3>When it becomes spendable</h3>
             <p>
               For safety, each reward goes through a <strong>cooldown</strong>:
-              <strong>25% becomes available after 100 blocks</strong> (about
-              1 h 40 min) and <strong>the rest after 1,000 blocks</strong> (about
-              17 h). Meanwhile it shows as “maturing” in
+              <strong>25% becomes available after 400 blocks</strong> (about
+              1 h 40 min) and <strong>the rest after 4,000 blocks</strong> (about
+              16 h 40 min). Meanwhile it shows as “maturing” in
               <code>thecoin status</code>. This prevents coins from a block the
               network later discards from being spent.
             </p>
@@ -340,13 +351,40 @@ thecoin help              # all commands</code></pre>
         <h2>How the chain grows.</h2>
         <div class="grid grid-2 doc-gap">
           <div class="card">
-            <h3>Measured growth</h3>
+            <h3>Pruned by default</h3>
             <p>
-              Measured on version 0.2: each transaction takes
-              <strong>about 430 bytes</strong> of data with the address index
-              enabled (the default, used by the explorer and wallet history) and
-              <strong>about 350 bytes</strong> without it. An empty block takes
-              about 765 bytes (roughly 400 MB a year).
+              A node keeps <strong>one week of blocks</strong> (40,320 blocks)
+              plus the full current state, and deletes older block bodies. It
+              still verifies everything, and its disk use stays at a few GB
+              instead of growing for ever.
+            </p>
+            <p>
+              In <code>/etc/thecoin/thecoind.toml</code>, under
+              <code>[storage]</code>:
+            </p>
+            <pre><code>prune = true           # default: keep recent blocks only
+prune_keep = 40320     # one week of 15-second blocks</code></pre>
+            <p>
+              A pruned node does not keep the per-address history
+              (<code>address_index</code> is turned off automatically); use the
+              <a href="explorer.html">Explorer</a> for past transactions. To
+              return freed space to the disk, compact the database with the node
+              stopped:
+            </p>
+            <pre><code>sudo systemctl stop thecoind
+sudo -u thecoin thecoind --config /etc/thecoin/thecoind.toml compact
+sudo systemctl start thecoind</code></pre>
+          </div>
+          <div class="card">
+            <h3>Archive nodes</h3>
+            <p>
+              Explorers, seed nodes that serve a website, and anyone who needs
+              the whole history install with <code>--archive</code> (or set
+              <code>prune = false</code>). Measured on version 0.2, an archive
+              node stores <strong>about 430 bytes</strong> per transaction with
+              the address index and <strong>about 350 bytes</strong> without it.
+              An empty block takes about 436 bytes (roughly 0.9 GB a year with a
+              block every 15 seconds).
             </p>
             <ul class="doc-list">
               <li>1 million transactions ≈ 430 MB (≈ 350 MB without the index);</li>
@@ -354,24 +392,10 @@ thecoin help              # all commands</code></pre>
             </ul>
             <p>
               The database file reserves space ahead, so it can be larger than
-              the data; compacting reclaims the difference.
+              the data; compacting reclaims the difference. A node that has
+              already pruned cannot get old blocks back: to become an archive,
+              it must synchronize again from scratch.
             </p>
-          </div>
-          <div class="card">
-            <h3>Need to save space?</h3>
-            <p>
-              In <code>/etc/thecoin/thecoind.toml</code>, under
-              <code>[storage]</code>:
-            </p>
-            <pre><code>prune = true           # keep only recent blocks
-address_index = false  # no per-address history</code></pre>
-            <p>
-              Then run <code>sudo thecoin restart</code>. To return freed space
-              to the disk, compact the database with the node stopped:
-            </p>
-            <pre><code>sudo systemctl stop thecoind
-sudo -u thecoin thecoind --config /etc/thecoin/thecoind.toml compact
-sudo systemctl start thecoind</code></pre>
           </div>
         </div>
       </section>
@@ -476,6 +500,9 @@ curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --miner-add
 # validate only, without mining
 curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --no-mine
 
+# keep the whole history (explorers and archives)
+curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --archive
+
 # try the testnet
 curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network testnet</code></pre>
         <div class="table-wrap doc-gap">
@@ -514,6 +541,13 @@ curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network t
               <tr>
                 <td class="mono">--from-source</td>
                 <td>Build from source instead of downloading binaries.</td>
+              </tr>
+              <tr>
+                <td class="mono">--archive</td>
+                <td>
+                  Archive node: keep the whole history instead of one week of
+                  blocks (for explorers and nodes that serve address history).
+                </td>
               </tr>
               <tr>
                 <td class="mono">--public-api</td>
@@ -563,10 +597,13 @@ curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network t
             <summary>Will my server become slow?</summary>
             <p>
               No. Mining threads run at the lowest system priority and, on
-              machines with 2 or more cores, one core is left free by default;
-              each mining thread uses 16 MiB of memory. If needed, adjust
-              <code>threads</code> in <code>/etc/thecoin/thecoind.toml</code>
-              and run <code>sudo thecoin restart</code>.
+              machines with 2 or more cores, one core is left free by default.
+              All mining threads share one 256 MiB RandomX cache; the faster
+              2 GiB mining dataset is used only when about 3 GB of memory is
+              free. If needed, adjust <code>threads</code> (or set
+              <code>mode = "light"</code>) under <code>[mining]</code> in
+              <code>/etc/thecoin/thecoind.toml</code> and run
+              <code>sudo thecoin restart</code>.
             </p>
           </details>
           <details>
@@ -574,8 +611,9 @@ curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network t
             <p>
               It depends on how many validators are mining and on your machine’s
               share of the work. It is a fair competition: every attempt has the
-              same chance, and the CoinHash algorithm is designed for ordinary
-              CPUs rather than specialized hardware.
+              same chance, the RandomX algorithm is designed for ordinary CPUs
+              rather than graphics cards or specialized hardware, and blocks
+              that lose a close race still earn an uncle reward.
             </p>
           </details>
           <details>
@@ -607,7 +645,10 @@ curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network t
             <p>
               Yes, one per server. To collect everything in a single wallet,
               install the others with <code>--miner-address</code> pointing to
-              your address.
+              your address. Never copy <code>/var/lib/thecoin/finality.key</code>
+              from one server to another: each node signs finality votes with
+              its own key, and a key that signs two different blocks at the same
+              height is ignored by the whole network.
             </p>
           </details>
           <details>
@@ -635,7 +676,7 @@ curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network t
               Proof of work is the active consensus in v0.2. The hybrid PoW/PoS
               and proof-of-stake phases are roadmap proposals, not active
               consensus: the hybrid phase could start no earlier than block
-              1,250,000 (about 2.4 years) and only with governance approval. See
+              5,000,000 (about 2.4 years) and only with governance approval. See
               the
               <a
                 href="https://github.com/LucasBolla94/thecoin/blob/main/docs/ROADMAP.md"
@@ -674,6 +715,6 @@ curl -fsSL https://the-coin.cloud/install.sh | sudo bash -s -- --yes --network t
     </footer>
     <script src="assets/config.js?v=5"></script>
     <script src="assets/api.js?v=5"></script>
-    <script src="assets/site.js?v=5"></script>
+    <script src="assets/site.js?v=6"></script>
   </body>
 </html>

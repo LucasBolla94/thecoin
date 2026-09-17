@@ -75,15 +75,15 @@
           <h2>What’s inside?</h2>
           <p>
             The Coin aims to make participation possible on modest computers.
-            Nodes independently verify transactions, while miners use CoinHash,
-            an Argon2id-based proof of work, to propose blocks.
+            Nodes independently verify transactions, while miners use a
+            CPU-friendly proof of work to propose blocks.
           </p>
           <p>
             The protocol caps supply at 50 million TCN, with no premine. Block
-            rewards halve every 625,000 blocks. Built-in payment contracts cover
-            practical uses. Version 0.2 also adds TCCL smart contracts with
-            deterministic, fuel-metered execution and refundable storage
-            deposits.
+            rewards halve on a fixed schedule, about every 1.19 years. Built-in
+            payment contracts cover practical uses. Version 0.2 also adds TCCL
+            smart contracts with deterministic, fuel-metered execution and
+            refundable storage deposits.
           </p>
           <p>
             On-chain governance combines coin-holder votes with miner signaling.
@@ -94,6 +94,19 @@
             This introduction summarizes the document. The repository’s protocol
             specification and implementation define the exact rules.
           </p>
+          <div class="notice">
+            <strong>The consensus has changed since this paper.</strong>
+            <p>
+              The current network uses RandomX proof of work, a block every 15
+              seconds with a 10 TCN reward (halving every 2,500,000 blocks, the
+              same schedule in time), uncle blocks, and finality signed by the
+              recent miners. These rules are specified in the
+              <a
+                href="https://github.com/LucasBolla94/thecoin/blob/main/docs/PROTOCOL.md"
+                >protocol specification ↗</a
+              >; the PDF describes the design as of its version.
+            </p>
+          </div>
         </div>
       </section>
       <section class="wrap section">
@@ -103,8 +116,8 @@
             <span class="small-label">THE NETWORK</span>
             <h3>Consensus &amp; storage</h3>
             <p>
-              CoinHash, block validation, peer discovery, state commitments, and
-              compact storage.
+              Proof of work, block validation, peer discovery, state
+              commitments, and compact storage.
             </p>
           </div>
           <div class="card">
@@ -154,6 +167,6 @@
     </footer>
     <script src="assets/config.js?v=5"></script>
     <script src="assets/api.js?v=5"></script>
-    <script src="assets/site.js?v=5"></script>
+    <script src="assets/site.js?v=6"></script>
   </body>
 </html>

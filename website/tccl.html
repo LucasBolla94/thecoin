@@ -39,13 +39,14 @@
     </header>
     <main id="main" class="doc">
       <section class="wrap page-intro">
-        <div class="eyebrow">THE COIN CLOUD LANGUAGE · VERSION 1</div>
+        <div class="eyebrow">THE COIN CLOUD LANGUAGE · VERSION 2</div>
         <h1>Smart contracts you can read.</h1>
         <p class="lead">
           <strong>TCCL</strong> is the smart-contract language of The Coin. It
           looks like Python — indentation-based blocks, few keywords — but every
           value has a declared type, every step costs fuel, and the same code
-          gives exactly the same result on every node.
+          gives exactly the same result on every node. Language version 2 adds
+          calls between contracts and upgrades that can be renounced for good.
         </p>
         <div class="actions">
           <a class="btn btn-primary" href="#first-contract"
@@ -59,6 +60,7 @@
             <li><a href="#install">Install</a></li>
             <li><a href="#first-contract">First contract</a></li>
             <li><a href="#language">Language guide</a></li>
+            <li><a href="#calls">Calls and upgrades</a></li>
             <li><a href="#limits">Limits and fuel</a></li>
             <li><a href="#fees">Fees and deposits</a></li>
             <li><a href="#privacy">Privacy</a></li>
@@ -174,12 +176,20 @@
               The release packages in
               <a href="/releases/">the-coin.cloud/releases</a> contain
               <code>thecoind</code>, <code>thecoin-wallet</code>, and
-              <code>tccl</code>. Or build them with Rust:
+              <code>tccl</code>. Or build them with Rust: the language lives in
+              its own repository,
+              <a href="https://github.com/LucasBolla94/tccl"
+                >LucasBolla94/tccl</a
+              >
+              (version 0.3.0 is the one the network uses).
             </p>
-            <pre><code>git clone https://github.com/LucasBolla94/thecoin
+            <pre><code>cargo install --git https://github.com/LucasBolla94/tccl --tag v0.3.0 tccl-cli
+tccl --version
+
+# the wallet (building RandomX needs cmake and g++)
+git clone https://github.com/LucasBolla94/thecoin
 cd thecoin
-cargo build --release -p tccl -p thecoin-wallet
-./target/release/tccl --version</code></pre>
+cargo build --release -p thecoin-wallet</code></pre>
           </div>
         </div>
       </section>
@@ -188,8 +198,11 @@ cargo build --release -p tccl -p thecoin-wallet
         <div class="eyebrow">03 — YOUR FIRST CONTRACT</div>
         <h2>From an idea to the network, step by step.</h2>
         <p class="section-copy">
-          The outputs below are real runs of version 0.2 with the
-          <a href="/tccl/examples/counter.tccl">counter.tccl</a> example.
+          The outputs below are real runs of version 0.2 (language version 1)
+          with the <a href="/tccl/examples/counter.tccl">counter.tccl</a>
+          example. Every version 1 contract compiles unchanged as version 2 and
+          gives the same results; only fuel can differ, where a contract copies
+          lists or large values.
         </p>
         <div class="guide-step doc-gap">
           <span class="step-number">01</span>
@@ -335,7 +348,7 @@ Broadcast OK. txid: 04a24a2dd4268cc4fa0ff1d3c54aba9f953f03abc8aad56a9e451a84da4c
             <p>Views create no transaction and cost nothing:</p>
             <pre><code>$ thecoin-wallet contract view tcr17kp5hrqhpdkwmukkrsfp6xft6y9l8j02rhxmvz get
 5
-$ thecoin-wallet contract program tcr17kp5hrqhpdkwmukkrsfp6xft6y9l8j02rhxmvz   # balance, storage, deposit, interface
+$ thecoin-wallet contract program tcr17kp5hrqhpdkwmukkrsfp6xft6y9l8j02rhxmvz   # balance, storage, deposit, interface, upgrade authority
 $ thecoin-wallet tx &lt;txid&gt;   # receipt: success, error, fuel_used, events, return_value</code></pre>
             <p>
               In the <a href="explorer.html">Explorer</a>, search for the
@@ -354,10 +367,11 @@ $ thecoin-wallet tx &lt;txid&gt;   # receipt: success, error, fuel_used, events,
           The full reference, including operators, error messages, and a
           security checklist, is in
           <a
-            href="https://github.com/LucasBolla94/thecoin/blob/main/docs/tccl/TCCL.md"
-            >TCCL.md ↗</a
+            href="https://github.com/LucasBolla94/tccl/blob/v0.3.0/docs/en/language.md"
+            >the language reference ↗</a
           >
-          and the <a href="/tccl/tccl-cookbook.pdf">cookbook</a>.
+          and the <a href="/tccl/tccl-cookbook.pdf">cookbook</a> (written for
+          version 1, and still valid for everything version 2 did not change).
         </p>
 
         <h3 class="doc-sub" id="layout">Contract layout</h3>
@@ -449,8 +463,10 @@ fn half(x: int) -&gt; int:
               <tr>
                 <td class="mono">fn name(…) [-&gt; type]:</td>
                 <td>
-                  Private helper. Helpers are the only functions code can call;
-                  entry points cannot be called from code.
+                  Private helper. Inside a contract, helpers are the only
+                  functions code can call; the actions and views of
+                  <em>other</em> contracts are called through an
+                  <a href="#calls">interface</a>.
                 </td>
               </tr>
             </tbody>
@@ -642,8 +658,8 @@ action unmark(key: bytes):
                 <td class="mono">send(address, amount)</td>
                 <td>
                   Sends motes from the contract balance. It never runs code at
-                  the receiver: contracts cannot call contracts, so there is no
-                  re-entrancy.
+                  the receiver, even when the receiver is a contract; calling a
+                  contract is always explicit, through an interface.
                 </td>
               </tr>
               <tr>
@@ -672,8 +688,16 @@ action unmark(key: bytes):
               <tr>
                 <td class="mono">caller</td>
                 <td>
-                  <code>address</code> that signed the call (the zero address
+                  <code>address</code> that called this function: the signer of
+                  the transaction, or the calling contract (the zero address
                   inside views).
+                </td>
+              </tr>
+              <tr>
+                <td class="mono">origin</td>
+                <td>
+                  <code>address</code> that signed the transaction. Authorize
+                  with <code>caller</code>, never with <code>origin</code>.
                 </td>
               </tr>
               <tr>
@@ -692,7 +716,10 @@ action unmark(key: bytes):
               </tr>
               <tr>
                 <td class="mono">height</td>
-                <td><code>int</code>: block height (about one block a minute).</td>
+                <td>
+                  <code>int</code>: block height (about one block every 15
+                  seconds: 240 an hour, 5,760 a day).
+                </td>
               </tr>
               <tr>
                 <td class="mono">self</td>
@@ -776,6 +803,92 @@ action close():
           has been removed (scalar variables are cleared automatically). The
           balance and the whole storage deposit go to the given address.
         </p>
+
+        <h3 class="doc-sub" id="calls">Calling other contracts</h3>
+        <p class="section-copy">
+          Version 2 lets a contract call the actions and views of another
+          contract. Declare an <code>interface</code> with the functions you
+          need, then use an address through it:
+        </p>
+        <pre><code class="language-tccl"># Pays with any token contract that has these functions.
+contract Payer
+
+interface Token:
+    action transfer(to: address, amount: int) -&gt; bool
+    view balance_of(who: address) -&gt; int
+
+action pay(token: address, to: address, amount: int):
+    require Token(token).transfer(to, amount), "transfer failed"
+
+view held(token: address) -&gt; int:
+    return Token(token).balance_of(self)</code></pre>
+        <ul class="doc-list">
+          <li>
+            <strong>Atomic:</strong> if anything fails in any contract, the whole
+            transaction is reverted — storage, payments, and events in every
+            contract it touched. Only the fee is charged.
+          </li>
+          <li>
+            <strong>No re-entrancy:</strong> a contract that is already running
+            in the transaction cannot be called again. This cannot be turned
+            off.
+          </li>
+          <li>
+            <strong>Who is calling:</strong> the called contract sees the
+            calling contract as <code>caller</code>; <code>origin</code> is still
+            whoever signed. <code>with value</code> sends TCN along with a call
+            to a <code>payable</code> function.
+          </li>
+          <li>
+            <strong>Limits:</strong> up to 8 contracts on the call stack, and
+            fuel and memory (16 MiB) are shared by the whole transaction.
+          </li>
+        </ul>
+        <p class="section-copy">
+          Version 2 also adds records, enums with allowed transitions, roles
+          with <code>only</code>, modules with a standard library
+          (<code>std.token</code>, <code>std.items</code>,
+          <code>std.payments</code>), and <code>mul_div</code>,
+          <code>isqrt</code>, <code>pow</code>, <code>code_hash</code>,
+          <code>is_contract</code>, and <code>is_final</code>. See
+          <a
+            href="https://github.com/LucasBolla94/tccl/blob/v0.3.0/docs/en/calls.md"
+            >calls between contracts ↗</a
+          >
+          and
+          <a
+            href="https://github.com/LucasBolla94/tccl/blob/v0.3.0/docs/en/modules.md"
+            >modules ↗</a
+          >.
+        </p>
+
+        <h3 class="doc-sub" id="upgrades">Upgrades and final contracts</h3>
+        <p class="section-copy">
+          Every contract has at most one <strong>upgrade authority</strong>. By
+          default it is whoever deployed the contract. The authority can replace
+          the code (existing state is kept and must stay compatible; an optional
+          <code>upgrade()</code> function migrates data once), hand the power to
+          another address such as a multisig, or <strong>renounce it</strong>:
+          the contract then becomes <strong>final</strong>, and nobody can ever
+          change its code again.
+        </p>
+        <pre><code>$ thecoin-wallet contract upgrade &lt;address&gt; counter_v2.tccl   # replace the code
+$ thecoin-wallet contract authority &lt;address&gt; tc1…           # hand the authority to another address
+$ thecoin-wallet contract authority &lt;address&gt; none           # make the contract final, for ever
+$ thecoin-wallet contract program &lt;address&gt;                  # "Upgrades: allowed by …" or "final"</code></pre>
+        <p class="section-copy">
+          Whoever holds the authority controls the contract, including its
+          funds. Before depositing into a contract, check in the
+          <a href="explorer.html">Explorer</a> whether it is final or who can
+          upgrade it; other contracts can require it with
+          <code>is_final(address)</code>. Try it locally first:
+          <code>tccl run counter_v2.tccl upgrade</code> prints the compatibility
+          report. Details:
+          <a
+            href="https://github.com/LucasBolla94/tccl/blob/v0.3.0/docs/en/upgrades.md"
+            >upgrades ↗</a
+          >.
+        </p>
       </section>
 
       <section class="wrap section" id="limits">
@@ -816,8 +929,12 @@ action close():
                   <td class="num">256 · 256 · 1,024</td>
                 </tr>
                 <tr>
-                  <td>Call depth</td>
-                  <td class="num">16</td>
+                  <td>Function call depth · contracts on the call stack</td>
+                  <td class="num">16 · 8</td>
+                </tr>
+                <tr>
+                  <td>Memory per transaction</td>
+                  <td class="num">16 MiB</td>
                 </tr>
                 <tr>
                   <td>Nesting of blocks, parentheses, types</td>
@@ -875,6 +992,12 @@ action close():
                   <td class="num">20</td>
                 </tr>
                 <tr>
+                  <td>Call another contract</td>
+                  <td class="num">
+                    700 + 1 per 32 bytes of arguments + loading it
+                  </td>
+                </tr>
+                <tr>
                   <td>Storage read</td>
                   <td class="num">250</td>
                 </tr>
@@ -897,6 +1020,14 @@ action close():
                 <tr>
                   <td>ring_verify</td>
                   <td class="num">5,000 + 10,000 per key</td>
+                </tr>
+                <tr>
+                  <td>code_hash · is_contract · is_final</td>
+                  <td class="num">250</td>
+                </tr>
+                <tr>
+                  <td>mul_div · isqrt · pow</td>
+                  <td class="num">30</td>
                 </tr>
                 <tr>
                   <td>destroy</td>
@@ -1168,18 +1299,19 @@ thecoin-wallet privacy withdraw tc1…pool --key 0 \
             <h3>TCCL Cookbook</h3>
             <p>
               Complete, commented recipes, a security checklist, and the full
-              reference.
+              reference for language version 1.
             </p>
             <small>PDF</small></a
           ><a
             class="resource-card"
-            href="https://github.com/LucasBolla94/thecoin/blob/main/docs/tccl/TCCL.md"
+            href="https://github.com/LucasBolla94/tccl/tree/v0.3.0/docs/en"
             ><span class="resource-arrow" aria-hidden="true">↗</span>
             <h3>Language reference</h3>
             <p>
-              The quick start and complete language reference on GitHub.
+              Tutorial, language, calls, modules, roles, upgrades, and fees in
+              the TCCL repository.
             </p>
-            <small>TCCL.md</small></a
+            <small>github.com/LucasBolla94/tccl</small></a
           ><a
             class="resource-card"
             href="https://github.com/LucasBolla94/thecoin/blob/main/docs/API.md"
@@ -1298,12 +1430,59 @@ thecoin-wallet privacy withdraw tc1…pool --key 0 \
                 </td>
                 <td>A private payments pool (TCCL-PRIV-1).</td>
               </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/cloud_coin.tccl"
+                    >cloud_coin.tccl</a
+                  >
+                </td>
+                <td>
+                  Version 2: a token in a few lines with the standard
+                  <code>std.token</code> module and a minter role.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/orders.tccl"
+                    >orders.tccl</a
+                  >
+                </td>
+                <td>
+                  Version 2: a store with typed orders, a status with allowed
+                  transitions, and staff roles.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/pool.tccl">pool.tccl</a>
+                </td>
+                <td>
+                  Version 2: an exchange pool for two token contracts that it
+                  calls through an interface.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a class="mono" href="/tccl/examples/counter_v2.tccl"
+                    >counter_v2.tccl</a
+                  >
+                </td>
+                <td>
+                  Version 2: the counter’s next version, installed with an
+                  upgrade that keeps its state.
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
         <p class="faint doc-gap">
-          Every example compiles with <code>tccl check</code> and is exercised by
-          the test suite (<code>cargo test -p tccl</code>).
+          The examples come from the
+          <a href="https://github.com/LucasBolla94/tccl/tree/v0.3.0/examples"
+            >TCCL repository</a
+          >
+          (tag v0.3.0). Every example compiles with <code>tccl check</code>, and
+          the ones with a <code>.scenario</code> file there run with
+          <code>tccl test</code>.
         </p>
       </section>
 
@@ -1349,6 +1528,6 @@ thecoin-wallet privacy withdraw tc1…pool --key 0 \
     </footer>
     <script src="assets/config.js?v=5"></script>
     <script src="assets/api.js?v=5"></script>
-    <script src="assets/site.js?v=5"></script>
+    <script src="assets/site.js?v=6"></script>
   </body>
 </html>

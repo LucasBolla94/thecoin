@@ -37,8 +37,8 @@
   var descriptions = [
     "Your wallet signs the transaction locally. Your private keys stay with you.",
     "Nodes check the signature, balance, and transaction rules before relaying the payment.",
-    "A miner groups valid transactions into a block and searches for a valid CoinHash proof of work.",
-    "Peers independently verify the new block and adopt it if it extends the chain with the most accumulated work.",
+    "A miner groups valid transactions into a block and searches for a valid RandomX proof of work — about every 15 seconds.",
+    "Peers independently verify the new block and adopt it if it extends the chain with the most accumulated work. Once the recent miners sign it, it is final.",
   ];
   var timer = null,
     current = 0;

@@ -62,13 +62,15 @@
           <h3>1 vCPU · 1 GB RAM</h3>
           <p>
             x86_64 or ARM64, with swap.<br />2+ vCPU and 2 GB RAM recommended.
+            The node uses about 270 MB.
           </p>
         </div>
         <div class="card">
           <span class="small-label">STORAGE</span>
           <h3>5 GB to start</h3>
           <p>
-            20 GB SSD recommended.<br />Storage needs grow with network use.
+            20 GB SSD recommended.<br />Nodes keep one week of blocks by
+            default; <code>--archive</code> keeps everything.
           </p>
         </div>
         <div class="card">
@@ -148,9 +150,11 @@
             <pre><code>systemctl status thecoind
 journalctl -u thecoind -f</code></pre>
             <p>
-              Mining is competitive. Rewards are not guaranteed and become
-              available in stages: 25% after 100 blocks and the remaining 75%
-              after 1,000 blocks.
+              Mining is competitive. A block arrives about every 15 seconds and
+              pays 10 TCN; a valid block that loses a close race can still earn
+              an uncle reward. Rewards are not guaranteed and become available
+              in stages: 25% after 400 blocks (about 1 h 40 min) and the
+              remaining 75% after 4,000 blocks (about 16 h 40 min).
             </p>
           </div>
         </div>
@@ -160,6 +164,8 @@ journalctl -u thecoind -f</code></pre>
           <h2>Prefer to build it yourself?</h2>
           <p>
             Explore the source, release packages, and complete operator guide.
+            Building from source needs Rust, cmake, and a C++ compiler (g++)
+            for RandomX.
           </p>
         </div>
         <div class="actions">
@@ -201,6 +207,6 @@ journalctl -u thecoind -f</code></pre>
     </footer>
     <script src="assets/config.js?v=5"></script>
     <script src="assets/api.js?v=5"></script>
-    <script src="assets/site.js?v=5"></script>
+    <script src="assets/site.js?v=6"></script>
   </body>
 </html>

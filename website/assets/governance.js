@@ -5,6 +5,8 @@
   var view = document.getElementById("view");
   var e = TC.esc;
   var token = 0;
+  /** Target seconds between blocks (crates/core/src/params.rs). */
+  var BLOCK_SECONDS = 15;
 
   var STATUS = {
     voting: ["Voting", "accent"],
@@ -70,7 +72,7 @@
           TC.fmtInt(v) +
           (Number(v) === 1 ? " block" : " blocks") +
           " ≈ " +
-          TC.fmtDuration(Number(v) * 60)
+          TC.fmtDuration(Number(v) * BLOCK_SECONDS)
         );
       case "bytes":
         return TC.fmtInt(v) + " bytes";
@@ -339,7 +341,7 @@
     var proposals = res[0],
       params = res[1],
       status = res[2];
-    var bt = status.supply.target_block_time || 60;
+    var bt = status.supply.target_block_time || BLOCK_SECONDS;
     var voting = proposals.filter(function (p) {
       return p.status === "voting";
     });
@@ -456,7 +458,7 @@
     if (tk !== token) return;
     var p = res[0],
       status = res[1];
-    var bt = status.supply.target_block_time || 60;
+    var bt = status.supply.target_block_time || BLOCK_SECONDS;
     var html =
       '<div class="crumbs"><a href="#/">Governance</a> › proposal</div>' +
       proposalCard(p, bt, true);

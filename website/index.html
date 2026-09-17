@@ -176,7 +176,7 @@
           <p>Maximum TCN supply</p>
         </div>
         <div>
-          <span class="fact-value">60<span>s</span></span>
+          <span class="fact-value">15<span>s</span></span>
           <p>Target block time</p>
         </div>
         <div>
@@ -205,8 +205,9 @@
             <span class="small-label">A LIGHTER WAY IN</span>
             <h3>Your CPU. Your contribution.</h3>
             <p>
-              Run a node on a modest Linux server. CoinHash uses memory-hard
-              proof of work designed with ordinary CPUs in mind.
+              Run a node on a modest Linux server. Proof of work is RandomX,
+              built for ordinary CPUs, and a valid block that loses a close race
+              still earns part of the reward — so home miners stay in the game.
             </p>
             <a class="text-link" href="download.html"
               >Explore the requirements ↗</a
@@ -218,7 +219,7 @@
             <h3>Limited by design.</h3>
             <p>
               No premine or founder allocation. New TCN comes from mining, with
-              rewards that halve every 625,000 blocks.
+              rewards that halve every 2,500,000 blocks (about 1.19 years).
             </p>
             <a class="text-link" href="#supply">Understand the supply ↗</a>
           </article>
@@ -313,9 +314,10 @@
           <div class="eyebrow">03 — A PREDICTABLE SUPPLY</div>
           <h2>50 million.<br />A limit, not a target<br />to move.</h2>
           <p class="section-copy">
-            The initial reward is 40 TCN per block. It halves every 625,000
-            blocks, gradually slowing new issuance. The supply cap and emission
-            schedule cannot be changed by an on-chain vote.
+            The initial reward is 10 TCN per block, with a block every 15
+            seconds. It halves every 2,500,000 blocks (about 1.19 years),
+            gradually slowing new issuance. The supply cap and emission schedule
+            cannot be changed by an on-chain vote.
           </p>
           <a class="text-link" href="whitepaper.html"
             >Read the monetary policy ↗</a
@@ -444,9 +446,21 @@
           <details>
             <summary>Do I need special mining hardware?</summary>
             <p>
-              The node is designed for ordinary CPUs on Linux, starting at 1
-              vCPU and 1 GB RAM with swap. Mining rewards depend on your share
-              of the network’s work; running a node does not guarantee rewards.
+              No. The proof of work, RandomX, is designed for ordinary CPUs,
+              where a graphics card gains little. A node runs on Linux starting
+              at 1 vCPU and 1 GB RAM with swap. Mining rewards depend on your
+              share of the network’s work; running a node does not guarantee
+              rewards.
+            </p>
+          </details>
+          <details>
+            <summary>When is a payment final?</summary>
+            <p>
+              Usually in about 30 seconds. A new block arrives every 15 seconds,
+              and the miners of recent blocks sign the chain they see. Once
+              miners behind two thirds of the last 200 blocks — at least four
+              different miners — have signed a block, it is final: no node will
+              accept a chain that removes it.
             </p>
           </details>
           <details>
@@ -496,7 +510,7 @@
     </footer>
     <script src="assets/config.js?v=5"></script>
     <script src="assets/api.js?v=5"></script>
-    <script src="assets/site.js?v=5"></script>
+    <script src="assets/site.js?v=6"></script>
     <script src="assets/home.js?v=5"></script>
   </body>
 </html>

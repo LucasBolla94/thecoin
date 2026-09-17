@@ -110,12 +110,18 @@
         <p class="section-copy">
           The Coin Cloud Language adds typed smart contracts, deterministic
           execution, fuel limits, on-chain source code, and read-only views.
-          Storage deposits are returned when space is released.
+          Storage deposits are returned when space is released. The network
+          runs language version 2: contracts can call other contracts in one
+          atomic transaction, and an upgrade authority can replace a contract’s
+          code — or renounce that power, making the contract final.
         </p>
         <div class="actions">
           <a class="btn btn-primary" href="tccl.html"
             >TCCL guide ↗</a
-          ><a class="btn" href="/tccl/tccl-cookbook.pdf">English cookbook ↗</a
+          ><a class="btn" href="https://github.com/LucasBolla94/tccl"
+            >Language repository ↗</a
+          ><a class="text-link" href="/tccl/tccl-cookbook.pdf"
+            >English cookbook ↗</a
           ><a
             class="text-link"
             href="https://github.com/LucasBolla94/thecoin/blob/main/docs/ROADMAP.md"
@@ -241,6 +247,6 @@ curl 'http://127.0.0.1:7334/api/v1/blocks?limit=10'</code></pre>
     </footer>
     <script src="assets/config.js?v=5"></script>
     <script src="assets/api.js?v=5"></script>
-    <script src="assets/site.js?v=5"></script>
+    <script src="assets/site.js?v=6"></script>
   </body>
 </html>
