@@ -26,7 +26,7 @@ command -v nginx >/dev/null || die "nginx is not installed"
 
 # ---- files ----------------------------------------------------------------
 info "publishing the website to /var/www/$SITE"
-mkdir -p "/var/www/$SITE" /var/www/certbot
+mkdir -p "/var/www/$SITE" /var/www/certbot /var/cache/nginx/thecoin_api
 scripts/deploy-site.sh "/var/www/$SITE" >/dev/null
 info "publishing the explorer to /var/www/$EXPLORER"
 scripts/deploy-explorer.sh "/var/www/$EXPLORER" >/dev/null
