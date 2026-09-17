@@ -122,8 +122,8 @@ if [ -r /etc/os-release ]; then
   OS_NAME=$(. /etc/os-release && echo "${PRETTY_NAME:-Linux}")
 fi
 case "$(uname -m)" in
-  x86_64|amd64) TARGET=x86_64-unknown-linux-musl ;;
-  aarch64|arm64) TARGET=aarch64-unknown-linux-musl ;;
+  x86_64|amd64) TARGET=x86_64-unknown-linux-gnu ;;
+  aarch64|arm64) TARGET=aarch64-unknown-linux-gnu ;;
   *) warn "no prebuilt binary for $(uname -m); the node will be built from source"; FROM_SOURCE=1; TARGET="" ;;
 esac
 ok "system: $OS_NAME, $(uname -m)"
@@ -187,10 +187,16 @@ download_release() {
 build_from_source() {
   info "building from source (this can take 10-30 minutes on a small VPS)"
   command -v git >/dev/null || { apt-get update -qq && apt-get install -y -qq git; }
+  # RandomX (the proof of work) is a C++ library built with cmake.
+  if ! command -v cmake >/dev/null || ! command -v c++ >/dev/null; then
+    if command -v apt-get >/dev/null; then apt-get update -qq && apt-get install -y -qq cmake g++;
+    elif command -v dnf >/dev/null; then dnf install -y cmake gcc-c++;
+    else die "install cmake and a C++ compiler (g++) and retry"; fi
+  fi
   if ! command -v cc >/dev/null; then
     if command -v apt-get >/dev/null; then apt-get update -qq && apt-get install -y -qq build-essential pkg-config;
-    elif command -v dnf >/dev/null; then dnf install -y gcc make;
-    else die "install a C compiler (gcc) and retry"; fi
+    elif command -v dnf >/dev/null; then dnf install -y gcc gcc-c++ make;
+    else die "install a C/C++ compiler (gcc, g++) and retry"; fi
   fi
   if ! command -v cargo >/dev/null && [ ! -x "$HOME/.cargo/bin/cargo" ]; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
