@@ -285,6 +285,23 @@ enum ContractCmd {
         #[command(flatten)]
         opts: ProgramTxArgs,
     },
+    /// Replace the code of a contract you control: `upgrade <address> file.tccl [upgrade args...]`.
+    Upgrade {
+        address: String,
+        file: PathBuf,
+        args: Vec<String>,
+        /// Required when the wallet cannot ask (the change is permanent for users of the contract).
+        #[arg(long)]
+        yes_upgrade: bool,
+        #[command(flatten)]
+        opts: ProgramTxArgs,
+    },
+    /// Hand the upgrade authority to another address, or `none` to make the
+    /// contract final for ever.
+    Authority {
+        address: String,
+        new_authority: String,
+    },
     /// Query a view of a TCCL contract (free, no transaction).
     View {
         address: String,
@@ -616,6 +633,13 @@ fn describe(v: &TxView) -> String {
                 if *value > 0 { format!(" with {}", tcn(*value)) } else { String::new() }
             )
         }
+        ActionView::Upgrade { contract, source_hash, .. } => {
+            format!("upgrade contract {contract} to source {}…", &source_hash.to_hex()[..12])
+        }
+        ActionView::SetUpgradeAuthority { contract, new_authority, .. } => match new_authority {
+            Some(a) => format!("hand the upgrade authority of {contract} to {a}"),
+            None => format!("make contract {contract} final (no more upgrades, for ever)"),
+        },
     };
     if v.success {
         base
@@ -984,7 +1008,8 @@ fn contract_cmd(ctx: &Ctx, c: ContractCmd) -> Result<()> {
         ContractCmd::MultisigClose { id } => call(&id, ContractCall::MultisigClose, "close multisig")?,
         ContractCmd::Deploy { file, args, opts } => {
             let source = std::fs::read_to_string(&file).with_context(|| format!("cannot read {}", file.display()))?;
-            let compile_opts = thecoin_core::tccl::CompileOptions { address_prefixes: vec![ctx.network.hrp().to_string()] };
+            let compile_opts =
+                thecoin_core::tccl::CompileOptions::network(ctx.network.hrp(), thecoin_core::tccl::program::LANGUAGE_VERSION);
             let program = thecoin_core::tccl::compile(&source, &compile_opts).map_err(|e| anyhow!("{}:{e}", file.display()))?;
             let init_params = program.find("init").map(|(_, f)| f.params.clone()).unwrap_or_default();
             if args.len() != init_params.len() {
@@ -1013,6 +1038,80 @@ fn contract_cmd(ctx: &Ctx, c: ContractCmd) -> Result<()> {
             if ctx.send_with(&signer, action, &format!("deploy contract {} ({} bytes of TCCL)", program.name, source.len()))?.is_some() {
                 println!("Contract address: {address}");
             }
+        }
+        ContractCmd::Upgrade { address, file, args, yes_upgrade, opts } => {
+            let contract = ctx.addr(&address)?;
+            let source = std::fs::read_to_string(&file).with_context(|| format!("cannot read {}", file.display()))?;
+            let current = ctx.client.program(&address)?;
+            let Some(authority) = current.upgrade_authority.clone() else {
+                bail!("contract {address} is final: its code can never change");
+            };
+            let compile_opts =
+                thecoin_core::tccl::CompileOptions::network(ctx.network.hrp(), thecoin_core::tccl::program::LANGUAGE_VERSION);
+            let program = thecoin_core::tccl::compile(&source, &compile_opts).map_err(|e| anyhow!("{}:{e}", file.display()))?;
+            let hook = program.find("upgrade").map(|(_, f)| f.params.clone()).unwrap_or_default();
+            if args.len() != hook.len() {
+                bail!(
+                    "upgrade() expects {} argument(s): {}",
+                    hook.len(),
+                    hook.iter().map(|(n, t)| format!("{n}: {t}")).collect::<Vec<_>>().join(", ")
+                );
+            }
+            let values = args
+                .iter()
+                .zip(&hook)
+                .map(|(a, (n, t))| parse_arg(a, t).map_err(|e| anyhow!("argument '{n}': {e}")))
+                .collect::<Result<Vec<_>>>()?;
+            let expected = ctx.client.program_code_hash(&address)?;
+            println!("Contract:  {} ({address})", current.name);
+            println!("Authority: {authority}");
+            println!("Version:   {} → {}", current.code_version, current.code_version + 1);
+            if !yes_upgrade && !ctx.yes {
+                print!("Replace the code of this contract? Users of it will run the new code. [y/N] ");
+                use std::io::Write;
+                std::io::stdout().flush().ok();
+                let mut line = String::new();
+                std::io::stdin().read_line(&mut line)?;
+                if !line.trim().eq_ignore_ascii_case("y") {
+                    bail!("cancelled");
+                }
+            }
+            let max_deposit = amount(&opts.max_deposit)?;
+            let (_, keys) = ctx.unlock()?;
+            let signer = ctx.signer(&keys, ctx.from);
+            let action = ctx.with_measured_fuel(
+                &signer,
+                |fuel| builder::upgrade(contract, &source, expected, values.clone(), fuel, max_deposit),
+                opts.max_fuel,
+            )?;
+            ctx.send_with(&signer, action, &format!("upgrade contract {} at {address}", program.name))?;
+        }
+        ContractCmd::Authority { address, new_authority } => {
+            let contract = ctx.addr(&address)?;
+            let expected = ctx.client.program_code_hash(&address)?;
+            let next = if new_authority.trim().eq_ignore_ascii_case("none") {
+                if !ctx.yes {
+                    print!("Make this contract final? Nobody will ever be able to change its code. [y/N] ");
+                    use std::io::Write;
+                    std::io::stdout().flush().ok();
+                    let mut line = String::new();
+                    std::io::stdin().read_line(&mut line)?;
+                    if !line.trim().eq_ignore_ascii_case("y") {
+                        bail!("cancelled");
+                    }
+                }
+                None
+            } else {
+                Some(ctx.addr(&new_authority)?)
+            };
+            let (_, keys) = ctx.unlock()?;
+            let signer = ctx.signer(&keys, ctx.from);
+            let action = builder::set_upgrade_authority(contract, next, expected);
+            let what = match next {
+                Some(a) => format!("hand the upgrade authority of {address} to {}", a.encode(ctx.network)),
+                None => format!("make contract {address} final (no more upgrades, ever)"),
+            };
+            ctx.send_with(&signer, action, &what)?;
         }
         ContractCmd::Invoke { address, function, args, opts } => {
             let contract = ctx.addr(&address)?;
@@ -1045,6 +1144,11 @@ fn contract_cmd(ctx: &Ctx, c: ContractCmd) -> Result<()> {
             println!("Creator:   {} (block {}, tx {})", p.creator, p.created_height, p.deploy_txid);
             println!("Balance:   {}", tcn(p.balance));
             println!("Storage:   {} bytes in {} entries · deposit {}", p.state_bytes, p.storage_items, tcn(p.deposit));
+            println!("Language:  TCCL version {} · code version {}", p.language, p.code_version);
+            match &p.upgrade_authority {
+                Some(a) => println!("Upgrades:  allowed by {a} (it can change this code)"),
+                None => println!("Upgrades:  final — this code can never change"),
+            }
             for f in p.functions {
                 let params = f.params.iter().map(|(n, t)| format!("{n}: {t}")).collect::<Vec<_>>().join(", ");
                 let ret = if f.returns == "nothing" { String::new() } else { format!(" -> {}", f.returns) };

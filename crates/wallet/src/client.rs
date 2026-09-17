@@ -70,6 +70,11 @@ impl NodeClient {
         self.get(&format!("/api/v1/program/{address}"))
     }
 
+    /// Hash of the code deployed right now (upgrades are bound to it).
+    pub fn program_code_hash(&self, address: &str) -> Result<thecoin_core::hash::Hash32> {
+        Ok(self.program(address)?.code_hash)
+    }
+
     pub fn security(&self, amount: u64) -> Result<SecurityView> {
         self.get(&format!("/api/v1/security?amount={amount}"))
     }

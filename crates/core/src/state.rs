@@ -13,6 +13,7 @@
 //! | `0x07` | program address (20)        | [`ProgramMeta`]            |
 //! | `0x08` | program address (20)        | compiled TCCL program      |
 //! | `0x09` | program address (20) + key  | contract storage value     |
+//! | `0x0A` | program address (20)        | [`ProgramAdmin`] (absent = final) |
 //!
 //! Values are Borsh-encoded. All records together are committed by the LtHash
 //! state root of every block.
@@ -34,6 +35,7 @@ pub const PREFIX_GLOBAL: u8 = 0x06;
 pub const PREFIX_PROGRAM_META: u8 = 0x07;
 pub const PREFIX_PROGRAM_CODE: u8 = 0x08;
 pub const PREFIX_PROGRAM_STORAGE: u8 = 0x09;
+pub const PREFIX_PROGRAM_ADMIN: u8 = 0x0A;
 
 pub fn account_key(a: &Address) -> Vec<u8> {
     let mut k = vec![PREFIX_ACCOUNT];
@@ -74,12 +76,34 @@ pub fn program_code_key(a: &Address) -> Vec<u8> {
     k.extend_from_slice(&a.0);
     k
 }
+pub fn program_admin_key(a: &Address) -> Vec<u8> {
+    let mut k = vec![PREFIX_PROGRAM_ADMIN];
+    k.extend_from_slice(&a.0);
+    k
+}
 pub fn program_storage_key(a: &Address, local: &[u8]) -> Vec<u8> {
     let mut k = Vec::with_capacity(21 + local.len());
     k.push(PREFIX_PROGRAM_STORAGE);
     k.extend_from_slice(&a.0);
     k.extend_from_slice(local);
     k
+}
+
+/// Who may replace the code of a contract.
+///
+/// **No record means the contract is final**: its code can never change. A
+/// deploy records the sender as the authority unless it asks for a final
+/// deployment; the authority may hand it over or give it up for ever.
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct ProgramAdmin {
+    /// `None` = final (the record is deleted in that case).
+    pub authority: Option<Address>,
+    /// 1 for the original deployment, +1 on every upgrade.
+    pub code_version: u32,
+    /// Language version of the stored code.
+    pub language: u16,
+    /// Code hash before the last upgrade (all zeros for the first deployment).
+    pub previous_code_hash: Hash32,
 }
 
 /// Metadata of a deployed TCCL contract. Its TCN balance is the [`Account`]

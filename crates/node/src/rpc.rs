@@ -492,6 +492,8 @@ async fn program(State(node): State<AppState>, Path(addr): Path<String>) -> ApiR
             let acc: Account = read_typed(&reader, &state::account_key(&a))
                 .map_err(|e| ApiErr(StatusCode::INTERNAL_SERVER_ERROR, e.0))?
                 .unwrap_or_default();
+            let admin: Option<state::ProgramAdmin> =
+                read_typed(&reader, &state::program_admin_key(&a)).map_err(|e| ApiErr(StatusCode::INTERNAL_SERVER_ERROR, e.0))?;
             let n = node.params.network;
             Ok(ProgramView {
                 address: a.encode(n),
@@ -504,6 +506,10 @@ async fn program(State(node): State<AppState>, Path(addr): Path<String>) -> ApiR
                 state_bytes: meta.state_bytes,
                 storage_items: meta.storage_items,
                 deposit: meta.deposit,
+                code_hash: thecoin_core::programs::code_hash(&prog.to_bytes()),
+                upgrade_authority: admin.as_ref().and_then(|a| a.authority).map(|a| a.encode(n)),
+                code_version: admin.as_ref().map(|a| a.code_version).unwrap_or(1),
+                language: admin.as_ref().map(|a| a.language).unwrap_or(prog.version),
                 functions: prog
                     .abi()
                     .into_iter()

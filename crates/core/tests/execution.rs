@@ -650,3 +650,108 @@ fn unexecuted_check_matches_pre_execution_rules() {
     let mut ov = Overlay::new(&c.state);
     assert!(matches!(apply_tx_unexecuted(c.p, &mut ov, h, &cheap, cheap.size()), Err(TxError::FeeTooLow { .. })));
 }
+
+// ---------------------------------------------------------------- TCCL v2 ----
+
+const COUNTER_V1: &str = "contract Counter\n\nstate count: int\n\naction increment(amount: int):\n    require amount > 0, \"amount must be positive\"\n    count += amount\n\nview get() -> int:\n    return count\n";
+const COUNTER_V2: &str = "contract Counter\n\nstate count: int\nstate step: int\n\nupgrade():\n    step = 10\n\naction increment(amount: int):\n    require amount > 0, \"amount must be positive\"\n    count += amount * step\n\nview get() -> int:\n    return count\n";
+/// Calls the counter through an interface.
+const DRIVER: &str = "contract Driver\n\ninterface Counter:\n    action increment(amount: int)\n    view get() -> int\n\nstate target: address\n\ninit(t: address):\n    target = t\n\naction bump(times: int):\n    let c: Counter = Counter(target)\n    for i in range(0, times):\n        c.increment(1)\n\nview total() -> int:\n    let c: Counter = Counter(target)\n    return c.get()\n";
+
+fn upgrade_tx(w: &mut Wallet, contract: Address, source: &str, expected: Hash32, args: Vec<Value>) -> Transaction {
+    w.tx(TxAction::Upgrade { contract, source: source.into(), expected_code_hash: expected, args, max_fuel: 1_000_000, max_deposit: COIN })
+}
+
+fn code_hash_of(c: &TestChain, addr: &Address) -> Hash32 {
+    let code: Vec<u8> = read_raw(&c.state, &thecoin_core::state::program_code_key(addr)).expect("code");
+    thecoin_core::programs::code_hash(&code)
+}
+
+fn read_raw(state: &BTreeMap<Vec<u8>, Vec<u8>>, key: &[u8]) -> Option<Vec<u8>> {
+    state.get(key).cloned()
+}
+
+#[test]
+fn contracts_call_contracts_and_can_be_upgraded() {
+    let (mut c, mut rich) = funded();
+    let mut dev = Wallet::new(21);
+    let miner = Wallet::new(99).addr;
+    c.mine(rich.addr, vec![rich.pay(&dev.addr, 100 * COIN)]).unwrap();
+
+    // Deploy the counter and a driver that calls it through an interface.
+    let counter = program_address(&dev.addr, dev.nonce);
+    c.mine(miner, vec![deploy_tx(&mut dev, COUNTER_V1)]).unwrap();
+    let driver = program_address(&dev.addr, dev.nonce);
+    let deploy_driver = dev.tx(TxAction::Deploy {
+        source: DRIVER.into(),
+        init_args: vec![Value::Address(counter.0)],
+        value: 0,
+        max_fuel: 1_000_000,
+        max_deposit: COIN,
+    });
+    let r = c.mine(miner, vec![deploy_driver]).unwrap();
+    assert!(r.txs[0].success, "{:?}", r.txs[0].error);
+
+    // One transaction, two contracts: the driver increments the counter 3 times.
+    let r = c.mine(miner, vec![invoke_tx(&mut dev, driver, "bump", vec![Value::Int(3)], 0)]).unwrap();
+    assert!(r.txs[0].success, "{:?}", r.txs[0].error);
+    let (v, _) = view(&c.state, c.height, &counter, "get", vec![], 2_000_000).unwrap();
+    assert_eq!(v.unwrap(), Value::Int(3));
+
+    // Upgrading: only the authority, and only with the expected code hash.
+    let expected = code_hash_of(&c, &counter);
+    let mut intruder = Wallet::new(22);
+    c.mine(rich.addr, vec![rich.pay(&intruder.addr, 10 * COIN)]).unwrap();
+    let r = c.mine(miner, vec![upgrade_tx(&mut intruder, counter, COUNTER_V2, expected, vec![])]).unwrap();
+    assert!(!r.txs[0].success);
+    assert!(r.txs[0].error.as_ref().unwrap().contains("authority"), "{:?}", r.txs[0].error);
+
+    let r = c.mine(miner, vec![upgrade_tx(&mut dev, counter, COUNTER_V2, Hash32::ZERO, vec![])]).unwrap();
+    assert!(!r.txs[0].success);
+    assert!(r.txs[0].error.as_ref().unwrap().contains("changed"), "{:?}", r.txs[0].error);
+
+    // The real upgrade runs upgrade(), keeping the old state.
+    let r = c.mine(miner, vec![upgrade_tx(&mut dev, counter, COUNTER_V2, expected, vec![])]).unwrap();
+    assert!(r.txs[0].success, "{:?}", r.txs[0].error);
+    let (v, _) = view(&c.state, c.height, &counter, "get", vec![], 2_000_000).unwrap();
+    assert_eq!(v.unwrap(), Value::Int(3), "state survives the upgrade");
+    let r = c.mine(miner, vec![invoke_tx(&mut dev, counter, "increment", vec![Value::Int(2)], 0)]).unwrap();
+    assert!(r.txs[0].success, "{:?}", r.txs[0].error);
+    let (v, _) = view(&c.state, c.height, &counter, "get", vec![], 2_000_000).unwrap();
+    assert_eq!(v.unwrap(), Value::Int(23), "3 + 2 × 10: the new code runs");
+
+    // An upgrade that drops a state variable is refused.
+    let expected = code_hash_of(&c, &counter);
+    let r = c.mine(miner, vec![upgrade_tx(&mut dev, counter, COUNTER_V1, expected, vec![])]).unwrap();
+    assert!(!r.txs[0].success);
+    assert!(r.txs[0].error.as_ref().unwrap().contains("'step'"), "{:?}", r.txs[0].error);
+
+    // Giving up the authority makes the contract final for ever.
+    let expected = code_hash_of(&c, &counter);
+    let give_up = dev.tx(TxAction::SetUpgradeAuthority { contract: counter, new_authority: None, expected_code_hash: expected });
+    let r = c.mine(miner, vec![give_up]).unwrap();
+    assert!(r.txs[0].success);
+    let r = c.mine(miner, vec![upgrade_tx(&mut dev, counter, COUNTER_V2, expected, vec![])]).unwrap();
+    assert!(!r.txs[0].success);
+    assert!(r.txs[0].error.as_ref().unwrap().contains("final"), "{:?}", r.txs[0].error);
+}
+
+#[test]
+fn a_final_deploy_can_never_be_upgraded() {
+    let (mut c, mut rich) = funded();
+    let mut dev = Wallet::new(23);
+    let miner = Wallet::new(99).addr;
+    c.mine(rich.addr, vec![rich.pay(&dev.addr, 50 * COIN)]).unwrap();
+    let addr = program_address(&dev.addr, dev.nonce);
+    let tx = dev.tx_with(
+        TxAction::Deploy { source: COUNTER_V1.into(), init_args: vec![], value: 0, max_fuel: 1_000_000, max_deposit: COIN },
+        thecoin_core::tx::FLAG_FINAL_DEPLOY,
+        30,
+    );
+    let r = c.mine(miner, vec![tx]).unwrap();
+    assert!(r.txs[0].success, "{:?}", r.txs[0].error);
+    let expected = code_hash_of(&c, &addr);
+    let r = c.mine(miner, vec![upgrade_tx(&mut dev, addr, COUNTER_V2, expected, vec![])]).unwrap();
+    assert!(!r.txs[0].success);
+    assert!(r.txs[0].error.as_ref().unwrap().contains("final"), "{:?}", r.txs[0].error);
+}

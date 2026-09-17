@@ -53,13 +53,23 @@ pub enum TxAction {
     Deploy { source: String, init_args: Vec<Value>, value: u64, max_fuel: u64, max_deposit: u64 },
     /// Calls an `action` of a TCCL contract, optionally sending `value` TCN.
     Invoke { contract: Address, function: String, args: Vec<Value>, value: u64, max_fuel: u64, max_deposit: u64 },
+    /// Replaces the code of a contract. Only its upgrade authority may do it,
+    /// the new code must keep the old state compatible, and `expected_code_hash`
+    /// makes sure no other upgrade slipped in between.
+    Upgrade { contract: Address, source: String, expected_code_hash: Hash32, args: Vec<Value>, max_fuel: u64, max_deposit: u64 },
+    /// Hands the upgrade authority to someone else, or gives it up for ever
+    /// (`new_authority = None`), which makes the contract final.
+    SetUpgradeAuthority { contract: Address, new_authority: Option<Address>, expected_code_hash: Hash32 },
 }
 
 /// `TxBody::flags` bit: the sender allows this transaction to be replaced in
 /// the mempool by one with the same nonce and a higher fee ("fee bump").
 /// Receivers of payments without this flag can rely on the first version seen.
 pub const FLAG_REPLACEABLE: u8 = 1;
-pub const KNOWN_FLAGS: u8 = FLAG_REPLACEABLE;
+/// `TxBody::flags` bit: deploy a contract that can **never** be upgraded.
+/// Without it the deployer keeps the upgrade authority and may give it up later.
+pub const FLAG_FINAL_DEPLOY: u8 = 2;
+pub const KNOWN_FLAGS: u8 = FLAG_REPLACEABLE | FLAG_FINAL_DEPLOY;
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct TxBody {
@@ -131,7 +141,7 @@ impl Transaction {
     /// Fuel reserved by a contract transaction (0 for other actions).
     pub fn max_fuel(&self) -> u64 {
         match &self.body.action {
-            TxAction::Deploy { max_fuel, .. } | TxAction::Invoke { max_fuel, .. } => *max_fuel,
+            TxAction::Deploy { max_fuel, .. } | TxAction::Invoke { max_fuel, .. } | TxAction::Upgrade { max_fuel, .. } => *max_fuel,
             _ => 0,
         }
     }
@@ -145,6 +155,11 @@ impl Transaction {
     /// Fee per weight unit (for mempool ordering and priority).
     pub fn fee_rate(&self) -> u64 {
         self.body.fee / self.weight().max(1)
+    }
+
+    /// Whether a `Deploy` asks for a contract that can never be upgraded.
+    pub fn is_final_deploy(&self) -> bool {
+        self.body.flags & FLAG_FINAL_DEPLOY != 0
     }
 
     pub fn is_replaceable(&self) -> bool {
@@ -161,6 +176,8 @@ impl Transaction {
             TxAction::Propose { .. } => 0, // deposit is a chain parameter; checked on apply
             TxAction::Vote { .. } => 0,
             TxAction::Deploy { value, max_deposit, .. } | TxAction::Invoke { value, max_deposit, .. } => value.saturating_add(*max_deposit),
+            TxAction::Upgrade { max_deposit, .. } => *max_deposit,
+            TxAction::SetUpgradeAuthority { .. } => 0,
         };
         amount.saturating_add(self.body.fee)
     }

@@ -129,6 +129,14 @@ pub fn invoke(contract: Address, function: &str, args: Vec<Value>, value: u64, m
     TxAction::Invoke { contract, function: function.to_string(), args, value, max_fuel, max_deposit }
 }
 
+pub fn upgrade(contract: Address, source: &str, expected_code_hash: Hash32, args: Vec<Value>, max_fuel: u64, max_deposit: u64) -> TxAction {
+    TxAction::Upgrade { contract, source: source.to_string(), expected_code_hash, args, max_fuel, max_deposit }
+}
+
+pub fn set_upgrade_authority(contract: Address, new_authority: Option<Address>, expected_code_hash: Hash32) -> TxAction {
+    TxAction::SetUpgradeAuthority { contract, new_authority, expected_code_hash }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

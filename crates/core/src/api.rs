@@ -171,14 +171,66 @@ pub struct OutputView {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ActionView {
-    Transfer { to: String, amount: u64, memo_hex: String, memo_text: Option<String> },
-    BatchTransfer { outputs: Vec<OutputView>, total: u64, memo_hex: String, memo_text: Option<String> },
-    CreateContract { spec: ContractSpecView },
-    CallContract { contract: Hash32, call: ContractCallView },
-    Propose { title: String, url: String, content_hash: Hash32, action: ProposalActionView },
-    Vote { proposal: Hash32, choice: VoteChoice, weight: u64 },
-    Deploy { source: String, source_hash: Hash32, init_args: Vec<String>, value: u64, max_fuel: u64, max_deposit: u64 },
-    Invoke { contract: String, function: String, args: Vec<String>, value: u64, max_fuel: u64, max_deposit: u64 },
+    Transfer {
+        to: String,
+        amount: u64,
+        memo_hex: String,
+        memo_text: Option<String>,
+    },
+    BatchTransfer {
+        outputs: Vec<OutputView>,
+        total: u64,
+        memo_hex: String,
+        memo_text: Option<String>,
+    },
+    CreateContract {
+        spec: ContractSpecView,
+    },
+    CallContract {
+        contract: Hash32,
+        call: ContractCallView,
+    },
+    Propose {
+        title: String,
+        url: String,
+        content_hash: Hash32,
+        action: ProposalActionView,
+    },
+    Vote {
+        proposal: Hash32,
+        choice: VoteChoice,
+        weight: u64,
+    },
+    Deploy {
+        source: String,
+        source_hash: Hash32,
+        init_args: Vec<String>,
+        value: u64,
+        max_fuel: u64,
+        max_deposit: u64,
+    },
+    Invoke {
+        contract: String,
+        function: String,
+        args: Vec<String>,
+        value: u64,
+        max_fuel: u64,
+        max_deposit: u64,
+    },
+    Upgrade {
+        contract: String,
+        source: String,
+        source_hash: Hash32,
+        expected_code_hash: Hash32,
+        args: Vec<String>,
+        max_fuel: u64,
+        max_deposit: u64,
+    },
+    SetUpgradeAuthority {
+        contract: String,
+        new_authority: Option<String>,
+        expected_code_hash: Hash32,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -413,6 +465,14 @@ pub struct ProgramView {
     pub state_bytes: u64,
     pub storage_items: u64,
     pub deposit: u64,
+    /// Hash of the compiled code, used by upgrade transactions.
+    pub code_hash: Hash32,
+    /// Who may replace the code; `None` means the contract is **final**.
+    pub upgrade_authority: Option<String>,
+    /// 1 for the original deployment, +1 on every upgrade.
+    pub code_version: u32,
+    /// TCCL language version of the stored code.
+    pub language: u16,
     pub functions: Vec<ProgramFunctionView>,
 }
 
@@ -582,6 +642,20 @@ pub fn action_view(a: &TxAction, n: Network) -> ActionView {
             value: *value,
             max_fuel: *max_fuel,
             max_deposit: *max_deposit,
+        },
+        TxAction::Upgrade { contract, source, expected_code_hash, args, max_fuel, max_deposit } => ActionView::Upgrade {
+            contract: contract.encode(n),
+            source: source.clone(),
+            source_hash: crate::programs::source_hash(source),
+            expected_code_hash: *expected_code_hash,
+            args: args.iter().map(|v| tccl::abi::display(v, n.hrp())).collect(),
+            max_fuel: *max_fuel,
+            max_deposit: *max_deposit,
+        },
+        TxAction::SetUpgradeAuthority { contract, new_authority, expected_code_hash } => ActionView::SetUpgradeAuthority {
+            contract: contract.encode(n),
+            new_authority: new_authority.map(|a| a.encode(n)),
+            expected_code_hash: *expected_code_hash,
         },
     }
 }

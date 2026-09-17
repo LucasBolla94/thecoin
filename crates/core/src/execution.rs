@@ -193,6 +193,14 @@ pub fn check_tx_context_free(p: &ChainParams, tx: &Transaction, verify_sig: bool
             check_fuel(*max_fuel)?;
             check_args(args)?;
         }
+        TxAction::Upgrade { source, args, max_fuel, .. } => {
+            if source.trim().is_empty() {
+                return Err(TxError::BadContractTx("empty source code".into()));
+            }
+            check_fuel(*max_fuel)?;
+            check_args(args)?;
+        }
+        TxAction::SetUpgradeAuthority { .. } => {}
     }
     if verify_sig && !tx.verify_signature() {
         return Err(TxError::BadSignature);
@@ -239,7 +247,7 @@ pub fn apply_tx<R: StateReader + ?Sized>(
         return Err(TxError::BadNonce { expected: acc.nonce, got: body.nonce });
     }
 
-    let is_program_tx = matches!(body.action, TxAction::Deploy { .. } | TxAction::Invoke { .. });
+    let is_program_tx = matches!(body.action, TxAction::Deploy { .. } | TxAction::Invoke { .. } | TxAction::Upgrade { .. });
     let debit_amount: u64 = match &body.action {
         TxAction::Transfer { amount, .. } => *amount,
         TxAction::BatchTransfer { outputs, .. } => {
@@ -250,6 +258,7 @@ pub fn apply_tx<R: StateReader + ?Sized>(
         TxAction::Propose { .. } => g.params.proposal_deposit,
         TxAction::Vote { .. } => 0,
         TxAction::Deploy { value, .. } | TxAction::Invoke { value, .. } => *value,
+        TxAction::Upgrade { .. } | TxAction::SetUpgradeAuthority { .. } => 0,
     };
     let needed = debit_amount.checked_add(body.fee).ok_or(TxError::Overflow)?;
     let available = acc.spendable(height);
@@ -310,7 +319,7 @@ pub fn apply_tx<R: StateReader + ?Sized>(
                 max_deposit: *max_deposit,
                 deposit_per_kb: g.params.storage_deposit_per_kb,
             };
-            let out = programs::deploy(p, state, &call, body.nonce, receipt.txid, source, init_args.clone())?;
+            let out = programs::deploy(p, state, &call, body.nonce, receipt.txid, source, init_args.clone(), !tx.is_final_deploy())?;
             if out.success {
                 g_increment_contracts(state)?;
             }
@@ -327,6 +336,22 @@ pub fn apply_tx<R: StateReader + ?Sized>(
             };
             let out = programs::invoke(state, &call, contract, function, args.clone())?;
             out.fill(&mut receipt);
+        }
+        TxAction::Upgrade { contract, source, expected_code_hash, args, max_fuel, max_deposit } => {
+            let call = programs::ProgramCall {
+                sender,
+                height,
+                value: 0,
+                max_fuel: *max_fuel,
+                max_deposit: *max_deposit,
+                deposit_per_kb: g.params.storage_deposit_per_kb,
+            };
+            let out = programs::upgrade(p, state, &call, contract, source, expected_code_hash, args.clone(), receipt.txid)?;
+            out.fill(&mut receipt);
+        }
+        TxAction::SetUpgradeAuthority { contract, new_authority, expected_code_hash } => {
+            programs::set_upgrade_authority(state, sender, contract, *new_authority, expected_code_hash)?;
+            receipt.touched.push(*contract);
         }
     }
     let first = receipt.touched[0];

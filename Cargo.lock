@@ -1546,7 +1546,8 @@ dependencies = [
 
 [[package]]
 name = "tccl"
-version = "0.2.0"
+version = "0.3.0"
+source = "git+https://github.com/LucasBolla94/tccl?tag=v0.3.0#19b88c3093514a9b1ce8854965293e1eae6a64c3"
 dependencies = [
  "bech32",
  "blake3",
