@@ -130,6 +130,47 @@
     return v !== null && v !== undefined;
   }
 
+  /* ---------------- finality ---------------- */
+
+  /** Target seconds between blocks (crates/core/src/params.rs). */
+  var BLOCK_SECONDS = 15;
+
+  var FINAL_TITLE =
+    "Two thirds of the recent miners signed this block: it can never be reversed";
+  var PENDING_TITLE =
+    "Waiting for the signatures of two thirds of the recent miners — usually one block, about 30 seconds";
+
+  /** Badge showing whether a block (and everything in it) is irreversible. */
+  function finalBadge(isFinal) {
+    return isFinal
+      ? '<span class="badge ok" title="' + e(FINAL_TITLE) + '">final</span>'
+      : '<span class="badge warn" title="' +
+          e(PENDING_TITLE) +
+          '">not final yet</span>';
+  }
+
+  /** Finality of a height against /status, when the node reports one. */
+  function finalizedAt(height, finalizedHeight) {
+    return (
+      has(height) &&
+      Number(finalizedHeight) > 0 &&
+      Number(height) <= Number(finalizedHeight)
+    );
+  }
+
+  function finalityNote(isFinal) {
+    return isFinal
+      ? ' <span class="faint">signed by two thirds of the recent miners — irreversible</span>'
+      : ' <span class="faint">protected by proof of work; blocks normally become final one block later, about 30 seconds</span>';
+  }
+
+  /** Reads /status without breaking a page when the endpoint is unavailable. */
+  function statusOrNull() {
+    return TC.api("/status").catch(function () {
+      return null;
+    });
+  }
+
 
   /* ---------------- action rendering ---------------- */
   var CALL_LABELS = {
@@ -179,6 +220,12 @@
         return "Deploy TCCL contract";
       case "invoke":
         return "Invoke TCCL contract";
+      case "upgrade":
+        return "Upgrade TCCL contract";
+      case "set_upgrade_authority":
+        return a.new_authority
+          ? "Hand over the upgrade authority"
+          : "Make the contract final";
       default:
         return a.type;
     }
@@ -238,6 +285,24 @@
           ' <span class="faint">in</span> ' +
           addrLink(a.contract)
         );
+      case "upgrade": {
+        var upName = contractName(a.source);
+        return (
+          '<span class="mono">' +
+          e(upName || "new code") +
+          "</span>" +
+          ' <span class="faint">in</span> ' +
+          addrLink(a.contract)
+        );
+      }
+      case "set_upgrade_authority":
+        return (
+          (a.new_authority
+            ? '<span class="faint">to</span> ' + addrLink(a.new_authority)
+            : '<span class="badge ok">final</span>') +
+          ' <span class="faint">in</span> ' +
+          addrLink(a.contract)
+        );
       default:
         return "";
     }
@@ -278,7 +343,7 @@
             "Period",
             TC.fmtInt(s.period_blocks) +
               " blocks ≈ " +
-              TC.fmtDuration(s.period_blocks * 60),
+              TC.fmtDuration(s.period_blocks * BLOCK_SECONDS),
           ],
           [
             "Periods",
@@ -467,6 +532,48 @@
           ["Maximum fuel", TC.fmtInt(a.max_fuel)],
           ["Maximum accepted deposit", amount(a.max_deposit)],
         ]);
+      case "upgrade": {
+        var upName = contractName(a.source);
+        return (
+          kv([
+            ["Contract", addrLink(a.contract, false)],
+            [
+              "New contract name",
+              '<span class="mono">' + e(upName || "—") + "</span>",
+            ],
+            ["New source code", TC.fmtInt(TC.byteLength(a.source)) + " bytes"],
+            ["New source code hash", mono(a.source_hash)],
+            [
+              "Replaces the code with hash",
+              mono(a.expected_code_hash) +
+                ' <span class="faint">the upgrade is refused if the code changed in the meantime</span>',
+            ],
+            ["upgrade() arguments", argList(a.args)],
+            ["Maximum fuel", TC.fmtInt(a.max_fuel)],
+            ["Maximum accepted deposit", amount(a.max_deposit)],
+          ]) +
+          '<p class="faint">Only the contract\u2019s upgrade authority may replace its code, and the new code must keep the existing state readable.</p>' +
+          '<details class="source"><summary>View the new TCCL source code</summary><pre><code>' +
+          e(a.source) +
+          "</code></pre></details>"
+        );
+      }
+      case "set_upgrade_authority":
+        return (
+          kv([
+            ["Contract", addrLink(a.contract, false)],
+            [
+              "New upgrade authority",
+              a.new_authority
+                ? addrLink(a.new_authority, false)
+                : '<span class="badge ok">final</span> <span class="faint">nobody can ever change this code again</span>',
+            ],
+            ["Applies to the code with hash", mono(a.expected_code_hash)],
+          ]) +
+          (a.new_authority
+            ? ""
+            : '<p class="faint">Giving up the authority is irreversible: the contract behaves exactly like its published source code for ever.</p>')
+        );
       default:
         return "<pre><code>" + e(JSON.stringify(a, null, 2)) + "</code></pre>";
     }
@@ -477,7 +584,11 @@
   }
 
   function isProgramTx(t) {
-    return t.action.type === "deploy" || t.action.type === "invoke";
+    return (
+      t.action.type === "deploy" ||
+      t.action.type === "invoke" ||
+      t.action.type === "upgrade"
+    );
   }
 
   /** Small badges next to the type: failure, replaceable, double spend. */
@@ -653,20 +764,29 @@
           var atStake = String(
             BigInt(s.value_per_block) * BigInt(s.confirmations),
           );
+          var toFinal = has(s.blocks_to_finality)
+            ? Number(s.blocks_to_finality)
+            : null;
+          var wait = toFinal !== null ? toFinal : Number(s.confirmations);
           out.innerHTML =
             '<div class="sec-result">' +
             '<div class="stat"><span class="label">Wait for</span><span class="value">' +
-            TC.fmtInt(s.confirmations) +
-            (Number(s.confirmations) === 1
-              ? " confirmation"
-              : " confirmations") +
+            TC.fmtInt(wait) +
+            (wait === 1 ? " confirmation" : " confirmations") +
             "</span>" +
             '<span class="sub">≈ ' +
-            e(TC.fmtDuration(Math.max(1, Number(s.minutes)) * 60)) +
+            e(TC.fmtDuration(Math.max(1, wait) * BLOCK_SECONDS)) +
             " for a payment of " +
             e(TC.fmtTCN(s.amount)) +
             "</span></div>" +
-            '<p class="muted" style="margin:10px 0 0">To reverse ' +
+            (toFinal !== null
+              ? '<p class="muted" style="margin:10px 0 0">The miners are signing blocks, so this payment becomes <strong>final</strong> — irreversible, whatever its value — about ' +
+                TC.fmtInt(toFinal) +
+                " block(s) after it is mined (" +
+                e(TC.fmtDuration(Math.max(1, toFinal) * BLOCK_SECONDS)) +
+                "). Undoing it would need two thirds of the recent miners to sign a different chain."
+              : '<p class="muted" style="margin:10px 0 0">No block is being finalised by the miners right now, so this answer rests on proof of work alone.') +
+            " To reverse " +
             TC.fmtInt(s.confirmations) +
             " block(s), an attacker must redo their proof of work and forgo approximately " +
             e(TC.fmtTCN(atStake, { maxDecimals: 2 })) +
@@ -675,10 +795,12 @@
             " per block)" +
             (BigInt(atStake) >= BigInt(s.amount) * 2n
               ? " — at least twice the payment amount"
-              : " — less than twice the payment: beyond 720 blocks the chain never reorganizes, so this is the maximum wait") +
+              : toFinal !== null
+                ? " — the miners\u2019 signatures, not this cost, are what protect it"
+                : " — less than twice the payment: the node never recommends waiting longer than the deepest reorganization it would accept, so this is the maximum wait") +
             ". Current network hashrate: " +
             e(TC.fmtHashrate(s.network_hashrate)) +
-            ". Reorganizations beyond 720 blocks are rejected.</p></div>";
+            ".</p></div>";
         })
         .catch(function (err) {
           out.innerHTML =
@@ -778,6 +900,10 @@
       '</span><span class="sub">' +
       e(s.network) +
       (s.syncing ? " · syncing" : "") +
+      " · " +
+      (Number(s.finalized_height) > 0
+        ? "final up to " + TC.fmtInt(s.finalized_height)
+        : "no finality yet") +
       "</span></div>" +
       '<div class="card stat"><span class="label">Difficulty</span><span class="value">' +
       e(TC.fmtDifficulty(s.difficulty)) +
@@ -807,7 +933,10 @@
     document.getElementById("h-alerts").innerHTML = alerts
       ? alertsPanel(alerts)
       : "";
-    document.getElementById("h-blocks").innerHTML = blocksTable(blocks);
+    document.getElementById("h-blocks").innerHTML = blocksTable(
+      blocks,
+      s.finalized_height,
+    );
     var lowest = blocks.length ? blocks[blocks.length - 1].height : 0;
     document.getElementById("h-pager").innerHTML =
       lowest > 0
@@ -815,14 +944,16 @@
         : "";
   }
 
-  function blocksTable(blocks) {
+  function blocksTable(blocks, finalizedHeight) {
     return (
-      '<div class="table-wrap" tabindex="0" role="region" aria-label="Data table"><table><thead><tr><th>Height</th><th>Hash</th><th>Age</th><th class="num">Txs</th><th class="hide-sm">Miner</th><th class="num hide-sm">Size</th></tr></thead><tbody>' +
+      '<div class="table-wrap" tabindex="0" role="region" aria-label="Data table"><table><thead><tr><th>Height</th><th>Status</th><th>Hash</th><th>Age</th><th class="num">Txs</th><th class="hide-sm">Miner</th><th class="num hide-sm">Size</th></tr></thead><tbody>' +
       blocks
         .map(function (b) {
           return (
             "<tr><td>" +
             blockLink(b.height, TC.fmtInt(b.height)) +
+            "</td><td>" +
+            finalBadge(finalizedAt(b.height, finalizedHeight)) +
             "</td><td>" +
             blockLink(b.hash, TC.shortHash(b.hash)) +
             '</td><td class="nowrap" title="' +
@@ -848,13 +979,18 @@
       location.hash = "#/";
       return;
     }
-    var blocks = await TC.api("/blocks?limit=20&before=" + before);
+    var res = await Promise.all([
+      TC.api("/blocks?limit=20&before=" + before),
+      statusOrNull(),
+    ]);
     if (token !== routeToken) return;
+    var blocks = res[0],
+      st = res[1];
     var html =
       '<div class="section-title"><h2>Blocks before ' +
       TC.fmtInt(before) +
       '</h2><a href="#/">← latest</a></div>' +
-      blocksTable(blocks);
+      blocksTable(blocks, st && st.finalized_height);
     var lowest = blocks.length ? blocks[blocks.length - 1].height : 0;
     if (lowest > 0)
       html +=
@@ -862,6 +998,35 @@
         lowest +
         '">Older blocks →</a></div>';
     view.innerHTML = html;
+  }
+
+  /**
+   * Uncles: recent valid blocks that lost the race. The block that carries one
+   * pays its miner (7 - depth)/24 of the subsidy, and its work counts for the
+   * chain — which keeps small miners fair at 15 s blocks.
+   */
+  function unclesTable(uncles) {
+    return (
+      '<div class="table-wrap" tabindex="0" role="region" aria-label="Data table"><table><thead><tr><th>Height</th><th>Hash</th><th class="hide-sm">Miner</th><th class="num">Blocks behind</th><th class="num">Reward</th></tr></thead><tbody>' +
+      uncles
+        .map(function (u) {
+          return (
+            "<tr><td>" +
+            TC.fmtInt(u.height) +
+            '</td><td><span class="mono">' +
+            e(TC.shortHash(u.hash)) +
+            '</span></td><td class="hide-sm">' +
+            addrLink(u.miner) +
+            '</td><td class="num">' +
+            TC.fmtInt(u.depth) +
+            '</td><td class="num">' +
+            amount(u.reward) +
+            "</td></tr>"
+          );
+        })
+        .join("") +
+      "</tbody></table></div>"
+    );
   }
 
   async function pageBlock(token, id) {
@@ -874,6 +1039,8 @@
     html +=
       '<div class="section-title"><h1>Block ' +
       TC.fmtInt(b.height) +
+      " " +
+      finalBadge(b.finalized) +
       "</h1><span>" +
       (b.height > 0
         ? '<a class="btn btn-small" href="#/block/' +
@@ -889,6 +1056,10 @@
     var burned = b.txs.reduce(function (acc, t) {
       return acc + BigInt(t.burned || 0);
     }, 0n);
+    var uncles = b.uncles || [];
+    var uncleReward = uncles.reduce(function (acc, u) {
+      return acc + BigInt(u.reward || 0);
+    }, 0n);
     html +=
       '<div class="card">' +
       kv([
@@ -899,6 +1070,7 @@
             ? TC.fmtInt(b.confirmations)
             : '<span class="badge warn">outside the main chain</span>',
         ],
+        ["Finality", finalBadge(b.finalized) + finalityNote(b.finalized)],
         [
           "Date",
           e(TC.fmtDate(b.timestamp)) +
@@ -916,6 +1088,14 @@
         burned > 0n
           ? ["Burned (congestion surcharge)", amount(burned.toString())]
           : null,
+        [
+          "Uncles",
+          uncles.length
+            ? TC.fmtInt(uncles.length) +
+              ' <span class="faint">rewarded with</span> ' +
+              amount(uncleReward.toString())
+            : faint("none"),
+        ],
         ["Transactions", TC.fmtInt(b.tx_count)],
         ["Size", e(TC.fmtBytes(b.size))],
         [
@@ -938,21 +1118,35 @@
         ["Version", e(b.version)],
       ]) +
       "</div>";
+    if (uncles.length) {
+      html +=
+        '<div class="section-title"><h2>Uncles</h2><span class="faint">recent blocks that lost the race</span></div>' +
+        '<p class="muted">These blocks were valid but arrived second. This block carries them, so their work counts for the chain and their miners are paid part of the subsidy — (7 − blocks behind) ÷ 24 each. That is what keeps a small miner fair when blocks come every 15 seconds.</p>' +
+        unclesTable(uncles);
+    }
     html +=
       '<div class="section-title"><h2>Transactions</h2></div>' + txRows(b.txs);
     view.innerHTML = html;
   }
 
   async function pageTx(token, id) {
-    var t = await TC.api("/tx/" + encodeURIComponent(id));
+    var res = await Promise.all([
+      TC.api("/tx/" + encodeURIComponent(id)),
+      statusOrNull(),
+    ]);
     if (token !== routeToken) return;
+    var t = res[0],
+      st = res[1];
     var a = t.action;
     var confirmed = !t.in_mempool && has(t.block_height);
+    var isFinal =
+      confirmed && st && finalizedAt(t.block_height, st.finalized_height);
     var status = t.in_mempool
       ? '<span class="badge warn">waiting in mempool</span>'
       : '<span class="badge ok">confirmed</span> ' +
         TC.fmtInt(t.confirmations) +
         (Number(t.confirmations) === 1 ? " confirmation" : " confirmations");
+    if (confirmed) status += " " + finalBadge(isFinal);
     if (confirmed && t.success === false)
       status += ' <span class="badge bad">execution failed</span>';
     var html =
@@ -986,6 +1180,14 @@
       kv([
         ["Txid", mono(t.txid) + copyBtn(t.txid)],
         ["Status", status],
+        confirmed
+          ? [
+              "Finality",
+              isFinal
+                ? '<span class="badge ok">final</span> <span class="faint">its block was signed by two thirds of the recent miners: this payment can never be undone</span>'
+                : '<span class="badge warn">not final yet</span> <span class="faint">waiting for the miners\u2019 signatures — normally one more block, about 30 seconds</span>',
+            ]
+          : null,
         has(t.block_height)
           ? ["Block", blockLink(t.block_height, TC.fmtInt(t.block_height))]
           : null,
@@ -1182,7 +1384,7 @@
       "</span></div>" +
       '<div class="card stat"><span class="label">Rewards in cooldown</span><span class="value">' +
       e(TC.fmtTCN(acc.immature)) +
-      '</span><span class="sub">not yet in balance: 25% released after 100 blocks, the rest after 1,000</span></div>' +
+      '</span><span class="sub">not yet in balance: 25% released after 400 blocks, the rest after 4,000</span></div>' +
       "</div>"
     );
   }
@@ -1222,6 +1424,15 @@
         '<div class="card stat"><span class="label">Storage deposit</span><span class="value">' +
         e(TC.fmtTCN(prog.deposit)) +
         '</span><span class="sub">refundable when storage is released</span></div>' +
+        '<div class="card stat"><span class="label">Upgrades</span><span class="value">' +
+        (prog.upgrade_authority ? "possible" : "final") +
+        '</span><span class="sub">' +
+        (prog.upgrade_authority
+          ? "authority " + e(TC.shortAddr(prog.upgrade_authority))
+          : "the code can never change") +
+        " · code v" +
+        e(prog.code_version) +
+        "</span></div>" +
         '<div class="card stat"><span class="label">Functions</span><span class="value">' +
         TC.fmtInt(prog.functions.length) +
         '</span><span class="sub">' +
@@ -1240,8 +1451,41 @@
             "Created at block",
             blockLink(prog.created_height, TC.fmtInt(prog.created_height)),
           ],
-          ["Deployment transaction", txLink(prog.deploy_txid, false)],
+          [
+            Number(prog.code_version) > 1
+              ? "Last upgrade transaction"
+              : "Deployment transaction",
+            txLink(prog.deploy_txid, false),
+          ],
           ["Source code hash", mono(prog.source_hash)],
+          ["Compiled code hash", mono(prog.code_hash)],
+          [
+            "Upgrades",
+            prog.upgrade_authority
+              ? '<span class="badge warn">can be replaced</span> <span class="faint">by</span> ' +
+                addrLink(prog.upgrade_authority, false) +
+                '<br><span class="faint">That address may publish new code for this contract. It can hand the authority over, or give it up to make the contract final for ever.</span>'
+              : '<span class="badge ok">final</span> <span class="faint">nobody can change this code — what you read below is what runs, for ever</span>',
+          ],
+          [
+            "Code version",
+            TC.fmtInt(prog.code_version) +
+              (Number(prog.code_version) > 1
+                ? ' <span class="faint">(' +
+                  TC.fmtInt(Number(prog.code_version) - 1) +
+                  " upgrade" +
+                  (Number(prog.code_version) === 2 ? "" : "s") +
+                  " since the first deployment)</span>"
+                : ' <span class="faint">(original deployment)</span>'),
+          ],
+          [
+            "Language",
+            "TCCL version " +
+              e(prog.language) +
+              (Number(prog.language) >= 2
+                ? ' <span class="faint">records, enums, roles, interfaces and calls between contracts</span>'
+                : ""),
+          ],
           [
             "Nonce / pending transactions",
             TC.fmtInt(acc.nonce) + " / " + TC.fmtInt(acc.mempool_txs),
@@ -1339,7 +1583,11 @@
       var ok = t.action.source_hash === prog.source_hash;
       note.className = ok ? "badge ok" : "badge bad";
       note.textContent = ok
-        ? "✓ matches the hash stored in the contract"
+        ? Number(prog.code_version) > 1
+          ? "✓ matches the source hash of the code running now (version " +
+            prog.code_version +
+            ")"
+          : "✓ matches the hash stored in the contract"
         : "✗ hash does not match";
       var pre = document.createElement("pre");
       var code = document.createElement("code");
@@ -1466,7 +1714,7 @@
             "Period",
             TC.fmtInt(s.period_blocks) +
               " blocks ≈ " +
-              TC.fmtDuration(s.period_blocks * 60),
+              TC.fmtDuration(s.period_blocks * BLOCK_SECONDS),
           ],
           [
             "Claimed periods",
