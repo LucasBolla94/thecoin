@@ -11,8 +11,14 @@ deployment transaction carries the source code and every node compiles it identi
 > treasury, name service, private payments pool), a security checklist and the complete reference.
 > This page is the quick start and the language reference.
 
-Language version 1 · `tccl` 0.2.0 · implementation: [`crates/tccl`](../../crates/tccl) ·
-examples: [`crates/tccl/examples`](../../crates/tccl/examples)
+> **This page describes language version 1**, frozen as deployed on The Coin v0.2.0. The network
+> now compiles **language version 2** (contracts calling contracts, modules, upgrades with an
+> upgrade authority). TCCL moved to its own repository: the current guide is
+> [github.com/LucasBolla94/tccl](https://github.com/LucasBolla94/tccl/tree/v0.3.0/docs) (tag v0.3.0, pinned in this repository's `Cargo.toml`).
+> Version 1 sources compile unchanged under version 2.
+
+Language version 1 · `tccl` 0.2.0 · implementation: [`LucasBolla94/tccl`](https://github.com/LucasBolla94/tccl/tree/v0.3.0/crates/tccl) ·
+examples: [`examples`](https://github.com/LucasBolla94/tccl/tree/v0.3.0/examples)
 
 **Contents:** [Quick start](#quick-start) · [Language](#language-reference) ·
 [Built-ins](#built-in-functions) · [Storage and deposit](#storage-and-the-refundable-deposit) ·
@@ -433,7 +439,7 @@ and `withdraw(address, address, int, list[int], bytes, bytes)` works with:
 - `thecoin-wallet privacy status <pool> [--key N]`
 - `thecoin-wallet privacy withdraw <pool> --to <address> [--key N] [--ring-size 16] [--relayer <address>] [--fee TCN]`
 
-See [`private_pool.tccl`](../../crates/tccl/examples/private_pool.tccl) and cookbook section 8.9.
+See [`private_pool.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/private_pool.tccl) and cookbook section 8.9.
 
 ### Node API
 
@@ -486,18 +492,18 @@ them with fixes.
 
 ## Example contracts
 
-All examples compile and are exercised by `cargo test -p tccl` ([tests](../../crates/tccl/tests/examples.rs)).
+All examples compile and are exercised by the tests of the [tccl repository](https://github.com/LucasBolla94/tccl/tree/v0.3.0/crates/tccl/tests).
 
 | Contract | Shows |
 |---|---|
-| [`counter.tccl`](../../crates/tccl/examples/counter.tccl) | state, actions, views, events |
-| [`shop.tccl`](../../crates/tccl/examples/shop.tccl) | every kind of declaration, payable, helpers |
-| [`tip_jar.tccl`](../../crates/tccl/examples/tip_jar.tccl) | `init`, payable, owner permissions |
-| [`token.tccl`](../../crates/tccl/examples/token.tccl) | maps, allowances, composite keys |
-| [`crowdfund.tccl`](../../crates/tccl/examples/crowdfund.tccl) | deadlines, refunds |
-| [`escrow.tccl`](../../crates/tccl/examples/escrow.tccl) | roles, state machine, `destroy` |
-| [`poll.tccl`](../../crates/tccl/examples/poll.tccl) | list arguments, state lists, bounded loops |
-| [`savings.tccl`](../../crates/tccl/examples/savings.tccl) | time locks, storage refunds |
-| [`treasury.tccl`](../../crates/tccl/examples/treasury.tccl) | M-of-N approvals, parallel maps |
-| [`names.tccl`](../../crates/tccl/examples/names.tccl) | text keys, validation, expiry |
-| [`private_pool.tccl`](../../crates/tccl/examples/private_pool.tccl) | ring signatures, private payments |
+| [`counter.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/counter.tccl) | state, actions, views, events |
+| [`shop.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/shop.tccl) | every kind of declaration, payable, helpers |
+| [`tip_jar.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/tip_jar.tccl) | `init`, payable, owner permissions |
+| [`token.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/token.tccl) | maps, allowances, composite keys |
+| [`crowdfund.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/crowdfund.tccl) | deadlines, refunds |
+| [`escrow.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/escrow.tccl) | roles, state machine, `destroy` |
+| [`poll.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/poll.tccl) | list arguments, state lists, bounded loops |
+| [`savings.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/savings.tccl) | time locks, storage refunds |
+| [`treasury.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/treasury.tccl) | M-of-N approvals, parallel maps |
+| [`names.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/names.tccl) | text keys, validation, expiry |
+| [`private_pool.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/private_pool.tccl) | ring signatures, private payments |

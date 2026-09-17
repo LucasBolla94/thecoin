@@ -5,9 +5,15 @@ carteira de referência, pelo explorador e pelo site the-coin.cloud. Os tipos
 JSON estão em `crates/core/src/api.rs` e podem ser reutilizados por clientes Rust.
 
 * Endereço padrão: `http://127.0.0.1:7334` (mainnet), `:17334` (testnet), `:27334` (regtest). Configurável em `[rpc] listen`.
-* Todos os exemplos abaixo são **respostas reais** de um nó regtest v0.2 (os
-  comandos usam a porta da mainnet por clareza). Na regtest os parâmetros de
-  taxa são 10× menores e o cooldown de recompensas é de 5/12 blocos.
+* Salvo indicação, os exemplos são respostas de um nó **regtest** v0.2 (os
+  comandos usam a porta da mainnet por clareza). A regtest **não** acompanhou a
+  mudança para blocos de 15 s: continua com blocos de 60 s, recompensa de 40 TCN,
+  halving a cada 150 blocos, cooldown de recompensas de 5/12 blocos, reorganização
+  máxima de 720 blocos e parâmetros de taxa 10× menores.
+* Exemplos marcados **testnet** ou **mainnet** usam os parâmetros de consenso
+  atuais dessas redes: blocos de **15 s**, recompensa de **10 TCN**, halving a
+  cada 2 500 000 blocos, cooldown de **400/4 000** blocos e reorganização máxima
+  de **2 880** blocos (≈ 12 h). Ver [PROTOCOL.md §10](PROTOCOL.md#10-emissão-e-recompensas).
 
 ## Convenções
 
@@ -24,7 +30,7 @@ JSON estão em `crates/core/src/api.rs` e podem ser reutilizados por clientes Ru
 |---|---|
 | 200 | sucesso |
 | 400 | parâmetro inválido, transação rejeitada |
-| 404 | objeto não encontrado (ou corpo de bloco podado) |
+| 404 | objeto não encontrado (ou corpo de bloco podado, ver abaixo) |
 | 408 | requisição passou de 20 s |
 | 500 | erro interno/armazenamento |
 
@@ -39,6 +45,26 @@ O nó **nunca guarda chaves privadas de usuários**: a única escrita é o envio
 transações já assinadas (`POST /api/v1/tx`). `POST /api/v1/tx/simulate` e
 `POST /api/v1/program/{addr}/view` são leituras.
 
+### Nós podados (padrão) e nós arquivo
+
+O nó **poda por padrão** (`[storage] prune = true`):
+guarda os corpos dos últimos `prune_keep` blocos (padrão 40 320 ≈ uma semana;
+valores abaixo de 1 000 são elevados a 1 000) e apaga dos mais antigos o
+corpo, as entradas do índice de transações e os recibos. Cabeçalhos e o estado
+completo são sempre mantidos. Um **nó arquivo** (`prune = false`, instalador
+com `--archive`) guarda tudo. Diferenças na API:
+
+| Endpoint | Nó podado | Nó arquivo |
+|---|---|---|
+| `GET /api/v1/blocks` | completo (só usa cabeçalhos) | completo |
+| `GET /api/v1/block/{id}` | blocos antigos → 404 `"block body pruned on this node"` | completo |
+| `GET /api/v1/tx/{txid}` | transação em bloco podado → 404 `"transaction not found"` (o índice foi apagado junto com o corpo) | completo |
+| `GET /api/v1/address/{addr}/txs` | **sempre** 400 `"address index disabled on this node (pruned nodes do not keep it)"` — o índice de endereços é desligado ao abrir o banco | completo (com `address_index = true`) |
+| demais (estado, contratos, governança, mempool, `security`…) | completos | completos |
+
+Exploradores, carteiras leves e o site devem consultar **nós arquivo**
+(ver [OPERATIONS.md](OPERATIONS.md)).
+
 ---
 
 ## Índice de endpoints
@@ -46,24 +72,24 @@ transações já assinadas (`POST /api/v1/tx`). `POST /api/v1/tx/simulate` e
 | Método | Caminho | Descrição |
 |---|---|---|
 | GET | `/` | identificação do nó |
-| GET | `/api/v1/status` | estado geral da cadeia e do nó |
+| GET | `/api/v1/status` | estado geral da cadeia e do nó (inclui a altura final) |
 | GET | `/api/v1/supply` | emissão e supply |
 | GET | `/api/v1/fees` | parâmetros de taxa, congestionamento e prioridades |
 | GET | `/api/v1/blocks` | lista de blocos recentes |
-| GET | `/api/v1/block/{altura\|hash}` | bloco completo com transações e recibos |
+| GET | `/api/v1/block/{altura\|hash}` | bloco completo com tios, finalidade, transações e recibos |
 | GET | `/api/v1/tx/{txid}` | transação (confirmada ou no mempool) com recibo |
 | POST | `/api/v1/tx` | envia transação assinada |
 | POST | `/api/v1/tx/simulate` | executa uma transação assinada sem gravar (combustível, eventos, erros) |
 | GET | `/api/v1/address/{addr}` | saldo, nonce, bloqueios, recompensas em cooldown |
-| GET | `/api/v1/address/{addr}/txs` | histórico do endereço |
+| GET | `/api/v1/address/{addr}/txs` | histórico do endereço (só nós arquivo) |
 | GET | `/api/v1/contract/{id}` | contrato de pagamento nativo |
-| GET | `/api/v1/program/{addr}` | contrato TCCL: metadados, saldo, depósito e interface |
+| GET | `/api/v1/program/{addr}` | contrato TCCL: metadados, código/atualização, saldo, depósito e interface |
 | POST | `/api/v1/program/{addr}/view` | chama uma `view` de um contrato TCCL |
 | GET | `/api/v1/governance/proposals` | todas as propostas |
 | GET | `/api/v1/governance/proposal/{id}` | uma proposta |
 | GET | `/api/v1/governance/params` | parâmetros atuais e limites |
 | GET | `/api/v1/mempool` | resumo do mempool |
-| GET | `/api/v1/security?amount=` | confirmações recomendadas para um valor |
+| GET | `/api/v1/security?amount=` | confirmações recomendadas para um valor (considera a finalidade) |
 | GET | `/api/v1/alerts` | tentativas de gasto duplo vistas pelo nó |
 | GET | `/api/v1/peers` | peers conectados |
 | GET | `/api/v1/mining` | estado do minerador local |
@@ -134,13 +160,14 @@ curl http://127.0.0.1:7334/api/v1/status
     "activation_delay": 5
   },
   "congestion_bp": 10000,
+  "finalized_height": 0,
   "software_upgrade_required": null
 }
 ```
 
 | Campo | Significado |
 |---|---|
-| `chainwork` | trabalho acumulado do tip (hex, sem zeros à esquerda) |
+| `chainwork` | trabalho acumulado do tip, incluindo o trabalho dos tios (hex, sem zeros à esquerda) |
 | `difficulty` | `work(target)` do tip (hashes esperados por bloco) |
 | `next_target` | alvo exigido para o próximo bloco (hex 64) |
 | `hashrate_estimate` | H/s estimado pelos últimos 120 blocos |
@@ -148,11 +175,12 @@ curl http://127.0.0.1:7334/api/v1/status
 | `supply.current_block_reward` / `era` / `next_halving_height` | referentes ao **próximo** bloco |
 | `params` | parâmetros de governança em vigor ([PROTOCOL.md §20](PROTOCOL.md#20-parâmetros-por-rede)) |
 | `congestion_bp` | multiplicador de congestionamento das taxas (10 000 = 1,0×) |
+| `finalized_height` | altura do último bloco **finalizado pelos votos assinados dos mineradores**; blocos até essa altura são irreversíveis. `0` = nenhum ainda (ex.: rede com menos de 4 mineradores diferentes na janela, como esta regtest de um minerador só). Ver [`/security`](#get-apiv1securityamount) |
 | `software_upgrade_required` | versão de uma proposta `SoftwareUpgrade` ativada mais nova que este nó, ou `null` |
 
 ## `GET /api/v1/supply`
 
-Mesmo objeto `supply` do `/status`.
+Mesmo objeto `supply` do `/status`. Regtest:
 
 ```json
 {
@@ -168,9 +196,28 @@ Mesmo objeto `supply` do `/status`.
 }
 ```
 
+Testnet (mesma emissão da mainnet: 10 TCN a cada 15 s = os mesmos 40 TCN por
+minuto do antigo bloco de 60 s, com halving 4× mais espaçado em blocos):
+
+```json
+{
+  "max_supply": 5000000000000000,
+  "emitted": 1456000000000,
+  "burned": 0,
+  "circulating": 1456000000000,
+  "current_block_reward": 1000000000,
+  "era": 0,
+  "next_halving_height": 2500001,
+  "halving_interval": 2500000,
+  "target_block_time": 15
+}
+```
+
 `circulating = emitted − burned`. `burned` soma depósitos de propostas sem
 quórum e sobretaxas de congestionamento. `circulating` inclui recompensas em
-cooldown, depósitos de armazenamento e saldos de contratos.
+cooldown (de mineradores e de tios), depósitos de armazenamento e saldos de contratos.
+`current_block_reward` é o subsídio inteiro da altura; quando o bloco carrega
+tios, a parte deles sai desse valor (ver [`/block/{id}`](#get-apiv1blockid)).
 
 ## `GET /api/v1/fees`
 
@@ -235,7 +282,7 @@ curl "http://127.0.0.1:7334/api/v1/blocks?limit=2&before=105"    # página segui
     "prev_hash": "61274ea5fb564c42870419322e79dcbc5b360e046ce42a20efc183384bdd8312",
     "timestamp": 1789308559,
     "tx_count": 2,
-    "size": 659,
+    "size": 727,
     "miner": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
     "difficulty": 1.0,
     "signal": 2
@@ -246,13 +293,18 @@ curl "http://127.0.0.1:7334/api/v1/blocks?limit=2&before=105"    # página segui
     "prev_hash": "16bcf3faa8f291b41a827d7ba32e11b8577d016f24d21703219e4d9194fc0af6",
     "timestamp": 1789308556,
     "tx_count": 0,
-    "size": 184,
+    "size": 252,
     "miner": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
     "difficulty": 1.0,
     "signal": 2
   }
 ]
 ```
+
+Cada item é um resumo (só o cabeçalho): `size` é o tamanho Borsh do bloco
+inteiro (cabeçalho de 244 bytes + transações + tios; um bloco vazio tem 252
+bytes). Tios e finalidade só aparecem em [`/block/{id}`](#get-apiv1blockid).
+Funciona igual em nós podados.
 
 ## `GET /api/v1/block/{id}`
 
@@ -272,7 +324,7 @@ curl http://127.0.0.1:7334/api/v1/block/106
   "prev_hash": "61274ea5fb564c42870419322e79dcbc5b360e046ce42a20efc183384bdd8312",
   "timestamp": 1789308559,
   "tx_count": 2,
-  "size": 659,
+  "size": 727,
   "miner": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
   "difficulty": 1.0,
   "signal": 2,
@@ -282,8 +334,10 @@ curl http://127.0.0.1:7334/api/v1/block/106
   "target": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "nonce": "8687394620914278246",
   "confirmations": 3,
+  "finalized": false,
   "subsidy": 4000000000,
   "fees": 5069,
+  "uncles": [],
   "txs": [
     {
       "txid": "f8efe16f3e07abce40a046b31fab3aca4b2f9d59e413b2e16d9e09e706b4cc9b",
@@ -366,15 +420,64 @@ curl http://127.0.0.1:7334/api/v1/block/106
 > `nonce` do cabeçalho é enviado como **string decimal**: é um `u64` e pode
 > passar do maior inteiro seguro de JavaScript (2⁵³).
 
-`subsidy` é o subsídio do bloco e `fees` a soma das taxas pagas pelas
-transações (antes da queima; o minerador recebe `fees − Σ burned`, liberados
-pelo cooldown). `confirmations` = 0 para blocos fora da cadeia principal. Em nó
-podado, blocos antigos retornam 404 `"block body pruned on this node"`.
+Exemplo ilustrativo com parâmetros da **testnet** (10 TCN, montado a partir do
+código; hashes fictícios) de um bloco que carrega um tio — um bloco válido da
+altura anterior que perdeu a corrida — e já foi finalizado pelos mineradores:
+
+```json
+{
+  "height": 1312,
+  "hash": "988a118eec56eb810659c1f300090890435a8ed98c9a361d5456eb20cb1e5498",
+  "prev_hash": "f35246b8b0648f4c3ffd46a5af5a809b9f4cccce2eaa0a7c6402d0a146fd0b2c",
+  "timestamp": 1789636513,
+  "tx_count": 0,
+  "size": 496,
+  "miner": "tct14n7m9yus2qhemda3r7kmpshzkhec2w6vxg82dl",
+  "difficulty": 641.0,
+  "signal": 0,
+  "version": 1,
+  "tx_root": "5740f3f044b5290cbda05ef48cf56fad55c4cab20e8202b66cbb84c7968e9fc1",
+  "state_root": "b21a7ff8103bc4f2508b2fe33c265297d74d86a3ae1ec186a4005159def57803",
+  "target": "0065a62caf8cb27f1228de4af510b9b0df47f7292cbab7bf5dedc41d0c1a0980",
+  "nonce": "4403291887150662017",
+  "confirmations": 145,
+  "finalized": true,
+  "subsidy": 1000000000,
+  "fees": 0,
+  "uncles": [
+    {
+      "hash": "06b3e6cfc0f647cad69cf4a612ca63b5a7fed31c5d12df064016f13977b59495",
+      "height": 1311,
+      "miner": "tct1mwpgea9kf5s47tn7u40wrhj40hn7qp6felnt8p",
+      "depth": 1,
+      "reward": 250000000
+    }
+  ],
+  "txs": []
+}
+```
+
+| Campo | Significado |
+|---|---|
+| `confirmations` | `tip − height + 1` na cadeia principal; `0` para blocos fora dela |
+| `finalized` | `true` quando o bloco está na cadeia principal e `height ≤ finalized_height` (do `/status`): os votos assinados dos mineradores o tornaram **irreversível** |
+| `subsidy` | subsídio **inteiro** da altura (inclui a parte paga aos tios) |
+| `fees` | soma das taxas pagas pelas transações (antes da queima) |
+| `uncles` | até 2 tios carregados pelo bloco ([PROTOCOL.md §6.3](PROTOCOL.md#63-tios-uncles-)) |
+| `uncles[].hash`, `height`, `miner` | cabeçalho do tio: hash, altura e minerador que o encontrou |
+| `uncles[].depth` | `height do bloco − height do tio` (1 a 6) |
+| `uncles[].reward` | parte do subsídio paga ao minerador do tio: `floor(subsidy × (7 − depth) / 24)` (25 % em `depth = 1`, 4 % em `depth = 6`) |
+
+O minerador do bloco recebe `subsidy − Σ uncles[].reward + fees − Σ burned`;
+os mineradores dos tios recebem `reward`. Tudo passa pelo cooldown
+(`immature` em [`/address/{addr}`](#get-apiv1addressaddr)). Em nó podado,
+blocos antigos retornam 404 `"block body pruned on this node"`.
 
 ## `GET /api/v1/tx/{txid}`
 
 Procura primeiro no mempool, depois na cadeia principal. Transações
-confirmadas trazem os dados do **recibo** de execução.
+confirmadas trazem os dados do **recibo** de execução. Em nó podado, transações
+de blocos mais antigos que `prune_keep` retornam 404 `"transaction not found"`.
 
 ```bash
 curl http://127.0.0.1:7334/api/v1/tx/9694e053755c0f187f71b87326daab7a6ac6af95a4d6a39864207da8ae1f5f7e
@@ -493,9 +596,9 @@ remetente e nonce foi recusada):
 | `position` | índice da transação dentro do bloco (`null` no mempool) |
 | `created` | id do contrato nativo ou da proposta criado pela transação (também no mempool — o id é determinístico) |
 | `replaceable` | o remetente usou `FLAG_REPLACEABLE`: pode trocá-la por outra com taxa ≥ 125 % enquanto pendente |
-| `success` | `false` só para `deploy`/`invoke` confirmadas cujo código falhou (taxa cobrada, efeitos revertidos) |
+| `success` | `false` só para `deploy`/`invoke`/`upgrade` confirmadas cujo código falhou (taxa cobrada, efeitos revertidos) |
 | `error` | motivo da falha do contrato |
-| `fuel_used` | combustível consumido (a taxa foi calculada sobre `max_fuel`) |
+| `fuel_used` | combustível consumido (a taxa foi calculada sobre `max_fuel`); em `deploy`/`upgrade` inclui a compilação (5 por byte de fonte) |
 | `burned` | parte da taxa queimada pela sobretaxa de congestionamento |
 | `logs` | eventos `emit` do contrato; `fields` como pares `[nome, valor em texto]` |
 | `program` | endereço do contrato TCCL criado por um `deploy` (no mempool: o endereço previsto; confirmado: só se teve sucesso) |
@@ -505,7 +608,8 @@ remetente e nonce foi recusada):
 ### Formatos de `action`
 
 `type` é um de `transfer`, `batch_transfer`, `create_contract`,
-`call_contract`, `propose`, `vote`, `deploy`, `invoke`:
+`call_contract`, `propose`, `vote`, `deploy`, `invoke`, `upgrade`,
+`set_upgrade_authority`:
 
 ```json
 { "type": "batch_transfer", "outputs": [{"to": "tc1…", "amount": 100}], "total": 100, "memo_hex": "", "memo_text": null }
@@ -517,7 +621,31 @@ remetente e nonce foi recusada):
 { "type": "invoke", "contract": "tcr1dk4rd49asu34c6dxa23t68xa9qv0e4tm0mz68t", "function": "withdraw",
   "args": ["tcr1fexczggrd9s5af9fgu2dje00v5v8s6au7l8s8r", "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh", "10000000", "[1, 0, 2]", "0xb7bd…", "0x4ad1…"],
   "value": 0, "max_fuel": 56885, "max_deposit": 100000000 }
+{ "type": "upgrade", "contract": "tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh", "source": "contract SimpleToken …",
+  "source_hash": "314092dd12885016c8cadcf456ed7420c6b0d97c9bd8d7d55cf6f7f2a51610fc",
+  "expected_code_hash": "9b8a58b37f7fad9b1c70f62afc2ef06a7c03a3c32773b3f38655f1810d974849",
+  "args": [], "max_fuel": 40000, "max_deposit": 100000000 }
+{ "type": "set_upgrade_authority", "contract": "tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh", "new_authority": null,
+  "expected_code_hash": "17d95da051d4f1cd09c0eaee4ac7e5fbde0a9d014c2096a294c4b28d36a1cac9" }
 ```
+
+Ações de atualização de contratos TCCL ([PROTOCOL.md §17](PROTOCOL.md#17-contratos-inteligentes-tccl)):
+
+| Campo | Significado |
+|---|---|
+| `upgrade.contract` / `set_upgrade_authority.contract` | endereço do contrato TCCL |
+| `upgrade.source`, `source_hash` | novo código-fonte e seu `tagged_hash("tccl-source", source)` |
+| `expected_code_hash` | `code_hash` do código **atual** (de [`/program/{addr}`](#get-apiv1programaddr)); se o contrato mudou desde que a transação foi preparada, ela falha |
+| `upgrade.args` | argumentos (em texto) da função `upgrade()` do novo código, executada uma vez na mesma transação; vazio se ela não existe |
+| `upgrade.max_fuel`, `max_deposit` | como em `invoke`; não há `value` |
+| `new_authority` | nova autoridade de atualização, ou `null` para tornar o contrato **final para sempre** |
+
+Só a autoridade de atualização (`upgrade_authority`) consegue executar essas
+ações. Um `upgrade` que falha (remetente sem autoridade, contrato final,
+`expected_code_hash` diferente, erro de compilação, atualização incompatível com
+o armazenamento, falha em `upgrade()`) fica na cadeia com `success: false` (taxa
+cobrada, código antigo mantido). `set_upgrade_authority` é uma ação nativa: se inválida, a
+transação é recusada (`400`) e não entra em bloco.
 
 `spec.kind`: `escrow`, `vesting`, `subscription`, `htlc`, `multisig`.
 `call.call`: `escrow_release`, `escrow_refund`, `vesting_claim`,
@@ -531,8 +659,10 @@ Proposta `action.type`: `text`, `set_param`, `software_upgrade`.
 
 Corpo: `{"tx": "<Transaction em Borsh, hex>"}`. A transação é validada
 completamente contra o estado (assinatura, flags, nonce, saldo, taxa, regras do
-contrato/governança; chamadas TCCL enviadas por esta API são **executadas uma vez**
-e recusadas se falhariam agora), entra no mempool e é propagada. Transações
+contrato/governança; `deploy` e `invoke` enviados por esta API são **executados uma vez**
+e recusados se falhariam agora), entra no mempool e é propagada. Um `upgrade`
+**não** é executado na admissão: meça-o antes com
+[`POST /api/v1/tx/simulate`](#post-apiv1txsimulate). Transações
 recebidas de outros nós não têm o código executado na admissão (só nonce, saldo e
 taxa): o código roda ao entrar num bloco, e uma chamada que falha ali paga a taxa.
 
@@ -553,10 +683,11 @@ Erros típicos (HTTP 400):
 {"error":"transaction already in mempool"}
 {"error":"invalid transaction: bad nonce: expected 4, got 3"}
 {"error":"invalid transaction: fee too low: minimum 2630, got 263"}
-{"error":"invalid transaction: unknown transaction flags 0x2"}
+{"error":"invalid transaction: unknown transaction flags 0x4"}
 {"error":"invalid transaction: insufficient funds: need 2500002630, spendable 100"}
 {"error":"invalid transaction: governance error: proposal is not open for voting"}
 {"error":"contract call would fail: requirement failed: insufficient token balance"}
+{"error":"invalid transaction: contract error: only the upgrade authority can change it"}
 {"error":"a transaction with this nonce is already pending (f5ac06fe273eef17a173cc6b4999d0adfe02eeebe5ef85721a45ff57f8a7acbf) and it is not replaceable — double spend attempt recorded"}
 {"error":"replacement needs a fee at least 25% higher"}
 {"error":"too many pending transactions from this sender"}
@@ -662,7 +793,7 @@ curl http://127.0.0.1:7334/api/v1/address/tcr1fgy8fh9zunze8ctehqh695g79hyxna260y
 | `locked`, `locked_until` | moedas bloqueadas por voto e altura final do bloqueio |
 | `nonce` | transações confirmadas enviadas |
 | `next_nonce` | nonce a usar na próxima transação, contando as pendentes no mempool |
-| `immature` | recompensas de mineração ainda em cooldown (não incluídas em `balance`): 25 % liberados após `coinbase_maturity`, o resto após `reward_unlock_blocks` |
+| `immature` | recompensas de mineração ainda em cooldown, incluindo as recebidas como minerador de **tio** (não incluídas em `balance`): 25 % liberados após `coinbase_maturity` (400 blocos ≈ 100 min na mainnet/testnet; 5 na regtest), o resto após `reward_unlock_blocks` (4 000 blocos ≈ 16,7 h; 12 na regtest) |
 | `mempool_txs` | transações deste remetente no mempool |
 
 Endereços nunca usados retornam zeros (não 404). O endereço de um contrato TCCL
@@ -672,8 +803,10 @@ retorna o saldo do contrato.
 
 Histórico (mais recente primeiro) de transações que **tocam** o endereço: enviadas,
 recebidas, contratos nativos em que ele é parte, chamadas que lhe pagam e
-chamadas TCCL que lhe enviam TCN. Requer `storage.address_index = true` (padrão);
-senão 400 `"address index disabled on this node"`. Nós podados não mantêm o índice.
+chamadas TCCL que lhe enviam TCN. Só funciona em **nós arquivo**
+(`storage.prune = false`) com `storage.address_index = true` (padrão); nos demais
+(inclusive em todo nó podado, que é o padrão) retorna 400
+`"address index disabled on this node (pruned nodes do not keep it)"`.
 
 | Query | Padrão | Descrição |
 |---|---|---|
@@ -793,7 +926,7 @@ disponível pelas transações.
 
 ## `GET /api/v1/program/{addr}`
 
-Contrato inteligente TCCL: metadados, saldo, uso de armazenamento, depósito e interface pública.
+Contrato inteligente TCCL: metadados, versão do código e autoridade de atualização, saldo, uso de armazenamento, depósito e interface pública.
 
 ```bash
 curl http://127.0.0.1:7334/api/v1/program/tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2ahqh
@@ -811,6 +944,10 @@ curl http://127.0.0.1:7334/api/v1/program/tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2
   "state_bytes": 1376,
   "storage_items": 6,
   "deposit": 20000,
+  "code_hash": "032a567de6636ff40016a0d3e5b544b344264239189abc8d7e7909cbf58d3a49",
+  "upgrade_authority": "tcr1fgy8fh9zunze8ctehqh695g79hyxna260ylvyh",
+  "code_version": 1,
+  "language": 2,
   "functions": [
     { "name": "init", "kind": "init", "payable": false, "params": [], "returns": "nothing" },
     { "name": "mint", "kind": "action", "payable": false, "params": [["to", "address"], ["amount", "int"]], "returns": "nothing" },
@@ -825,12 +962,17 @@ curl http://127.0.0.1:7334/api/v1/program/tcr1nlak75fjnu8ez5g4c54yprf22ez02l7rn2
 
 | Campo | Significado |
 |---|---|
-| `source_hash` | `tagged_hash("tccl-source", source)`; o código-fonte está na transação `deploy_txid` |
+| `deploy_txid` | transação que instalou o código **atual**: o `deploy` original ou o último `upgrade` |
+| `source_hash` | `tagged_hash("tccl-source", source)` do código atual; o código-fonte está na transação `deploy_txid` |
 | `balance` | TCN do contrato (a conta no mesmo endereço) |
 | `state_bytes`, `storage_items` | bytes do código compilado + armazenamento, e número de entradas |
 | `deposit` | depósito reembolsável = `ceil(state_bytes / 1000) × storage_deposit_per_kb` (aqui 2 kB × 10 000) |
-| `functions[].kind` | `init`, `action` (chamável por transação `invoke`) ou `view` (leitura grátis) |
-| `functions[].params` | pares `[nome, tipo]`; tipos: `int`, `bool`, `text`, `bytes`, `address`, `list[T]` |
+| `code_hash` | `tagged_hash("program-code", código compilado)` — o valor a usar em `expected_code_hash` de `upgrade`/`set_upgrade_authority` |
+| `upgrade_authority` | endereço que pode substituir o código ou passar/abrir mão da autoridade; `null` = contrato **final** (implantado com `FLAG_FINAL_DEPLOY` ou autoridade abandonada): o código nunca mais muda |
+| `code_version` | 1 no deploy original, +1 a cada `upgrade` bem-sucedido |
+| `language` | versão da linguagem TCCL do código armazenado (novos deploys: 2; contratos antigos da versão 1 continuam rodando) |
+| `functions[].kind` | `init`, `action` (chamável por transação `invoke`), `view` (leitura grátis) ou `upgrade` (roda uma vez dentro do `upgrade` que instala esse código); funções internas não aparecem |
+| `functions[].params` | pares `[nome, tipo]`; tipos: `int`, `bool`, `text`, `bytes`, `address`, `list[T]`, e na versão 2 também nomes de registros, enums e interfaces declarados no contrato; `returns` usa os mesmos nomes (`nothing` = sem retorno) |
 
 Contrato inexistente ou destruído → 404 `"no contract at this address (it may have been destroyed)"`.
 
@@ -861,7 +1003,7 @@ Outros exemplos reais (pool de privacidade):
 | Campo | Significado |
 |---|---|
 | `function` | nome da view |
-| `args` | lista de strings (opcional se não há parâmetros): `int` `42` ou `2.5tcn`, `bool` `true`, `text`, `bytes` `0x…`, `address` bech32m, `list[T]` `[1, 2]` |
+| `args` | lista de strings (opcional se não há parâmetros): `int` `42` ou `2.5tcn`, `bool` `true`, `text`, `bytes` `0x…`, `address` bech32m (também para parâmetros do tipo interface), `list[T]` `[1, 2]`. Parâmetros de registro ou enum não são aceitos por esta rota (400 `"argument 'x': arguments of type … are not supported"`) |
 | `result` | valor retornado, em texto (`bytes` como `0x…`, listas como `[a, b]`) |
 | `error` | erro da execução (a resposta ainda é 200) |
 
@@ -1055,6 +1197,37 @@ Quantas confirmações esperar antes de confiar num pagamento. `amount` em motes
 curl "http://127.0.0.1:7334/api/v1/security?amount=50000000000"
 ```
 
+**Testnet** sem finalidade no momento (um minerador só), 500 TCN:
+
+```json
+{
+  "amount": 50000000000,
+  "confirmations": 100,
+  "minutes": 25,
+  "value_per_block": 1000000000,
+  "network_hashrate": 47.561306223043744,
+  "blocks_to_finality": null,
+  "explanation": "Reversing 100 block(s) means redoing their proof of work and giving up about 1000 TCN of rewards. For larger amounts wait for more confirmations; beyond 2880 blocks the chain never reorganizes."
+}
+```
+
+**Mainnet** com os mineradores assinando blocos (último bloco final logo atrás
+do tip), mesmo valor — exemplo montado a partir do código:
+
+```json
+{
+  "amount": 50000000000,
+  "confirmations": 2,
+  "minutes": 1,
+  "value_per_block": 1000000000,
+  "network_hashrate": 18342.7,
+  "blocks_to_finality": 2,
+  "explanation": "The miners are signing blocks: this payment becomes irreversible about 2 block(s) after it is mined (roughly 30 seconds), whatever its value. Until then, reversing 100 block(s) means redoing their proof of work and giving up about 1000 TCN of rewards."
+}
+```
+
+**Regtest** (40 TCN a cada 60 s, sem finalidade), mesmo valor:
+
 ```json
 {
   "amount": 50000000000,
@@ -1062,20 +1235,44 @@ curl "http://127.0.0.1:7334/api/v1/security?amount=50000000000"
   "minutes": 25,
   "value_per_block": 4000000000,
   "network_hashrate": 1.467741935483871,
+  "blocks_to_finality": null,
   "explanation": "Reversing 25 block(s) means redoing their proof of work and giving up about 1000 TCN of rewards. For larger amounts wait for more confirmations; beyond 720 blocks the chain never reorganizes."
 }
 ```
 
+Cálculo:
+
 ```
-value_per_block = subsídio do próximo bloco (mínimo 1)
-confirmations   = clamp(ceil(2 × amount / value_per_block), 1, 720)
-minutes         = confirmations × target_block_time / 60
+value_per_block    = subsídio do próximo bloco (mínimo 1)
+por_valor          = clamp(ceil(2 × amount / value_per_block), 1, max_reorg_depth)
+finalizando        = existe bloco final e finalized_height + 20 ≥ altura do tip
+blocks_to_finality = finalizando ? max(tip − finalized_height, 1) + 1 : null
+confirmations      = blocks_to_finality ≠ null ? min(blocks_to_finality, por_valor) : por_valor
+minutes            = ceil(confirmations × target_block_time / 60)
 ```
 
-Um atacante que reescreve `N` blocos abandona cerca de `N` recompensas e precisa
-superar a rede por esse tempo; a recomendação garante que isso vale pelo menos o
-dobro do pagamento (500 TCN com recompensa de 40 TCN → 25 blocos). Com
-`amount=100000000` (1 TCN) a resposta foi `"confirmations": 1`.
+`max_reorg_depth` = **2 880** blocos na mainnet e na testnet (≈ 12 h) e 720 na
+regtest.
+
+| Campo | Significado |
+|---|---|
+| `confirmations` | confirmações recomendadas; com finalidade ativa, limitadas por `blocks_to_finality` |
+| `minutes` | minutos aproximados até `confirmations` (arredondado para cima) |
+| `value_per_block` | subsídio que um atacante abandona por bloco reescrito (motes; taxas não contam) |
+| `network_hashrate` | H/s estimado pelos últimos 120 blocos |
+| `blocks_to_finality` | blocos, a partir da inclusão, até o pagamento ficar **irreversível** pelos votos dos mineradores; `null` quando a rede não está finalizando agora (nenhum bloco final, o último ficou mais de 20 blocos para trás, ou há menos de 4 mineradores diferentes na janela de votação) |
+| `explanation` | texto em inglês para mostrar ao usuário (as duas formas estão nos exemplos) |
+
+Sem finalidade, um atacante que reescreve `N` blocos abandona cerca de `N`
+recompensas e precisa superar a rede por esse tempo; a recomendação garante que
+isso vale pelo menos o dobro do pagamento (500 TCN com recompensa de 10 TCN →
+100 blocos ≈ 25 min na mainnet; com 40 TCN → 25 blocos na regtest). Com
+finalidade, o pagamento vira irreversível cerca de 2 blocos depois de minerado
+(≈ 30 s na mainnet), qualquer que seja o valor: os votos de dois terços dos
+mineradores recentes o fixam e os nós recusam qualquer ramo que o descarte
+(`finalized` em [`/block/{id}`](#get-apiv1blockid), `finalized_height` em
+[`/status`](#get-apiv1status)). Com `amount=100000000` (1 TCN) a resposta é
+`"confirmations": 1` em qualquer rede.
 
 Erros (400): `{"error":"query parameter 'amount' (motes) is required"}` e
 `{"error":"amount must be a whole number of motes"}`.
@@ -1162,6 +1359,9 @@ flowchart LR
    `/tx/simulate` e `/program/*/view`), `client_max_body_size` compatível com o
    maior `Deploy` que quiser aceitar (a API aceita até 256 KiB) e cache curto de
    GETs. Uma configuração completa está em `website/nginx/the-coin.cloud.conf`.
+4. Os seeds que atendem o site devem ser **nós arquivo** (`prune = false`, ou o
+   instalador com `--archive`): um nó podado não serve blocos antigos nem
+   `/address/{addr}/txs` (ver [Nós podados e nós arquivo](#nós-podados-padrão-e-nós-arquivo)).
 
 Nunca exponha a API sem TLS diretamente para navegadores: a página HTTPS não
 consegue chamar HTTP (mixed content) e o tráfego ficaria sem proteção.

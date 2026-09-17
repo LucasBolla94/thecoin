@@ -370,7 +370,7 @@ depósitos de valor fixo associados a chaves públicas de anel e permite saques
 para qualquer endereço provando, com uma **assinatura em anel (bLSAG)**, que o
 saque pertence a *um* dos depósitos — sem revelar qual. A *key image* impede
 sacar o mesmo depósito duas vezes. Exemplo completo:
-`crates/tccl/examples/private_pool.tccl`. Primitiva: [PROTOCOL.md §17.10](PROTOCOL.md#1710-ring_verify-assinaturas-em-anel).
+[`private_pool.tccl`](https://github.com/LucasBolla94/tccl/blob/v0.3.0/examples/private_pool.tccl). Primitiva: [PROTOCOL.md §17.10](PROTOCOL.md#1710-ring_verify-assinaturas-em-anel).
 
 ### 7.1 Chaves de anel
 

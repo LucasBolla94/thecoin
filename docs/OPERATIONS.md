@@ -68,7 +68,7 @@ Guia ilustrado para novos usuários: <https://the-coin.cloud/validator.html>.
 | Rede | porta TCP 7333 aberta para entrada | IP público fixo |
 | Relógio | NTP ativo (`timedatectl`) | — |
 
-> **A memória mudou na v0.2:** a prova de trabalho é **RandomX** (§1.1). Verificar blocos
+> **A memória mudou depois da v0.2.0:** a prova de trabalho é **RandomX** (§1.1). Verificar blocos
 > exige um cache de **256 MiB**, compartilhado por todas as threads — por isso o mínimo
 > prático passou a ser ~1 GB de RAM e o recomendado 2 GB. Minerar em **modo rápido**
 > (dataset de 2 GiB) só faz sentido em máquinas com ~3 GiB livres.
@@ -209,11 +209,13 @@ curl -fsSL https://the-coin.cloud/uninstall.sh | sudo bash      # alternativa
 ### 2.2 Manual (código-fonte)
 
 ```bash
-sudo apt install -y build-essential pkg-config git
+sudo apt install -y build-essential pkg-config git cmake g++   # cmake e g++: o RandomX é C++
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 git clone https://github.com/LucasBolla94/thecoin && cd thecoin
-cargo build --release -p thecoin-node -p thecoin-wallet -p tccl
-sudo install -m755 target/release/thecoind target/release/thecoin-wallet target/release/tccl /usr/local/bin/
+cargo build --release -p thecoin-node -p thecoin-wallet
+sudo install -m755 target/release/thecoind target/release/thecoin-wallet /usr/local/bin/
+# opcional — ferramenta de contratos, do repositório da linguagem (tag fixada no Cargo.toml):
+cargo install --locked --git https://github.com/LucasBolla94/tccl --tag v0.3.0 tccl-cli
 thecoin-wallet create                         # anote a frase de recuperação!
 thecoind --miner-address $(thecoin-wallet address)
 ```
@@ -239,7 +241,7 @@ thecoind [OPÇÕES] [run|init|params|compact]
 | `--rpc <ip:porta>` | API |
 | `--peer <host:porta>` | peer extra (repetível) |
 | `--connect-only` | conecta **somente** aos `--peer` |
-| `--prune` | poda corpos antigos de blocos — **redundante desde a v0.2**, a poda já vem ligada por padrão (§10) |
+| `--prune` | poda corpos antigos de blocos — **redundante depois da v0.2.0**, a poda já vem ligada por padrão (§10) |
 | `--log-level <nível>` | `error`…`trace` (padrão `info`) — env `THECOIN_LOG` |
 
 > Não existe opção de linha de comando para **desligar** a poda: um nó arquivo
@@ -376,7 +378,7 @@ binários no layout `releases/latest/thecoin-<target>.tar.gz` + `.sha256` que o
 instalador espera):
 
 ```bash
-scripts/package.sh x86_64-unknown-linux-musl     # ou baixe os arquivos do GitHub Release para dist/
+scripts/package.sh x86_64-unknown-linux-gnu      # ou baixe os arquivos do GitHub Release para dist/
 scripts/publish-site.sh                          # gera dist/site/
 rsync -av --delete dist/site/ usuario@maquina-do-site:/var/www/the-coin.cloud/
 ```
@@ -473,7 +475,7 @@ bloco vira **final** e nenhum nó aceita um ramo que o remova
 
 ## 10. Poda (padrão) e nós arquivo
 
-A poda vem **ligada por padrão** desde a v0.2:
+A poda vem **ligada por padrão** depois da v0.2.0:
 
 ```toml
 [storage]

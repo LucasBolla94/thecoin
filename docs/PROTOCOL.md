@@ -3,7 +3,8 @@
 Este documento especifica **todas as regras de consenso** da The Coin v0.2 com
 precisão suficiente para uma implementação independente (em qualquer
 linguagem) chegar exatamente aos mesmos hashes, estados e decisões que o nó de
-referência em Rust (`crates/core` e `crates/tccl`).
+referência em Rust (`crates/core` e a linguagem TCCL,
+[github.com/LucasBolla94/tccl](https://github.com/LucasBolla94/tccl) na tag fixada no `Cargo.toml`).
 
 > **Convenções**
 >
@@ -1243,13 +1244,94 @@ mecanismo; ver [ROADMAP.md](ROADMAP.md).
 * A cadeia ativa é a de **maior trabalho acumulado** (`chainwork`).
 * Um novo ramo só substitui a cadeia ativa se tiver trabalho **estritamente
   maior**; em empate vale o **primeiro visto**.
-* **Profundidade máxima de reorganização: 720 blocos** (≈ 12 h). Um ramo mais
-  pesado que exija desconectar mais de 720 blocos é guardado como lateral e
-  **não** é adotado (proteção contra ataques de reescrita profunda; nós
-  isolados por mais tempo exigem intervenção manual).
+* `chainwork(bloco) = chainwork(pai) + work(bloco.target) + Σ work(tio.target)`
+  — o trabalho dos tios incluídos conta (§6.3).
+* **Finalidade:** um ramo que desconecte um bloco **final** (§19.3) é guardado
+  como lateral e **não** é adotado, qualquer que seja o trabalho dele.
+* **Profundidade máxima de reorganização: 2 880 blocos** na mainnet e testnet
+  (≈ 12 h a 15 s; 720 na regtest). Um ramo mais pesado que exija desconectar
+  mais blocos que isso é guardado como lateral e **não** é adotado (proteção
+  contra ataques de reescrita profunda; nós isolados por mais tempo exigem
+  intervenção manual).
 * Se a aplicação de qualquer bloco do novo ramo falhar, a reorganização inteira
   é abortada atomicamente e os blocos do ramo a partir do inválido são marcados
   como inválidos.
+
+### 19.3 Finalidade assinada pelos mineradores
+
+(`core/src/finality.rs`, `node/src/finality.rs`, `node/src/node.rs`)
+
+A prova de trabalho só diz que desfazer um bloco fica cada vez mais caro. A
+finalidade acrescenta um sinal barato por cima dela: quando os mineradores
+recentes assinam um bloco, ele passa a ser **irreversível** para os nós.
+
+**Chave de voto.** Cada nó guarda uma chave Ed25519 em
+`<data-dir>/finality.key` (criada no primeiro uso, permissão `0600`) e publica a
+chave pública no campo `signer` dos blocos que minera (§6.1). `signer` com 32
+zeros = o minerador não participa. O campo faz parte do cabeçalho 🔒; os votos
+**não** entram em blocos — circulam só pela rede P2P (mensagem `FinalityVote`,
+[P2P.md](P2P.md)).
+
+```
+FINALITY_WINDOW       = 200          // finality_window por rede (regtest: 20)
+FINALITY_THRESHOLD_BP = 6 667        // 2/3
+MIN_FINALITY_SIGNERS  = 4
+MAX_VOTE_DISTANCE     = 64
+
+vote_message(chain_id, height, block) = tagged_hash("finality-vote", u32_le(chain_id) || u64_le(height) || block)
+FinalityVote { height: u64, block: Hash32, signer: [u8; 32], signature: [u8; 64] }   // Borsh
+vote_id = tagged_hash("finality-vote-id", signer || u64_le(height) || block)       // só para relay
+```
+
+**Janela de um bloco `B`** (altura `h`): as chaves `signer` não nulas dos até
+`FINALITY_WINDOW` blocos que antecedem `B` na cadeia (do pai de `B` para trás),
+com repetição — quem minerou 30 blocos da janela pesa 30.
+
+**Quem vota e em quê.** A cada nova ponta, o nó assina o **pai da ponta** (um
+bloco que já tem um bloco de trabalho em cima, então não persegue blocos que
+estão para perder a corrida), só se esse bloco é da sua cadeia principal, só se
+a própria chave aparece na janela e **no máximo um voto por altura**. O voto é
+contado localmente e retransmitido.
+
+**Contagem** (para cada voto recebido, na ordem):
+
+1. Chave banida → ignorado.
+2. `height + 64 < altura da ponta` ou `height > ponta + 1` → longe demais.
+3. `height <=` altura do último bloco final → já decidido.
+4. `signer` não está na janela de `block` → sem peso.
+5. Mesmo `signer` já votou em **outro** bloco nessa altura → **equivocação**: a
+   chave é banida e todos os votos dela deixam de contar.
+6. Assinatura inválida para o `chain_id` da rede → recusado.
+7. Voto para um bloco ainda desconhecido fica guardado (até 512) e é contado
+   quando o bloco chega.
+
+```
+peso(B)    = número de blocos da janela minerados pelas chaves que votaram em B
+necessário = ceil(len(janela) × 6 667 / 10 000)                 // 134 com janela cheia
+B é final  ⇔ peso(B) ≥ necessário
+             e len(janela) == FINALITY_WINDOW                 // todos os 200 blocos com signer
+             e a janela tem ≥ 4 chaves distintas
+```
+
+**Efeito.** O nó grava `(altura, hash)` do último bloco final no banco
+(`finalized`, sobrevive a reinícios), expõe `finalized_height` em
+`/api/v1/status` e `finalized` em `/api/v1/block/{id}` ([API.md](API.md)), e
+passa a recusar qualquer ramo que desconecte esse bloco (§19.2).
+
+**Propriedades.**
+
+* Reverter um bloco final exige dois terços do poder de mineração recente —
+  acima dos 51 % que já quebrariam a cadeia.
+* Não trava a rede: sem votos a cadeia segue só pelo trabalho, sem a marca de
+  final. Redes com menos de 4 mineradores distintos (ou com algum bloco sem
+  `signer` na janela) simplesmente não finalizam.
+* Não depende de quem tem moedas (não é stake).
+* Num caminho normal um pagamento fica final cerca de **1 bloco** depois de
+  minerado (≈ 30 s a 15 s por bloco); `/api/v1/security` informa
+  `blocks_to_finality` quando a rede está finalizando.
+* A finalidade é uma regra **local** de escolha de cadeia, não de validade de
+  bloco: um nó que acabou de sincronizar do zero só conhece a finalidade dos
+  votos que receber daí em diante.
 
 ## 20. Parâmetros por rede
 
@@ -1260,17 +1342,18 @@ mecanismo; ver [ROADMAP.md](ROADMAP.md).
 | magic (P2P) | `TCN1` | `TCNT` | `TCNR` |
 | `chain_id` 🔒 | `0x54430001` | `0x54430002` | `0x54430003` |
 | porta P2P / API | 7333 / 7334 | 17333 / 17334 | 27333 / 27334 |
-| CoinHash `mem_kib`, `t` 🔒 | 16 384, 1 | 16 384, 1 | 64, 1 |
+| CoinHash: RandomX, `pow.epoch_blocks` 🔒 | 2 048 | 2 048 | 64 |
 | `pow_limit_shift` 🔒 | 8 | 6 | 0 |
-| `genesis_target_shift` 🔒 | 13 | 10 | 0 |
+| `genesis_target_shift` 🔒 | 12 | 9 | 0 |
 | retarget (LWMA) 🔒 | sim | sim | **não** |
-| tempo de bloco / janela LWMA / janela mínima 🔒 | 60 s / 60 / 6 | 60 s / 60 / 6 | 60 s / 60 / 6 |
+| tempo de bloco / janela LWMA / janela mínima 🔒 | 15 s / 120 / 6 | 15 s / 120 / 6 | 60 s / 60 / 6 |
 | deriva futura máxima | 180 s | 180 s | 180 s |
-| recompensa inicial 🔒 | 40 TCN | 40 TCN | 40 TCN |
-| halving 🔒 | 625 000 | 625 000 | 150 |
-| `coinbase_maturity` (libera 25 %) 🔒 | 100 | 100 | 5 |
-| `reward_unlock_blocks` (libera o resto) 🔒 | 1 000 | 1 000 | 12 |
-| reorg máxima | 720 | 720 | 720 |
+| `finality_window` (§19.3) | 200 | 200 | 20 |
+| recompensa inicial 🔒 | 10 TCN | 10 TCN | 40 TCN |
+| halving 🔒 | 2 500 000 | 2 500 000 | 150 |
+| `coinbase_maturity` (libera 25 %) 🔒 | 400 | 400 | 5 |
+| `reward_unlock_blocks` (libera o resto) 🔒 | 4 000 | 4 000 | 12 |
+| reorg máxima | 2 880 | 2 880 | 720 |
 | timestamp gênese | 1 789 257 600 | 1 789 257 600 | 1 789 257 600 |
 | seeds | `seed1/seed2.the-coin.cloud:7333` | `testnet-seed1/2.the-coin.cloud:17333` | — |
 
@@ -1291,11 +1374,11 @@ Constantes comuns 🔒: `MAX_BLOCK_BYTES_HARD = 8 000 000`, `MAX_TX_BYTES = 16 3
 | `fee_per_kfuel` | 1 000 | 1 000 | 100 |
 | `storage_deposit_per_kb` | 100 000 (0,001 TCN) | 100 000 | 10 000 |
 | `proposal_deposit` | 100 TCN | 10 TCN | 1 TCN |
-| `vote_period` | 20 160 (≈14 d) | 1 440 | 20 |
+| `vote_period` | 80 640 (≈14 d) | 5 760 (≈1 d) | 20 |
 | `quorum_bp` | 1 000 (10 %) | 500 (5 %) | 1 000 |
 | `approval_bp` | 6 667 (66,67 %) | 6 667 | 6 667 |
 | `miner_approval_bp` | 6 000 (60 %) | 5 000 | 5 000 |
-| `activation_delay` | 2 880 (≈2 d) | 720 | 5 |
+| `activation_delay` | 2 880 (≈12 h) | 720 (≈3 h) | 5 |
 
 `ChainGlobal.congestion_bp` inicial = 10 000 em todas as redes.
 
@@ -1310,11 +1393,11 @@ Constantes comuns 🔒: `MAX_BLOCK_BYTES_HARD = 8 000 000`, `MAX_TX_BYTES = 16 3
 | `fee_per_kfuel` | 1 – 100 000 000 | 0 – 100 000 000 |
 | `storage_deposit_per_kb` | 0 – 1 000 000 000 | 0 – 1 000 000 000 |
 | `proposal_deposit` | 1 TCN – 1 000 000 TCN | 0 – 1 000 000 TCN |
-| `vote_period` | 1 440 – 201 600 | 5 – 201 600 |
+| `vote_period` | 5 760 – 806 400 | 5 – 201 600 |
 | `quorum_bp` | 100 – 5 000 | 0 – 10 000 |
 | `approval_bp` | 5 001 – 9 500 | 5 001 – 10 000 |
 | `miner_approval_bp` | 5 000 – 9 500 | 0 – 10 000 |
-| `activation_delay` | 720 – 43 200 | 1 – 43 200 |
+| `activation_delay` | 720 – 172 800 | 1 – 43 200 |
 
 ## 21. Gênese
 

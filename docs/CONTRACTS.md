@@ -45,11 +45,8 @@ linguagem e continuam válidas para o que a versão 2 não mudou.
 * **Tempo em blocos.** Prazos são alturas de bloco. **1 bloco = 15 segundos**:
   240 = 1 hora, 5 760 = 1 dia, 40 320 = 1 semana, 172 800 = 30 dias,
   2 102 400 = 1 ano. A carteira converte "daqui a N blocos" em altura absoluta.
-  **Atenção:** os valores padrão das opções `--deadline-blocks`,
-  `--period-blocks` e `--timeout-blocks` da carteira ainda são os que foram
-  escolhidos quando o bloco levava 60 s (`crates/wallet/src/main.rs`), então hoje
-  valem um quarto do tempo: 10 080 blocos = 1 dia e 18 horas, 43 200 blocos =
-  7 dias e meio, 1 440 blocos = 6 horas. Passe sempre o prazo explicitamente.
+  Padrões da carteira: `--deadline-blocks` 40 320 (≈ 7 dias, escrow) e
+  `--timeout-blocks` 5 760 (≈ 1 dia, HTLC); `--period-blocks` não tem padrão.
 * **Fundos no contrato.** Ao criar, o valor sai do seu saldo e fica guardado no
   contrato (`balance`). Só sai pelas regras do modelo (ou do código TCCL).
 * **Id do contrato nativo.** Determinístico: `tagged_hash("contract-id", criador || nonce)`.

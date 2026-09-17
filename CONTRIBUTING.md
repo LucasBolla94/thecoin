@@ -11,7 +11,7 @@ Leitura recomendada antes de mexer no código:
 
 ```bash
 # Linux (Debian/Ubuntu)
-sudo apt install -y build-essential pkg-config git
+sudo apt install -y build-essential pkg-config git cmake g++   # o RandomX (prova de trabalho) é C++
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup component add rustfmt clippy
 
