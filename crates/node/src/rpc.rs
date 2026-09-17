@@ -607,10 +607,12 @@ async fn security(State(node): State<AppState>, Query(q): Query<SecurityQuery>) 
             p.max_reorg_depth
         ),
     };
+    // Finality makes the payment irreversible earlier than the work at stake would.
+    let wait = blocks_to_finality.map_or(confirmations, |b| b.min(confirmations));
     Ok(Json(SecurityView {
         amount,
-        confirmations: blocks_to_finality.map(|b| b.min(confirmations)).unwrap_or(confirmations),
-        minutes: confirmations * p.target_block_time / 60,
+        confirmations: wait,
+        minutes: (wait * p.target_block_time).div_ceil(60),
         value_per_block: per_block,
         network_hashrate: hashrate,
         blocks_to_finality,

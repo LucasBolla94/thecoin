@@ -162,8 +162,8 @@ enum ContractCmd {
         payee: String,
         #[arg(long)]
         amount: String,
-        /// Blocks until the payer can refund alone (1 block ≈ 1 minute).
-        #[arg(long, default_value_t = 10_080)]
+        /// Blocks until the payer can refund alone (1 block ≈ 15 s; 40 320 ≈ 7 days).
+        #[arg(long, default_value_t = 40_320)]
         deadline_blocks: u64,
         #[arg(long)]
         arbiter: Option<String>,
@@ -203,7 +203,7 @@ enum ContractCmd {
         /// Amount per period.
         #[arg(long)]
         amount: String,
-        /// Period length in blocks (43 200 ≈ 30 days).
+        /// Period length in blocks (172 800 ≈ 30 days).
         #[arg(long)]
         period_blocks: u64,
         #[arg(long)]
@@ -224,7 +224,8 @@ enum ContractCmd {
         /// SHA-256 hash lock (hex). If omitted, a random secret is generated and printed.
         #[arg(long)]
         hash_lock: Option<String>,
-        #[arg(long, default_value_t = 1_440)]
+        /// Blocks until the sender can take the funds back (5 760 ≈ 1 day).
+        #[arg(long, default_value_t = 5_760)]
         timeout_blocks: u64,
     },
     HtlcRedeem {
