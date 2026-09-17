@@ -56,14 +56,17 @@ rápidos e sem tratamento, a mineração escorre para os grandes — o contrári
 
 - Até 2 tios por bloco, com no máximo 6 blocos de idade e nunca repetidos.
 - O tio precisa ter prova de trabalho válida e o pai dele precisa ser um ancestral do bloco que o inclui.
-- **Recompensa:** cada tio recebe `subsídio × 7/8^k` (k = idade) e quem inclui ganha `subsídio/32`,
-  **descontados do subsídio do bloco**. A emissão total por bloco nunca aumenta, então o teto de
-  50 000 000 TCN e o cronograma continuam exatamente os mesmos.
+- **Recompensa:** cada tio recebe `subsídio × (7 − idade) / 24` — 25 % do subsídio quando é do bloco
+  anterior, 4 % quando tem 6 blocos — **descontado do subsídio do bloco**. A emissão total por bloco
+  nunca aumenta, então o teto de 50 000 000 TCN e o cronograma continuam exatamente os mesmos.
 - **Trabalho acumulado:** o trabalho dos tios entra no peso da cadeia, o que também encarece
   reorganizações.
 
-Efeito: com 6 % de órfãos, o minerador caseiro recebe ~99 % do que receberia sem colisão nenhuma, em
-vez de 94 %. A vantagem de quem tem muitas máquinas juntas praticamente desaparece.
+- **Por que o minerador inclui tios:** o trabalho deles entra no peso da cadeia, então um bloco com
+  tios tem mais chance de vencer a corrida do que um sem.
+
+Efeito: com 6 % de órfãos, o minerador caseiro recupera até 25 % do que perderia, e o peso extra
+protege o próprio bloco de quem o incluiu.
 
 ---
 
@@ -86,11 +89,14 @@ Hoje, para ter certeza, espera-se N confirmações. A proposta:
 1. Cada nó minerador tem uma **chave de assinatura** e publica a chave pública no bloco que minera.
 2. O conjunto de assinantes é quem minerou os **últimos 200 blocos**, com peso igual ao número de
    blocos que minerou.
-3. Ao ver um bloco novo e válido, cada minerador assina o hash dele e espalha a assinatura.
-4. Quando as assinaturas somam **≥ 2/3 do peso**, o bloco vira **final**: os nós recusam qualquer
-   reorganização que o remova.
+3. Cada minerador assina o **bloco anterior ao topo** (já confirmado por um bloco de trabalho, então
+   todos concordam sobre ele) e espalha a assinatura. Cada nó assina **uma única vez por altura**:
+   depois de uma reorganização ele simplesmente não vota de novo naquela altura.
+4. Quando as assinaturas somam **≥ 2/3 do peso**, e a janela tem pelo menos **4 mineradores
+   diferentes**, o bloco vira **final**: os nós recusam qualquer reorganização que o remova.
 
-Resultado: pagamento **irreversível em torno de 15 a 20 segundos**, em vez de 5 a 100 confirmações.
+Resultado: pagamento **irreversível em torno de 30 segundos** (dois blocos), em vez de 5 a 100
+confirmações.
 Custo para uma VPS: ~200 verificações Ed25519 por bloco, menos de 5 ms.
 
 Propriedades:
@@ -100,6 +106,8 @@ Propriedades:
   sem o carimbo de finalidade.
 - **Equívocos:** assinar dois blocos da mesma altura é prova pública de má-fé; a chave é ignorada
   pelos nós e o minerador perde o direito de assinar.
+- **Redes pequenas:** com menos de 4 mineradores distintos na janela não existe finalidade — é o que
+  impede um minerador solitário de "finalizar" a própria cadeia e recusar as dos outros.
 - Inspiração: ChainLocks (Dash), aqui sem precisar de masternodes nem de stake.
 
 ### 3.4 Camada 3 — canais de sessão para jogos (TCCL)
@@ -145,7 +153,7 @@ transações.
 1. **Poda ligada por padrão** em nós normais (implementado): guarda uma semana de blocos
    (40 320 blocos de 15 s) e o estado completo. Um nó comum fica na casa de poucos GB para sempre.
    Nós de arquivo, como exploradores, instalam com `--archive` e guardam tudo.
-2. **Sincronização por estado verificado (nova).** A raiz de estado no cabeçalho usa LtHash, que é
+2. **Sincronização por estado verificado (próxima etapa).** A raiz de estado no cabeçalho usa LtHash, que é
    *homomórfica*: dá para baixar o estado inteiro de um parceiro, recalcular a raiz e comparar com o
    cabeçalho. Um nó novo entra na rede em minutos, sem baixar o histórico, e **sem confiar em ninguém**.
 3. **Índice de endereços opcional:** economiza 19 % e só serve a exploradores e carteiras.
