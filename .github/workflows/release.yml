@@ -36,17 +36,19 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --locked --target ${{ matrix.target }} -p thecoin-node -p thecoin-wallet -p tccl
-          else
-            cargo build --release --locked --target ${{ matrix.target }} -p thecoin-node -p thecoin-wallet -p tccl
-          fi
+          # tccl (the contract tool) is built from the language repository at
+          # the tag pinned in Cargo.toml.
+          tag=$(awk -F'"' '/^tccl *=/ {for (i = 1; i < NF; i++) if ($i ~ /tag *= *$/) print $(i + 1)}' Cargo.toml)
+          git clone -q --depth 1 --branch "$tag" https://github.com/LucasBolla94/tccl tccl-src
+          build=cargo; [ "${{ matrix.cross }}" = "true" ] && build=cross
+          $build build --release --locked --target ${{ matrix.target }} -p thecoin-node -p thecoin-wallet
+          (cd tccl-src && $build build --release --locked --target ${{ matrix.target }} -p tccl-cli)
       - name: Package
         shell: bash
         run: |
           mkdir -p stage/thecoin dist
           ext=""; [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
-          cp target/${{ matrix.target }}/release/thecoind$ext target/${{ matrix.target }}/release/thecoin-wallet$ext target/${{ matrix.target }}/release/tccl$ext stage/thecoin/
+          cp target/${{ matrix.target }}/release/thecoind$ext target/${{ matrix.target }}/release/thecoin-wallet$ext tccl-src/target/${{ matrix.target }}/release/tccl$ext stage/thecoin/
           cp README.md LICENSE-MIT LICENSE-APACHE installer/install.sh installer/uninstall.sh installer/thecoin stage/thecoin/
           name=thecoin-${{ matrix.target }}.tar.gz
           tar -C stage -czf dist/$name thecoin

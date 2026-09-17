@@ -18,7 +18,8 @@
 #   4. Creates a wallet for the mining rewards (or uses --miner-address).
 #      In non-interactive mode the wallet gets a strong random password stored
 #      in a root-only file next to it, and the recovery phrase is shown at the end.
-#   5. Writes /etc/thecoin/thecoind.toml and a hardened systemd service.
+#   5. Writes /etc/thecoin/thecoind.toml and a hardened systemd service. The node
+#      keeps one week of blocks and the full state (pruning) unless --archive.
 #   6. Installs the `thecoin` helper command and starts the node.
 #   Re-running the installer upgrades the binaries and keeps config + wallet.
 #
@@ -29,7 +30,7 @@
 #   --threads <n>                   THECOIN_THREADS   (0 = cores-1)
 #   --version <x.y.z|latest>        THECOIN_VERSION
 #   --from-source                   THECOIN_FROM_SOURCE=1
-#   --archive                       THECOIN_ARCHIVE=1 (keep the whole history)
+#   --archive                       THECOIN_ARCHIVE=1 (keep the whole history, for explorers)
 #   --public-api                    THECOIN_PUBLIC_API=1 (bind API on 0.0.0.0)
 #   --yes, -y                       non-interactive: never ask, accept defaults
 # =============================================================================
@@ -133,7 +134,7 @@ SWAP_MB=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo)
 DISK_GB=$(df -Pk / | awk 'NR==2 {print int($4/1024/1024)}')
 CPUS=$(nproc)
 ok "resources: ${CPUS} vCPU, ${MEM_MB} MB RAM, ${SWAP_MB} MB swap, ${DISK_GB} GB free disk"
-[ "$MEM_MB" -ge 900 ] || warn "less than 1 GB RAM — the node will work but may be slow"
+[ "$MEM_MB" -ge 900 ] || warn "less than 1 GB RAM — the node needs about 270 MB (RandomX cache) and may be slow"
 [ "$DISK_GB" -ge 5 ] || warn "less than 5 GB free disk — the blockchain grows over time"
 
 if command -v timedatectl >/dev/null; then
@@ -204,9 +205,19 @@ build_from_source() {
   export PATH="$HOME/.cargo/bin:$PATH"
   local ref="main"; [ "$VERSION" != latest ] && ref="v$VERSION"
   git clone --depth 1 --branch "$ref" "https://github.com/$GITHUB_REPO.git" "$TMP/src"
-  (cd "$TMP/src" && CARGO_BUILD_JOBS=$CPUS cargo build --release --locked -p thecoin-node -p thecoin-wallet -p tccl)
+  (cd "$TMP/src" && CARGO_BUILD_JOBS=$CPUS cargo build --release --locked -p thecoin-node -p thecoin-wallet)
   mkdir -p "$TMP/thecoin"
-  cp "$TMP/src/target/release/thecoind" "$TMP/src/target/release/thecoin-wallet" "$TMP/src/target/release/tccl" "$TMP/thecoin/"
+  cp "$TMP/src/target/release/thecoind" "$TMP/src/target/release/thecoin-wallet" "$TMP/thecoin/"
+  # The contract tool lives in the language repository (tag pinned in Cargo.toml).
+  # Optional: the node does not need it.
+  local tccl_tag
+  tccl_tag=$(cd "$TMP/src" && awk -F'"' '/^tccl *=/ {for (i = 1; i < NF; i++) if ($i ~ /tag *= *$/) print $(i + 1)}' Cargo.toml)
+  if [ -n "$tccl_tag" ] && git clone -q --depth 1 --branch "$tccl_tag" https://github.com/LucasBolla94/tccl "$TMP/tccl" \
+    && (cd "$TMP/tccl" && CARGO_BUILD_JOBS=$CPUS cargo build --release --locked -p tccl-cli); then
+    cp "$TMP/tccl/target/release/tccl" "$TMP/thecoin/"
+  else
+    warn "could not build the tccl contract tool; the node and wallet are not affected"
+  fi
   cp "$TMP/src/installer/thecoin" "$TMP/src/installer/uninstall.sh" "$TMP/thecoin/" 2>/dev/null || true
 }
 
@@ -411,6 +422,9 @@ enabled = $MINING_ENABLED
 address = "$MINER_ADDRESS"
 # 0 = automatic (CPU cores - 1)
 threads = $THREADS
+# RandomX mode: "auto" (default: fast when ~3 GB of memory is free),
+# "fast" (2 GiB dataset) or "light" (256 MiB cache, same as verification)
+# mode = "auto"
 # Governance: proposal ids you support (hex)
 signal = []
 
@@ -521,6 +535,11 @@ if [ "$NO_MINE" != 1 ]; then
   echo "  Mining to:       $MINER_ADDRESS"
 else
   echo "  Mining:          disabled (validating and relaying only)"
+fi
+if [ "$ARCHIVE" = 1 ]; then
+  echo "  Storage:         archive (keeps the whole history)"
+else
+  echo "  Storage:         pruned (keeps one week of blocks; --archive keeps everything)"
 fi
 if [ -f "$WALLET_FILE" ]; then
   echo "  Wallet:          $WALLET_FILE"
