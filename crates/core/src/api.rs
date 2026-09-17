@@ -516,6 +516,10 @@ pub struct SecurityView {
     /// Block subsidy an attacker gives up per block rewritten (motes; fees are not counted).
     pub value_per_block: u64,
     pub network_hashrate: f64,
+    /// Blocks until the payment becomes final by the miners' votes, when the
+    /// network is finalising (`None` when there is no finality right now, for
+    /// example on a network with fewer than four miners).
+    pub blocks_to_finality: Option<u64>,
     pub explanation: String,
 }
 

@@ -820,7 +820,10 @@ fn run() -> Result<()> {
         Cmd::Confirmations { amount: a } => {
             let value = amount(&a)?;
             let s = ctx.client.security(value)?;
-            println!("For {}: wait {} confirmation(s) (~{} min).", tcn(value), s.confirmations, s.minutes.max(1));
+            match s.blocks_to_finality {
+                Some(b) => println!("For {}: wait {} block(s) — it is then final and can never be reversed.", tcn(value), b),
+                None => println!("For {}: wait {} confirmation(s) (~{} min).", tcn(value), s.confirmations, s.minutes.max(1)),
+            }
             println!("{}", s.explanation);
         }
         Cmd::Alerts => {

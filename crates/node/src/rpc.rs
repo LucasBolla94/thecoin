@@ -588,18 +588,32 @@ async fn security(State(node): State<AppState>, Query(q): Query<SecurityQuery>) 
     let wanted = (amount as u128 * 2).div_ceil(per_block as u128) as u64;
     let confirmations = wanted.clamp(1, p.max_reorg_depth);
     let hashrate = node.chain.network_hashrate(120).unwrap_or(0.0);
-    let explanation = format!(
-        "Reversing {confirmations} block(s) means redoing their proof of work and giving up about {} TCN of rewards. \
-         For larger amounts wait for more confirmations; beyond {} blocks the chain never reorganizes.",
-        thecoin_core::amount::format_amount(per_block.saturating_mul(confirmations)),
-        p.max_reorg_depth
-    );
+    // When the miners are signing blocks, a payment is irreversible as soon as
+    // its block is finalised — usually one block behind the tip.
+    let finalizing = node.chain.finalized().is_some_and(|(h, _)| h + 20 >= tip.height);
+    let blocks_to_finality = finalizing.then(|| tip.height.saturating_sub(node.chain.finalized().map(|(h, _)| h).unwrap_or(0)).max(1) + 1);
+    let explanation = match blocks_to_finality {
+        Some(b) => format!(
+            "The miners are signing blocks: this payment becomes irreversible about {b} block(s) after it is mined \
+             (roughly {} seconds), whatever its value. Until then, reversing {confirmations} block(s) means redoing \
+             their proof of work and giving up about {} TCN of rewards.",
+            b * p.target_block_time,
+            thecoin_core::amount::format_amount(per_block.saturating_mul(confirmations)),
+        ),
+        None => format!(
+            "Reversing {confirmations} block(s) means redoing their proof of work and giving up about {} TCN of rewards. \
+             For larger amounts wait for more confirmations; beyond {} blocks the chain never reorganizes.",
+            thecoin_core::amount::format_amount(per_block.saturating_mul(confirmations)),
+            p.max_reorg_depth
+        ),
+    };
     Ok(Json(SecurityView {
         amount,
-        confirmations,
+        confirmations: blocks_to_finality.map(|b| b.min(confirmations)).unwrap_or(confirmations),
         minutes: confirmations * p.target_block_time / 60,
         value_per_block: per_block,
         network_hashrate: hashrate,
+        blocks_to_finality,
         explanation,
     }))
 }
