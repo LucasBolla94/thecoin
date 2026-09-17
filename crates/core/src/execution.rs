@@ -483,7 +483,7 @@ pub fn end_block<R: StateReader + ?Sized>(
     g.congestion_bp = next_congestion(g.congestion_bp, usage, &params_before);
     state.put_global(&g);
     // Uncles are paid out of this block's subsidy, so the emission schedule and
-    // the 50 000 000 TCN cap do not change (docs/ESCALA.md §2.3).
+    // the 100 000 000 TCN cap do not change (docs/ESCALA.md §2.3).
     let mut payouts: Vec<Payout> = Vec::with_capacity(1 + uncles.len());
     let mut to_uncles = 0u64;
     for (who, depth) in uncles {

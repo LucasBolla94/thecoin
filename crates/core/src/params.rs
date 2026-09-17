@@ -63,8 +63,8 @@ impl FromStr for Network {
     }
 }
 
-/// Hard cap on the total supply: 50 000 000 TCN.
-pub const MAX_SUPPLY: u64 = 50_000_000 * COIN;
+/// Hard cap on the total supply: 100 000 000 TCN.
+pub const MAX_SUPPLY: u64 = 100_000_000 * COIN;
 
 /// Absolute upper bound for a serialized block (governance can never exceed it).
 pub const MAX_BLOCK_BYTES_HARD: u64 = 8_000_000;
@@ -216,10 +216,9 @@ pub static MAINNET: ChainParams = ChainParams {
     lwma_window: 120,
     max_future_drift: 180,
     finality_window: 200,
-    // 10 TCN every 15 s = the same 40 TCN per minute as a 60 s block, and the
-    // halving interval is four times longer, so the schedule in *time* and the
-    // 50 000 000 TCN cap are unchanged.
-    initial_reward: 10 * COIN,
+    // 20 TCN every 15 s = 80 TCN per minute; halving every 2 500 000 blocks
+    // (≈ 1.19 years) emits just under the 100 000 000 TCN cap.
+    initial_reward: 20 * COIN,
     halving_interval: 2_500_000,
     coinbase_maturity: 400,
     reward_unlock_blocks: 4_000,
@@ -246,10 +245,9 @@ pub static TESTNET: ChainParams = ChainParams {
     lwma_window: 120,
     max_future_drift: 180,
     finality_window: 200,
-    // 10 TCN every 15 s = the same 40 TCN per minute as a 60 s block, and the
-    // halving interval is four times longer, so the schedule in *time* and the
-    // 50 000 000 TCN cap are unchanged.
-    initial_reward: 10 * COIN,
+    // 20 TCN every 15 s = 80 TCN per minute; halving every 2 500 000 blocks
+    // (≈ 1.19 years) emits just under the 100 000 000 TCN cap.
+    initial_reward: 20 * COIN,
     halving_interval: 2_500_000,
     coinbase_maturity: 400,
     reward_unlock_blocks: 4_000,

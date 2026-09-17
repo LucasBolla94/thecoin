@@ -18,7 +18,7 @@
 //! What governance can change: the parameters in [`GovParams`], always inside
 //! the hard bounds of [`GovBounds`]. It can also approve text proposals and
 //! software upgrades (recorded on-chain and shown by nodes/wallets/site).
-//! **It can never change the 50M supply cap, the emission schedule or the PoW
+//! **It can never change the 100M supply cap, the emission schedule or the PoW
 //! algorithm** — those are hard-coded.
 
 use crate::address::Address;

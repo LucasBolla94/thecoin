@@ -141,6 +141,7 @@ fn build_config(cli: &Cli) -> Result<NodeConfig> {
 fn print_params(network: Network) {
     use thecoin_core::amount::format_amount;
     use thecoin_core::emission::{cumulative_emission, total_emission};
+    use thecoin_core::params::MAX_SUPPLY;
     let p = network.params();
     let g = thecoin_core::genesis::genesis_block(p);
     println!("The Coin — {network}");
@@ -149,7 +150,7 @@ fn print_params(network: Network) {
     if network == Network::Regtest {
         println!("  total emission      {} TCN (regtest uses fast halvings)", format_amount(total_emission(p)));
     } else {
-        println!("  max supply          50,000,000 TCN (total emission {} TCN)", format_amount(total_emission(p)));
+        println!("  max supply          {} TCN (total emission {} TCN)", format_amount(MAX_SUPPLY), format_amount(total_emission(p)));
     }
     println!("  block time          {} s", p.target_block_time);
     println!("  initial reward      {} TCN", format_amount(p.initial_reward));

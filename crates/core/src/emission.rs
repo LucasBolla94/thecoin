@@ -1,9 +1,9 @@
 //! Emission schedule ("Bitcoin-style" halvings).
 //!
-//! * Block time: 60 s  (≈ 525 960 blocks per year)
-//! * Initial reward: 40 TCN per block
-//! * Halving every 625 000 blocks (≈ 434 days ≈ 1.19 years)
-//! * Total: 40 × 625 000 × (1 + 1/2 + 1/4 + ...) < 50 000 000 TCN
+//! * Block time: 15 s  (≈ 2 103 840 blocks per year)
+//! * Initial reward: 20 TCN per block
+//! * Halving every 2 500 000 blocks (≈ 434 days ≈ 1.19 years)
+//! * Total: 20 × 2 500 000 × (1 + 1/2 + 1/4 + ...) < 100 000 000 TCN
 //!
 //! The first four eras (≈ 4.76 years — the *stabilization cycle*) emit 93.75%
 //! of the supply. Rewards then keep halving until they reach zero; after that
@@ -59,7 +59,7 @@ mod tests {
     use crate::params::{MAINNET, MAX_SUPPLY, REGTEST};
 
     #[test]
-    fn supply_is_capped_at_50m() {
+    fn supply_is_capped_at_100m() {
         let total = total_emission(&MAINNET);
         assert!(total <= MAX_SUPPLY);
         // Integer halving truncation keeps us just below the cap.
@@ -90,7 +90,8 @@ mod tests {
         assert_eq!(block_subsidy(&MAINNET, 1), first);
         assert_eq!(block_subsidy(&MAINNET, MAINNET.halving_interval), first);
         assert_eq!(block_subsidy(&MAINNET, MAINNET.halving_interval + 1), first / 2);
-        // Same emission per minute as the original 60 s / 40 TCN schedule.
-        assert_eq!(first * 60 / MAINNET.target_block_time, 40 * COIN);
+        // 80 TCN per minute: twice the original 60 s / 40 TCN schedule, for a
+        // 100 000 000 TCN cap.
+        assert_eq!(first * 60 / MAINNET.target_block_time, 80 * COIN);
     }
 }

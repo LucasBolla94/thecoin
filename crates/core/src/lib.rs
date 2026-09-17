@@ -8,7 +8,7 @@
 //! * [`hash`], [`crypto`], [`address`] — BLAKE3 hashing with domain separation,
 //!   Ed25519 keys and bech32m addresses.
 //! * [`amount`] — fixed-point amounts (1 TCN = 10^8 motes).
-//! * [`params`] / [`emission`] — network parameters and the 50M TCN emission curve.
+//! * [`params`] / [`emission`] — network parameters and the 100M TCN emission curve.
 //! * [`pow`] / [`difficulty`] — CoinHash (Argon2id) proof of work and LWMA retargeting.
 //! * [`block`], [`tx`], [`merkle`] — canonical (Borsh) wire and hashing formats.
 //! * [`state`], [`lthash`] — state keys/records and the homomorphic state commitment.
