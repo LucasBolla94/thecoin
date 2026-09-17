@@ -27,7 +27,18 @@ cp -r website/assets "$OUT/"
 install -m 0644 installer/install.sh installer/uninstall.sh installer/thecoin "$OUT/"
 cp docs/whitepaper/*.pdf "$OUT/whitepaper/"
 cp docs/tccl/tccl-cookbook.pdf "$OUT/tccl/"
-cp crates/tccl/examples/*.tccl "$OUT/tccl/examples/"
+# The language lives in its own repository, pinned by tag in Cargo.toml; take
+# the example contracts from that tag (or from TCCL_DIR, a local checkout).
+if [ -n "${TCCL_DIR:-}" ]; then
+  cp "$TCCL_DIR"/examples/*.tccl "$OUT/tccl/examples/"
+else
+  TCCL_TAG=$(awk -F'"' '/^tccl *=/ {for (i = 1; i < NF; i++) if ($i ~ /tag *= *$/) print $(i + 1)}' Cargo.toml)
+  [ -n "$TCCL_TAG" ] || { echo "cannot read the tccl tag from Cargo.toml" >&2; exit 1; }
+  TCCL_TMP=$(mktemp -d)
+  trap 'rm -rf "$TCCL_TMP"' EXIT
+  git clone -q --depth 1 --branch "$TCCL_TAG" https://github.com/LucasBolla94/tccl "$TCCL_TMP/tccl"
+  cp "$TCCL_TMP"/tccl/examples/*.tccl "$OUT/tccl/examples/"
+fi
 
 shopt -s nullglob
 archives=(dist/thecoin-*.tar.gz)
