@@ -84,6 +84,7 @@ pub struct PendingCompact {
     pub hash: Hash32,
     pub header: thecoin_core::BlockHeader,
     pub slots: Vec<Option<thecoin_core::Transaction>>,
+    pub uncles: Vec<thecoin_core::BlockHeader>,
 }
 
 const MAX_PENDING_COMPACT: usize = 8;
@@ -710,14 +711,14 @@ async fn handle_message(node: &Arc<Node>, peer: &Arc<Peer>, msg: Message, block_
             node.mempool.lock().fill_compact(&hash, &c.short_ids, &mut slots);
             let missing: Vec<u32> = slots.iter().enumerate().filter(|(_, s)| s.is_none()).map(|(i, _)| i as u32).collect();
             if missing.is_empty() {
-                finish_compact(node, peer, c.header, slots, block_tx).await?;
+                finish_compact(node, peer, c.header, slots, c.uncles, block_tx).await?;
             } else {
                 {
                     let mut info = peer.info.lock();
                     if info.pending_compact.len() >= MAX_PENDING_COMPACT {
                         info.pending_compact.remove(0);
                     }
-                    info.pending_compact.push(PendingCompact { hash, header: c.header, slots });
+                    info.pending_compact.push(PendingCompact { hash, header: c.header, slots, uncles: c.uncles });
                 }
                 peer.send(&Message::GetBlockTxs { block: hash, indexes: missing });
             }
@@ -759,7 +760,7 @@ async fn handle_message(node: &Arc<Node>, peer: &Arc<Peer>, msg: Message, block_
                 peer.send(&Message::GetData(vec![InvItem { kind: InvKind::Block, hash: block }]));
                 return Ok(());
             }
-            finish_compact(node, peer, pending.header, pending.slots, block_tx).await?;
+            finish_compact(node, peer, pending.header, pending.slots, pending.uncles, block_tx).await?;
         }
         Message::DoubleSpend { first, second } => {
             let valid = first.sender() == second.sender()
@@ -814,12 +815,13 @@ async fn finish_compact(
     peer: &Arc<Peer>,
     header: thecoin_core::BlockHeader,
     slots: Vec<Option<thecoin_core::Transaction>>,
+    uncles: Vec<thecoin_core::BlockHeader>,
     block_tx: &mpsc::Sender<Block>,
 ) -> Result<()> {
     let txs: Vec<thecoin_core::Transaction> = slots.into_iter().map(|s| s.expect("all slots filled")).collect();
-    let block = Block { header, txs };
-    if block.compute_tx_root() != block.header.tx_root {
-        // Short-id collision or wrong transactions: download the full block.
+    let block = Block { header, txs, uncles };
+    if block.compute_tx_root() != block.header.tx_root || block.compute_uncles_root() != block.header.uncles_root {
+        // Short-id collision, wrong transactions or wrong uncles: download the full block.
         peer.send(&Message::GetData(vec![InvItem { kind: InvKind::Block, hash: block.hash() }]));
         return Ok(());
     }

@@ -61,6 +61,8 @@ pub enum BlockError {
     BadPow,
     #[error("transaction merkle root mismatch")]
     BadTxRoot,
+    #[error("invalid uncle: {0}")]
+    BadUncle(String),
     #[error("state root mismatch (block {expected}, computed {computed})")]
     BadStateRoot { expected: Hash32, computed: Hash32 },
     #[error("block too large ({size} bytes, max {max})")]

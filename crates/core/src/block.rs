@@ -34,6 +34,8 @@ pub struct BlockHeader {
     /// Governance signalling bits: bit `i` set = miner supports the proposal
     /// assigned to bit `i`. Unassigned bits must be zero.
     pub signal: u32,
+    /// Merkle root of the uncle headers carried by this block (see [`Block::uncles`]).
+    pub uncles_root: Hash32,
 }
 
 impl BlockHeader {
@@ -59,10 +61,44 @@ impl BlockHeader {
     }
 }
 
+/// Body of a block as stored and relayed: transactions plus uncle headers.
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct BlockBody {
+    pub txs: Vec<Transaction>,
+    pub uncles: Vec<BlockHeader>,
+}
+
+/// Merkle root of uncle headers (the root of an empty list when there are none).
+pub fn uncles_root(uncles: &[BlockHeader]) -> Hash32 {
+    let ids: Vec<Hash32> = uncles.iter().map(|u| u.hash()).collect();
+    merkle_root(&ids)
+}
+
+/// Most uncles a block may carry.
+pub const MAX_UNCLES: usize = 2;
+/// An uncle may be at most this many blocks older than the block including it.
+pub const MAX_UNCLE_DEPTH: u64 = 6;
+
+/// Part of the subsidy paid to the miner of an uncle `depth` blocks old.
+/// `(7 - depth) / 24` of the subsidy: 25 % at depth 1 down to 4 % at depth 6.
+pub fn uncle_reward(subsidy: u64, depth: u64) -> u64 {
+    if depth == 0 || depth > MAX_UNCLE_DEPTH {
+        return 0;
+    }
+    ((subsidy as u128 * (7 - depth) as u128) / 24) as u64
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Block {
     pub header: BlockHeader,
     pub txs: Vec<Transaction>,
+    /// Headers of recent valid blocks that lost the race ("uncles").
+    ///
+    /// Including them pays part of the subsidy to the miner who found them and
+    /// adds their proof of work to this chain's weight, so a miner with a slow
+    /// connection is not punished for losing a race by milliseconds — which is
+    /// what would otherwise push mining towards a few big farms.
+    pub uncles: Vec<BlockHeader>,
 }
 
 impl Block {
@@ -73,6 +109,10 @@ impl Block {
     pub fn compute_tx_root(&self) -> Hash32 {
         let ids: Vec<Hash32> = self.txs.iter().map(|t| t.txid()).collect();
         merkle_root(&ids)
+    }
+
+    pub fn compute_uncles_root(&self) -> Hash32 {
+        uncles_root(&self.uncles)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -101,7 +141,8 @@ mod tests {
             nonce: 0,
             miner: Address::ZERO,
             signal: 0,
+            uncles_root: Hash32::ZERO,
         };
-        assert_eq!(h.to_bytes().len(), 180);
+        assert_eq!(h.to_bytes().len(), 212);
     }
 }

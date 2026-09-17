@@ -232,27 +232,27 @@ fn genesis_vectors() {
     for (n, hash, prev, root, header, coinhash) in [
         (
             Network::Mainnet,
-            "0ba45c29c569537d18a438646562b6112c2368af17d9f233b2595fbea946ba99",
+            "50abdff604b338a25290a38dc0b7f8c80efd2e76f7c1f178b8bc6d9db8dade4d",
             "628153829eca06c2fef7546b35d52d4308bc7d73e857b7c0d192518d3fa10de7",
-            "8e944d5c888c688ab07397bd7b9053ec4c95dfa50951258e26da9058cc0cb032",
-            "010000000000000000000000628153829eca06c2fef7546b35d52d4308bc7d73e857b7c0d192518d3fa10de75740f3f044b5290cbda05ef48cf56fad55c4cab20e8202b66cbb84c7968e9fc18e944d5c888c688ab07397bd7b9053ec4c95dfa50951258e26da9058cc0cb03280e7a56a00000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
-            "4b84fc12eebb7755174fdf9bce27ec6a76e47825a21174dad9ca32601b35cfea",
+            "e64e387d8fde654f6f1f92f7c5a6463e9318e74a0d875bf68936070c453e21d9",
+            "010000000000000000000000628153829eca06c2fef7546b35d52d4308bc7d73e857b7c0d192518d3fa10de75740f3f044b5290cbda05ef48cf56fad55c4cab20e8202b66cbb84c7968e9fc1e64e387d8fde654f6f1f92f7c5a6463e9318e74a0d875bf68936070c453e21d980e7a56a00000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000000000005740f3f044b5290cbda05ef48cf56fad55c4cab20e8202b66cbb84c7968e9fc1",
+            "da2dd8405c4bbaceabebf505f10e8b6af4a9e2852e55764b36637717cce4fe1e",
         ),
         (
             Network::Testnet,
-            "ca5dd440c2e30d1b1743a78dca19d87f4812ab113e6537d1d6f3222330a4da2c",
+            "c27b8a615ff411288b43388e735c381fcbf42d37eb731c4b2e98964f8d87090e",
             "8c4c3fc095f0fd4447d797cef32537b87b91ecc70ab422f237efe6f49460ef09",
-            "890d5ea84fd146f3f2d932b878215f80651889efe45d4c0a4aed216364276767",
+            "9994189185edb75bf04ea1cc403b25fc83fb26c3e2c4381aa1c2fcfda2127b20",
             "",
             "",
         ),
         (
             Network::Regtest,
-            "7022c9deda5f997eed99a09ca77ad4c48dcb1f5a8ab892adc0a4a180c19622cd",
+            "fde0983b16398101218dcffdaeb26f5d1748e6ed194c59856ade97cb2f6674b0",
             "770efbde639a4320419a8fb4c18ac2d2fb57c5e6d6a38d77b870945adbe7ca72",
             "b87872c9e9506f8be2d05dce0b41b6d7cefcfb8c9c59c7071ceb53d1e31cf04f",
-            "010000000000000000000000770efbde639a4320419a8fb4c18ac2d2fb57c5e6d6a38d77b870945adbe7ca725740f3f044b5290cbda05ef48cf56fad55c4cab20e8202b66cbb84c7968e9fc1b87872c9e9506f8be2d05dce0b41b6d7cefcfb8c9c59c7071ceb53d1e31cf04f80e7a56a00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000",
-            "c5ad86693615df362eedb6e9568e1b1401e35444f53b0f1cc90b68eaa033c546",
+            "010000000000000000000000770efbde639a4320419a8fb4c18ac2d2fb57c5e6d6a38d77b870945adbe7ca725740f3f044b5290cbda05ef48cf56fad55c4cab20e8202b66cbb84c7968e9fc1b87872c9e9506f8be2d05dce0b41b6d7cefcfb8c9c59c7071ceb53d1e31cf04f80e7a56a00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000000000005740f3f044b5290cbda05ef48cf56fad55c4cab20e8202b66cbb84c7968e9fc1",
+            "6d3a31871da1e601ce21910068b4c74a1ee1f35b9f9ad307a9e59854893baf7c",
         ),
     ] {
         let p = n.params();
@@ -262,7 +262,7 @@ fn genesis_vectors() {
         v.check(&format!("{n} state_root"), g.header.state_root, root);
         if !header.is_empty() {
             let bytes = g.header.to_bytes();
-            assert_eq!(bytes.len(), 180);
+            assert_eq!(bytes.len(), 212);
             v.check(&format!("{n} header"), hex::encode(&bytes), header);
             v.check(&format!("{n} CoinHash"), hex::encode(pow_hash(p.chain_id, p.pow, 0, &bytes)), coinhash);
         }

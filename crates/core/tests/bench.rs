@@ -71,8 +71,9 @@ fn bench_block_validation() {
         nonce: 0,
         miner: Address::ZERO,
         signal: 0,
+        uncles_root: thecoin_core::block::uncles_root(&[]),
     };
-    let block = Block { header, txs };
+    let block = Block { header, txs, uncles: Vec::new() };
     println!("block: {} txs, {} bytes", block.txs.len(), block.serialized_size());
     let t = Instant::now();
     let mut ov = Overlay::new(&state);

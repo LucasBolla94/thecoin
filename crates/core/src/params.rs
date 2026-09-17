@@ -172,11 +172,11 @@ const MAINNET_GOV_BOUNDS: GovBounds = GovBounds {
     fee_per_kfuel: (1, 100_000_000),
     storage_deposit_per_kb: (0, 1_000_000_000),
     proposal_deposit: (COIN, 1_000_000 * COIN),
-    vote_period: (1_440, 201_600),
+    vote_period: (5_760, 806_400),
     quorum_bp: (100, 5_000),
     approval_bp: (5_001, 9_500),
     miner_approval_bp: (5_000, 9_500),
-    activation_delay: (720, 43_200),
+    activation_delay: (720, 172_800),
 };
 
 const MAINNET_GOV_DEFAULTS: GovParams = GovParams {
@@ -191,10 +191,12 @@ const MAINNET_GOV_DEFAULTS: GovParams = GovParams {
     // 0.001 TCN locked per kB of contract state, refunded when freed
     storage_deposit_per_kb: 100_000,
     proposal_deposit: 100 * COIN,
-    vote_period: 20_160,
+    // 14 days of 15 s blocks
+    vote_period: 80_640,
     quorum_bp: 1_000,
     approval_bp: 6_667,
     miner_approval_bp: 6_000,
+    // 12 hours
     activation_delay: 2_880,
 };
 
@@ -208,14 +210,17 @@ pub static MAINNET: ChainParams = ChainParams {
     pow_limit_shift: 8,
     genesis_target_shift: 12,
     retarget: true,
-    target_block_time: 60,
-    lwma_window: 60,
+    target_block_time: 15,
+    lwma_window: 120,
     max_future_drift: 180,
-    initial_reward: 40 * COIN,
-    halving_interval: 625_000,
-    coinbase_maturity: 100,
-    reward_unlock_blocks: 1_000,
-    max_reorg_depth: 720,
+    // 10 TCN every 15 s = the same 40 TCN per minute as a 60 s block, and the
+    // halving interval is four times longer, so the schedule in *time* and the
+    // 50 000 000 TCN cap are unchanged.
+    initial_reward: 10 * COIN,
+    halving_interval: 2_500_000,
+    coinbase_maturity: 400,
+    reward_unlock_blocks: 4_000,
+    max_reorg_depth: 2_880,
     checkpoints: &[],
     genesis_timestamp: 1_789_257_600, // 2026-09-13 00:00:00 UTC
     genesis_message: GENESIS_MESSAGE,
@@ -234,21 +239,24 @@ pub static TESTNET: ChainParams = ChainParams {
     pow_limit_shift: 6,
     genesis_target_shift: 9,
     retarget: true,
-    target_block_time: 60,
-    lwma_window: 60,
+    target_block_time: 15,
+    lwma_window: 120,
     max_future_drift: 180,
-    initial_reward: 40 * COIN,
-    halving_interval: 625_000,
-    coinbase_maturity: 100,
-    reward_unlock_blocks: 1_000,
-    max_reorg_depth: 720,
+    // 10 TCN every 15 s = the same 40 TCN per minute as a 60 s block, and the
+    // halving interval is four times longer, so the schedule in *time* and the
+    // 50 000 000 TCN cap are unchanged.
+    initial_reward: 10 * COIN,
+    halving_interval: 2_500_000,
+    coinbase_maturity: 400,
+    reward_unlock_blocks: 4_000,
+    max_reorg_depth: 2_880,
     checkpoints: &[],
     genesis_timestamp: 1_789_257_600,
     genesis_message: GENESIS_MESSAGE,
     seeds: &["testnet-seed1.the-coin.cloud:17333", "testnet-seed2.the-coin.cloud:17333"],
     gov_defaults: GovParams {
         proposal_deposit: 10 * COIN,
-        vote_period: 1_440,
+        vote_period: 5_760,
         quorum_bp: 500,
         miner_approval_bp: 5_000,
         activation_delay: 720,

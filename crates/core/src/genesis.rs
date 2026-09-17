@@ -48,8 +48,9 @@ pub fn genesis_block(p: &ChainParams) -> Block {
         nonce: 0,
         miner: Address::ZERO,
         signal: 0,
+        uncles_root: merkle_root(&[]),
     };
-    Block { header, txs: Vec::new() }
+    Block { header, txs: Vec::new(), uncles: Vec::new() }
 }
 
 #[cfg(test)]

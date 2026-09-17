@@ -317,8 +317,8 @@ async fn block(State(node): State<AppState>, Path(id): Path<String>) -> ApiResul
                 Hash32::from_hex(&id).map_err(|_| bad("id must be a height or a block hash"))?
             };
             let rec = r.header(&hash)?.ok_or_else(|| not_found("block not found"))?;
-            let txs = r.block_txs(&hash)?.ok_or_else(|| not_found("block body pruned on this node"))?;
-            let b = thecoin_core::Block { header: rec.header.clone(), txs };
+            let body = r.block_body(&hash)?.ok_or_else(|| not_found("block body pruned on this node"))?;
+            let b = thecoin_core::Block { header: rec.header.clone(), txs: body.txs, uncles: body.uncles };
             let n = node.params.network;
             let tip = node.chain.tip().height;
             let on_main = r.main_hash(rec.header.height)? == Some(hash);
@@ -605,8 +605,9 @@ async fn address(State(node): State<AppState>, Path(addr): Path<String>) -> ApiR
             v.immature = rows
                 .iter()
                 .filter_map(|(_, val)| borsh::from_slice::<PendingReward>(val).ok())
-                .filter(|p| p.miner == a)
-                .map(|p| p.locked())
+                .flat_map(|p| p.payouts)
+                .filter(|p| p.who == a)
+                .map(|p| p.amount - p.released)
                 .sum();
             let m = node.mempool.lock();
             v.next_nonce = m.next_nonce(&a, acc.nonce);

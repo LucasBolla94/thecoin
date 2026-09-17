@@ -72,7 +72,7 @@ mod tests {
         let four_eras = 4 * MAINNET.halving_interval;
         let emitted = cumulative_emission(&MAINNET, four_eras);
         assert_eq!(emitted, MAX_SUPPLY / 16 * 15); // 93.75%
-        let years = four_eras as f64 * 60.0 / (365.25 * 86400.0);
+        let years = four_eras as f64 * MAINNET.target_block_time as f64 / (365.25 * 86400.0);
         assert!(years > 4.5 && years < 5.0, "{years}");
     }
 
@@ -86,8 +86,11 @@ mod tests {
                 assert_eq!(sum, cumulative_emission(p, h));
             }
         }
-        assert_eq!(block_subsidy(&MAINNET, 1), 40 * COIN);
-        assert_eq!(block_subsidy(&MAINNET, 625_000), 40 * COIN);
-        assert_eq!(block_subsidy(&MAINNET, 625_001), 20 * COIN);
+        let first = MAINNET.initial_reward;
+        assert_eq!(block_subsidy(&MAINNET, 1), first);
+        assert_eq!(block_subsidy(&MAINNET, MAINNET.halving_interval), first);
+        assert_eq!(block_subsidy(&MAINNET, MAINNET.halving_interval + 1), first / 2);
+        // Same emission per minute as the original 60 s / 40 TCN schedule.
+        assert_eq!(first * 60 / MAINNET.target_block_time, 40 * COIN);
     }
 }

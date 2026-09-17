@@ -97,7 +97,7 @@ mod tests {
     fn stable_when_on_target() {
         let p = &MAINNET;
         let target = p.genesis_target();
-        let c = chain(61, 60, target);
+        let c = chain(61, p.target_block_time, target);
         let next = next_target(p, 1000, &c);
         assert_eq!(next, target);
     }
@@ -106,10 +106,10 @@ mod tests {
     fn harder_when_fast_easier_when_slow() {
         let p = &MAINNET;
         let target = p.genesis_target();
-        let fast = next_target(p, 1000, &chain(61, 30, target));
+        let fast = next_target(p, 1000, &chain(61, p.target_block_time / 2, target));
         assert!(fast < target);
         assert_eq!(fast, target / 2);
-        let slow = next_target(p, 1000, &chain(61, 90, target));
+        let slow = next_target(p, 1000, &chain(61, p.target_block_time * 3 / 2, target));
         assert!(slow > target);
     }
 
@@ -118,9 +118,9 @@ mod tests {
         let p = &MAINNET;
         let target = p.genesis_target();
         // 5 solve times: not enough, genesis target
-        assert_eq!(next_target(p, 6, &chain(6, 10, target)), target);
-        // 6 fast blocks (10 s instead of 60 s): harder, but at most 2× per block
-        let t7 = next_target(p, 7, &chain(7, 10, target));
+        assert_eq!(next_target(p, 6, &chain(6, 2, target)), target);
+        // 6 blocks far faster than the target: harder, but at most 2× per block
+        let t7 = next_target(p, 7, &chain(7, 2, target));
         assert!(t7 < target);
         assert_eq!(t7, target / 2);
         // very slow blocks: easier, at most 2×

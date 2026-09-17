@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context, Result};
 use locks::{Mutex, RwLock};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
-use thecoin_core::block::{Block, BlockHeader};
+use thecoin_core::block::{Block, BlockHeader, MAX_UNCLES, MAX_UNCLE_DEPTH};
 use thecoin_core::difficulty::{self, BlockTimeInfo};
 use thecoin_core::error::BlockError;
 use thecoin_core::execution::{apply_block, BlockBuilder};
@@ -107,6 +107,9 @@ struct Inner {
     hasher: PowHasher,
     /// Blocks whose parent is unknown, with their serialized size.
     orphans: Vec<(Block, usize)>,
+    /// Recent valid blocks that lost the race, candidates to be included as
+    /// uncles by the next blocks (see `docs/ESCALA.md`).
+    uncle_candidates: Vec<BlockHeader>,
 }
 
 pub struct Chain {
@@ -181,7 +184,7 @@ impl Chain {
                         size: genesis.serialized_size() as u32,
                     },
                 )?;
-                w.put_block_txs(&ghash, &genesis.txs)?;
+                w.put_block_body(&ghash, &genesis.txs, &genesis.uncles)?;
                 w.set_main(0, &ghash)?;
                 for (k, v) in genesis_state(params) {
                     w.put_state_raw(&k, &v)?;
@@ -212,7 +215,12 @@ impl Chain {
             params,
             db,
             opts,
-            inner: Mutex::new(Inner { lthash, hasher: PowHasher::new(params.chain_id, params.pow), orphans: Vec::new() }),
+            inner: Mutex::new(Inner {
+                lthash,
+                hasher: PowHasher::new(params.chain_id, params.pow),
+                orphans: Vec::new(),
+                uncle_candidates: Vec::new(),
+            }),
             tip: RwLock::new(tip),
         })
     }
@@ -300,6 +308,74 @@ impl Chain {
         let ts: Vec<u64> = hdrs.iter().map(|h| h.header.timestamp).collect();
         let mtp = difficulty::median_time_past(&ts);
         Ok((target, mtp))
+    }
+
+    /// Uncle rules (§ docs/ESCALA.md): at most [`MAX_UNCLES`], distinct, between
+    /// 1 and [`MAX_UNCLE_DEPTH`] blocks old, forking off this chain, never
+    /// included before, with the right target and valid proof of work.
+    fn check_uncles<R: DbRead>(&self, r: &R, block: &Block, hasher: &mut PowHasher) -> std::result::Result<(), Fail> {
+        let bad = |m: String| Fail::Invalid(BlockError::BadUncle(m));
+        if block.uncles.is_empty() {
+            return Ok(());
+        }
+        if block.uncles.len() > MAX_UNCLES {
+            return Err(bad(format!("at most {MAX_UNCLES} uncles per block")));
+        }
+        let height = block.header.height;
+        let mut seen: Vec<Hash32> = Vec::with_capacity(MAX_UNCLES);
+        // Uncles already included by the last MAX_UNCLE_DEPTH blocks of this branch.
+        let mut already: Vec<Hash32> = Vec::new();
+        let mut cursor = block.header.prev_hash;
+        for _ in 0..MAX_UNCLE_DEPTH {
+            let Some(rec) = r.header(&cursor)? else { break };
+            already.push(cursor);
+            if let Some(body) = r.block_body(&cursor)? {
+                already.extend(body.uncles.iter().map(|u| u.hash()));
+            }
+            if rec.header.height == 0 {
+                break;
+            }
+            cursor = rec.header.prev_hash;
+        }
+        for uncle in &block.uncles {
+            let uhash = uncle.hash();
+            if seen.contains(&uhash) {
+                return Err(bad("the same uncle twice".into()));
+            }
+            seen.push(uhash);
+            if already.contains(&uhash) {
+                return Err(bad(format!("uncle {uhash} is already in this chain")));
+            }
+            if uncle.height >= height || height - uncle.height > MAX_UNCLE_DEPTH {
+                return Err(bad(format!("uncle {uhash} is {} blocks old", height.saturating_sub(uncle.height))));
+            }
+            if uncle.version != BLOCK_VERSION {
+                return Err(bad(format!("uncle {uhash} has version {}", uncle.version)));
+            }
+            // Its parent must be a block of this branch, so the uncle really
+            // forked off this chain a few blocks ago.
+            if !already.contains(&uncle.prev_hash) {
+                return Err(bad(format!("uncle {uhash} does not descend from this chain")));
+            }
+            let parent = r.header(&uncle.prev_hash)?.ok_or_else(|| bad(format!("uncle {uhash} parent is unknown")))?;
+            if parent.header.height + 1 != uncle.height {
+                return Err(bad(format!("uncle {uhash} height does not follow its parent")));
+            }
+            let (target, mtp) = self.expected_target(r, &parent)?;
+            if uncle.target_u256() != target {
+                return Err(bad(format!("uncle {uhash} has the wrong target")));
+            }
+            if uncle.timestamp <= mtp {
+                return Err(bad(format!("uncle {uhash} timestamp is too old")));
+            }
+            if uncle.timestamp > now_secs() + self.params.max_future_drift {
+                return Err(bad(format!("uncle {uhash} timestamp is in the future")));
+            }
+            if !uncle.check_pow(hasher) {
+                return Err(bad(format!("uncle {uhash} has invalid proof of work")));
+            }
+        }
+        Ok(())
     }
 
     /// Context checks of a header against its parent (no PoW).
@@ -427,12 +503,20 @@ impl Chain {
         if block.compute_tx_root() != block.header.tx_root {
             return Err(Fail::Invalid(BlockError::BadTxRoot));
         }
+        if block.compute_uncles_root() != block.header.uncles_root {
+            return Err(Fail::Invalid(BlockError::BadUncle("uncles root does not match the header".into())));
+        }
+        self.check_uncles(&r, &block, &mut inner.hasher)?;
         if !pow_checked && !block.header.check_pow(&mut inner.hasher) {
             return Err(Fail::Invalid(BlockError::BadPow));
         }
         drop(r);
 
-        let chainwork = u256_from_bytes(&parent.chainwork).saturating_add(work_for_target(&block.header.target_u256()));
+        // Uncle work counts for this chain: including uncles makes a chain
+        // heavier, which is what pays miners to carry them.
+        let uncle_work = block.uncles.iter().fold(U256::zero(), |acc, u| acc.saturating_add(work_for_target(&u.target_u256())));
+        let chainwork =
+            u256_from_bytes(&parent.chainwork).saturating_add(work_for_target(&block.header.target_u256())).saturating_add(uncle_work);
         let record = HeaderRecord {
             header: block.header.clone(),
             chainwork: u256_to_bytes(&chainwork),
@@ -445,8 +529,9 @@ impl Chain {
         if chainwork <= tip.chainwork {
             let w = self.db.write()?;
             w.put_header(&hash, &record)?;
-            w.put_block_txs(&hash, &block.txs)?;
+            w.put_block_body(&hash, &block.txs, &block.uncles)?;
             w.commit()?;
+            remember_uncle(inner, block.header.clone(), tip.height, self.params);
             return Ok(ProcessResult::SideChain);
         }
 
@@ -474,7 +559,7 @@ impl Chain {
 
         let w = self.db.write()?;
         w.put_header(&hash, &record)?;
-        w.put_block_txs(&hash, &block.txs)?;
+        w.put_block_body(&hash, &block.txs, &block.uncles)?;
         let mut lthash = inner.lthash.clone();
 
         let mut disconnected = Vec::new();
@@ -488,8 +573,8 @@ impl Chain {
             let blk = if bhash == hash {
                 block.clone()
             } else {
-                let txs = w.block_txs(&bhash)?.ok_or_else(|| anyhow!("missing body of branch block {bhash}"))?;
-                Block { header: rec.header.clone(), txs }
+                let body = w.block_body(&bhash)?.ok_or_else(|| anyhow!("missing body of branch block {bhash}"))?;
+                Block { header: rec.header.clone(), txs: body.txs, uncles: body.uncles }
             };
             let result = if rec.status == BlockStatus::Invalid {
                 Err(Fail::Invalid(BlockError::InvalidAncestor))
@@ -506,7 +591,7 @@ impl Chain {
                         bad_rec.status = BlockStatus::Invalid;
                         bad_rec.has_body = false;
                         w2.put_header(&bad.header.hash(), &bad_rec)?;
-                        w2.delete_block_txs(&bad.header.hash())?;
+                        w2.delete_block_body(&bad.header.hash())?;
                     }
                     w2.commit()?;
                 }
@@ -580,7 +665,7 @@ impl Chain {
                             }
                             old_rec.has_body = false;
                             w.put_header(&old_hash, &old_rec)?;
-                            w.delete_block_txs(&old_hash)?;
+                            w.delete_block_body(&old_hash)?;
                         }
                     }
                 }
@@ -640,7 +725,9 @@ impl Chain {
                 signal |= 1 << bit;
             }
         }
-        let (overlay, txs, signal) = builder.finish(miner, signal).map_err(|e| anyhow!("{e}"))?;
+        let uncles = self.pick_uncles(&r, &inner, height, &tip.hash)?;
+        let uncle_payouts: Vec<(Address, u64)> = uncles.iter().map(|u| (u.miner, height - u.height)).collect();
+        let (overlay, txs, signal) = builder.finish(miner, signal, &uncle_payouts).map_err(|e| anyhow!("{e}"))?;
         let changes = overlay.diff()?;
         let mut lthash = inner.lthash.clone();
         apply_changes_to_lthash(&mut lthash, &changes);
@@ -656,8 +743,50 @@ impl Chain {
             nonce: 0,
             miner: *miner,
             signal,
+            uncles_root: thecoin_core::block::uncles_root(&uncles),
         };
-        Ok(Block { header, txs })
+        Ok(Block { header, txs, uncles })
+    }
+
+    /// Up to [`MAX_UNCLES`] valid uncles for a block at `height`: recent blocks
+    /// that lost the race, whose parent is on this chain and that no recent
+    /// blockever included.
+    fn pick_uncles<R: DbRead>(&self, r: &R, inner: &Inner, height: u64, tip: &Hash32) -> Result<Vec<BlockHeader>> {
+        if inner.uncle_candidates.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut already: Vec<Hash32> = Vec::new();
+        let mut cursor = *tip;
+        for _ in 0..MAX_UNCLE_DEPTH {
+            let Some(rec) = r.header(&cursor)? else { break };
+            already.push(cursor);
+            if let Some(body) = r.block_body(&cursor)? {
+                already.extend(body.uncles.iter().map(|u| u.hash()));
+            }
+            if rec.header.height == 0 {
+                break;
+            }
+            cursor = rec.header.prev_hash;
+        }
+        let mut out: Vec<BlockHeader> = Vec::new();
+        for cand in inner.uncle_candidates.iter().rev() {
+            if out.len() >= MAX_UNCLES {
+                break;
+            }
+            let chash = cand.hash();
+            if already.contains(&chash) || out.iter().any(|u| u.hash() == chash) {
+                continue;
+            }
+            if cand.height >= height || height - cand.height > MAX_UNCLE_DEPTH {
+                continue;
+            }
+            // Its parent must be on this chain.
+            if r.main_hash(cand.height - 1)? != Some(cand.prev_hash) {
+                continue;
+            }
+            out.push(cand.clone());
+        }
+        Ok(out)
     }
 
     /// Block locator: recent hashes densely, then exponentially sparser, ending at genesis.
@@ -735,5 +864,23 @@ impl Chain {
             Some(h) => r.block(&h),
             None => Ok(None),
         }
+    }
+}
+
+/// Keeps a losing block as a possible uncle while it is recent enough.
+fn remember_uncle(inner: &mut Inner, header: BlockHeader, tip_height: u64, p: &ChainParams) {
+    let _ = p;
+    if tip_height.saturating_sub(header.height) >= MAX_UNCLE_DEPTH {
+        return;
+    }
+    let hash = header.hash();
+    if inner.uncle_candidates.iter().any(|h| h.hash() == hash) {
+        return;
+    }
+    inner.uncle_candidates.push(header);
+    let cutoff = tip_height.saturating_sub(MAX_UNCLE_DEPTH);
+    inner.uncle_candidates.retain(|h| h.height > cutoff);
+    while inner.uncle_candidates.len() > 16 {
+        inner.uncle_candidates.remove(0);
     }
 }

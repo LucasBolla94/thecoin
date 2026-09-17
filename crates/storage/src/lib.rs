@@ -24,7 +24,7 @@ use anyhow::{anyhow, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use redb::{Database, ReadableTable, TableDefinition};
 use std::path::Path;
-use thecoin_core::block::{Block, BlockHeader};
+use thecoin_core::block::{Block, BlockBody, BlockHeader};
 use thecoin_core::hash::Hash32;
 use thecoin_core::lthash::LtHash;
 use thecoin_core::state::{StateChange, StateError, StateReader};
@@ -192,21 +192,25 @@ pub trait DbRead {
         }
     }
 
-    fn block_txs(&self, hash: &Hash32) -> Result<Option<Vec<Transaction>>> {
+    fn block_body(&self, hash: &Hash32) -> Result<Option<BlockBody>> {
         match self.get_bytes(BLOCKS, &hash.0)? {
-            Some(b) => Ok(Some(Vec::<Transaction>::try_from_slice(&decompress(&b)?)?)),
-            // Empty bodies are not stored (see `WriteTx::put_block_txs`).
+            Some(b) => Ok(Some(BlockBody::try_from_slice(&decompress(&b)?)?)),
+            // Empty bodies are not stored (see `WriteTx::put_block_body`).
             None => match self.header(hash)? {
-                Some(h) if h.has_body && h.tx_count == 0 => Ok(Some(Vec::new())),
+                Some(h) if h.has_body && h.tx_count == 0 => Ok(Some(BlockBody::default())),
                 _ => Ok(None),
             },
         }
     }
 
+    fn block_txs(&self, hash: &Hash32) -> Result<Option<Vec<Transaction>>> {
+        Ok(self.block_body(hash)?.map(|b| b.txs))
+    }
+
     fn block(&self, hash: &Hash32) -> Result<Option<Block>> {
         let Some(h) = self.header(hash)? else { return Ok(None) };
-        let Some(txs) = self.block_txs(hash)? else { return Ok(None) };
-        Ok(Some(Block { header: h.header, txs }))
+        let Some(body) = self.block_body(hash)? else { return Ok(None) };
+        Ok(Some(Block { header: h.header, txs: body.txs, uncles: body.uncles }))
     }
 
     fn main_hash(&self, height: u64) -> Result<Option<Hash32>> {
@@ -394,17 +398,17 @@ impl WriteTx {
 
     /// Stores a block body. Empty bodies are implied by `HeaderRecord::tx_count == 0`
     /// and take no space.
-    pub fn put_block_txs(&self, hash: &Hash32, txs: &[Transaction]) -> Result<()> {
-        if txs.is_empty() {
+    pub fn put_block_body(&self, hash: &Hash32, txs: &[Transaction], uncles: &[BlockHeader]) -> Result<()> {
+        if txs.is_empty() && uncles.is_empty() {
             return Ok(());
         }
-        let raw = borsh::to_vec(&txs.to_vec())?;
+        let raw = borsh::to_vec(&BlockBody { txs: txs.to_vec(), uncles: uncles.to_vec() })?;
         let mut t = self.tx.open_table(BLOCKS)?;
         t.insert(hash.0.as_slice(), compress(&raw)?.as_slice())?;
         Ok(())
     }
 
-    pub fn delete_block_txs(&self, hash: &Hash32) -> Result<()> {
+    pub fn delete_block_body(&self, hash: &Hash32) -> Result<()> {
         let mut t = self.tx.open_table(BLOCKS)?;
         t.remove(hash.0.as_slice())?;
         Ok(())
@@ -563,7 +567,7 @@ mod tests {
             },
         )
         .unwrap();
-        w.put_block_txs(&hash, &g.txs).unwrap();
+        w.put_block_body(&hash, &g.txs, &g.uncles).unwrap();
         w.set_main(0, &hash).unwrap();
         w.set_tip(&hash).unwrap();
         w.apply_state_changes(&[

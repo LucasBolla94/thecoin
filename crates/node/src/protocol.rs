@@ -132,6 +132,8 @@ pub struct CompactBlock {
     pub short_ids: Vec<[u8; 6]>,
     /// Transactions sent in full: `(index, tx)`.
     pub prefilled: Vec<(u32, Transaction)>,
+    /// Uncle headers of the block (a few hundred bytes, never reconstructed).
+    pub uncles: Vec<BlockHeader>,
 }
 
 /// 6-byte transaction id salted with the block hash (collisions cannot be
@@ -150,6 +152,7 @@ impl CompactBlock {
             header: b.header.clone(),
             short_ids: b.txs.iter().map(|t| short_id(&hash, &t.txid())).collect(),
             prefilled: Vec::new(),
+            uncles: b.uncles.clone(),
         }
     }
 }

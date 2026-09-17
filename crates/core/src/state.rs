@@ -131,21 +131,34 @@ impl Account {
 /// Block reward waiting for maturity.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct PendingReward {
-    pub miner: Address,
-    /// Total reward (subsidy + fees) of the block.
+    /// Who is paid by this block: the miner first, then the uncle miners.
+    pub payouts: Vec<Payout>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Payout {
+    pub who: Address,
+    /// Total reward (subsidy share + fees).
     pub amount: u64,
-    /// Part already released to the miner (the early quarter).
+    /// Part already released (the early quarter).
     pub released: u64,
 }
 
 impl PendingReward {
+    pub fn total(&self) -> u64 {
+        self.payouts.iter().map(|p| p.amount).sum()
+    }
+
+    /// Still locked by the cooldown.
+    pub fn locked(&self) -> u64 {
+        self.payouts.iter().map(|p| p.amount - p.released).sum()
+    }
+}
+
+impl Payout {
     /// Quarter released after `coinbase_maturity` blocks.
     pub fn early_part(&self) -> u64 {
         self.amount / 4
-    }
-
-    pub fn locked(&self) -> u64 {
-        self.amount - self.released
     }
 }
 

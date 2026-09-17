@@ -45,8 +45,9 @@ impl TestChain {
             nonce: 0,
             miner,
             signal,
+            uncles_root: thecoin_core::block::uncles_root(&[]),
         };
-        let block = Block { header, txs };
+        let block = Block { header, txs, uncles: Vec::new() };
         let (receipt, diff) = {
             let mut ov = Overlay::new(&self.state);
             let r = apply_block(self.p, &mut ov, &block, false)?;

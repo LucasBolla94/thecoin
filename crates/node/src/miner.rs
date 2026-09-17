@@ -170,7 +170,7 @@ fn worker(node: Arc<Node>) {
             local_hashes += 1;
             if meets_target(&hash, &job.target) {
                 node.miner.hashes.fetch_add(local_hashes, Ordering::Relaxed);
-                let block = Block { header: header.clone(), txs: job.block.txs.clone() };
+                let block = Block { header: header.clone(), txs: job.block.txs.clone(), uncles: job.block.uncles.clone() };
                 info!(height = header.height, hash = %block.hash(), "block found!");
                 // Stop other workers from mining the same job.
                 if node.miner.job_id.load(Ordering::SeqCst) == job.id {

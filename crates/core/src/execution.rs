@@ -33,7 +33,7 @@ use crate::params::{
     ChainParams, CONGESTION_MAX_BP, CONGESTION_MIN_BP, MAX_BATCH_OUTPUTS, MAX_DEPLOY_TX_BYTES, MAX_MEMO_BYTES, MAX_TX_BYTES, MAX_TX_FUEL,
 };
 use crate::programs;
-use crate::state::{pending_reward_key, Overlay, PendingReward, StateReader};
+use crate::state::{pending_reward_key, Overlay, Payout, PendingReward, StateReader};
 use crate::tx::{Transaction, TxAction, KNOWN_FLAGS, TX_VERSION};
 use std::collections::HashSet;
 
@@ -398,11 +398,17 @@ pub fn begin_block<R: StateReader + ?Sized>(p: &ChainParams, state: &mut Overlay
     if height > p.coinbase_maturity {
         let key = pending_reward_key(height - p.coinbase_maturity);
         if let Some(mut reward) = state.get::<PendingReward>(&key)? {
-            let early = reward.early_part();
-            if reward.released == 0 && early > 0 {
-                credit(state, &reward.miner, early).map_err(werr)?;
-                reward.released = early;
-                released += early;
+            let mut changed = false;
+            for payout in reward.payouts.iter_mut() {
+                let early = payout.early_part();
+                if payout.released == 0 && early > 0 {
+                    credit(state, &payout.who, early).map_err(werr)?;
+                    payout.released = early;
+                    released += early;
+                    changed = true;
+                }
+            }
+            if changed {
                 state.put(key, &reward);
             }
         }
@@ -411,10 +417,14 @@ pub fn begin_block<R: StateReader + ?Sized>(p: &ChainParams, state: &mut Overlay
     if height > p.reward_unlock_blocks {
         let key = pending_reward_key(height - p.reward_unlock_blocks);
         if let Some(reward) = state.get::<PendingReward>(&key)? {
-            let rest = reward.locked();
             state.delete_raw(key);
-            credit(state, &reward.miner, rest).map_err(werr)?;
-            released += rest;
+            for payout in &reward.payouts {
+                let rest = payout.amount - payout.released;
+                if rest > 0 {
+                    credit(state, &payout.who, rest).map_err(werr)?;
+                    released += rest;
+                }
+            }
         }
     }
     Ok(released)
@@ -431,6 +441,8 @@ pub fn end_block<R: StateReader + ?Sized>(
     miner_fees: u64,
     burned: u64,
     usage: BlockUsage,
+    // Uncles included by this block: who mined each and how many blocks old it is.
+    uncles: &[(Address, u64)],
 ) -> Result<u64, BlockError> {
     let gerr = |m: &str| BlockError::Governance(m.to_string());
     // The congestion multiplier is driven by the limits in force for this block.
@@ -445,9 +457,26 @@ pub fn end_block<R: StateReader + ?Sized>(
     g.burned = g.burned.checked_add(burned).ok_or_else(|| gerr("burn overflow"))?;
     g.congestion_bp = next_congestion(g.congestion_bp, usage, &params_before);
     state.put_global(&g);
-    let total = subsidy.checked_add(miner_fees).ok_or_else(|| gerr("reward overflow"))?;
-    if total > 0 {
-        state.put(pending_reward_key(height), &PendingReward { miner: *miner, amount: total, released: 0 });
+    // Uncles are paid out of this block's subsidy, so the emission schedule and
+    // the 50 000 000 TCN cap do not change (docs/ESCALA.md §2.3).
+    let mut payouts: Vec<Payout> = Vec::with_capacity(1 + uncles.len());
+    let mut to_uncles = 0u64;
+    for (who, depth) in uncles {
+        let amount = crate::block::uncle_reward(subsidy, *depth);
+        if amount > 0 {
+            to_uncles = to_uncles.checked_add(amount).ok_or_else(|| gerr("uncle reward overflow"))?;
+            payouts.push(Payout { who: *who, amount, released: 0 });
+        }
+    }
+    if to_uncles > subsidy {
+        return Err(gerr("uncle rewards exceed the subsidy"));
+    }
+    let mine = (subsidy - to_uncles).checked_add(miner_fees).ok_or_else(|| gerr("reward overflow"))?;
+    if mine > 0 {
+        payouts.insert(0, Payout { who: *miner, amount: mine, released: 0 });
+    }
+    if !payouts.is_empty() {
+        state.put(pending_reward_key(height), &PendingReward { payouts });
     }
     Ok(subsidy)
 }
@@ -482,6 +511,24 @@ pub fn apply_block<R: StateReader + ?Sized>(
     if h.signal & !mask != 0 {
         return Err(BlockError::BadSignal(h.signal));
     }
+    // Structure of the uncles (the chain manager also checks their proof of
+    // work and that they really fork off this chain).
+    if block.uncles.len() > crate::block::MAX_UNCLES {
+        return Err(BlockError::BadUncle(format!("at most {} uncles per block", crate::block::MAX_UNCLES)));
+    }
+    if block.compute_uncles_root() != h.uncles_root {
+        return Err(BlockError::BadUncle("uncles root does not match the header".into()));
+    }
+    let mut uncles: Vec<(Address, u64)> = Vec::with_capacity(block.uncles.len());
+    for u in &block.uncles {
+        if u.height >= height || height - u.height > crate::block::MAX_UNCLE_DEPTH {
+            return Err(BlockError::BadUncle(format!("uncle at height {} cannot be included at {height}", u.height)));
+        }
+        if block.uncles.iter().filter(|o| o.hash() == u.hash()).count() > 1 {
+            return Err(BlockError::BadUncle("the same uncle twice".into()));
+        }
+        uncles.push((u.miner, height - u.height));
+    }
 
     let mut receipt = BlockReceipt { released: begin_block(p, state, height)?, ..Default::default() };
 
@@ -498,7 +545,8 @@ pub fn apply_block<R: StateReader + ?Sized>(
         receipt.txs.push(r);
     }
 
-    receipt.subsidy = end_block(p, state, height, &h.miner, h.signal, receipt.fees, receipt.burned, BlockUsage { bytes: size, fuel })?;
+    receipt.subsidy =
+        end_block(p, state, height, &h.miner, h.signal, receipt.fees, receipt.burned, BlockUsage { bytes: size, fuel }, &uncles)?;
     Ok(receipt)
 }
 
@@ -581,10 +629,15 @@ impl<'a, R: StateReader + ?Sized> BlockBuilder<'a, R> {
     }
 
     /// Runs end-of-block processing. `signal` is masked to assigned bits.
-    pub fn finish(mut self, miner: &Address, signal: u32) -> Result<(Overlay<'a, R>, Vec<Transaction>, u32), BlockError> {
+    pub fn finish(
+        mut self,
+        miner: &Address,
+        signal: u32,
+        uncles: &[(Address, u64)],
+    ) -> Result<(Overlay<'a, R>, Vec<Transaction>, u32), BlockError> {
         let signal = signal & self.signal_mask;
         let usage = BlockUsage { bytes: self.size, fuel: self.fuel };
-        end_block(self.p, &mut self.state, self.height, miner, signal, self.fees, self.burned, usage)?;
+        end_block(self.p, &mut self.state, self.height, miner, signal, self.fees, self.burned, usage, uncles)?;
         Ok((self.state, self.txs, signal))
     }
 }
