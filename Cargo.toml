@@ -57,5 +57,12 @@ codegen-units = 4
 strip = true
 panic = "abort"
 
+# Keep target/ small on the node machines: line tables are enough for
+# backtraces, and the incremental cache grew to 11 GB on a 38 GB disk.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
 [profile.dev.package."*"]
 opt-level = 2
+debug = false
