@@ -47,6 +47,12 @@ mudanças: [docs/ESCALA.md](docs/ESCALA.md). A versão do `Cargo.toml` continua 
 - A linguagem saiu de `crates/tccl` para o repositório próprio [github.com/LucasBolla94/tccl](https://github.com/LucasBolla94/tccl), fixado na tag `v0.3.0` no `Cargo.toml` (trocar a tag é hard fork). A ferramenta `tccl` vem desse repositório (`tccl-cli`), com `new`, `bundle`, `test` (cenários), `explain`, `bench` e `run … upgrade|authority|state`.
 - Cópias locais da versão 1 dos exemplos em `docs/tccl/examples`; `scripts/publish-site.sh` pega os exemplos do repositório da linguagem na tag fixada.
 
+### Carteira no navegador (`wallet.the-coin.cloud`)
+- **Nova carteira web** em `wallet/`: criar e restaurar com frase BIP-39, senha com cofre AES-256-GCM (chave por PBKDF2-HMAC-SHA-256, 600 000 rodadas), várias contas da mesma frase, enviar com escolha de prioridade, receber com QR code e pedidos de pagamento `thecoin:`, histórico, contatos, troca de rede e de nó, bloqueio automático. Chaves e frase nunca saem do navegador; o nó só recebe a transação assinada.
+- `connect.js`: sites e jogos pedem o endereço (`connect()`) ou um pagamento (`pay()`); a carteira abre numa janela, mostra a origem real de quem pede e só envia com a aprovação da pessoa.
+- Testes (`tools/wallet-build`, `npm test`) conferem chaves, endereços, corpo da transação, assinatura, txid, taxas e valores contra os vetores publicados da carteira de referência.
+- Publicação com `scripts/deploy-wallet.sh` (nginx, HTTPS e CSP próprios); `scripts/host-site-here.sh` passa a publicar site, explorador e carteira.
+
 ### Explorador/site
 - Explorador mostra finalidade dos mineradores (blocos e transações finais, altura finalizada), tios com idade e recompensa, upgrades e autoridade de upgrade dos contratos, durações em blocos de 15 s e cooldown de 400 / 4 000 blocos.
 - Explorador multi-rede em `explore.the-coin.cloud` e variante do site hospedada no próprio nó (`scripts/host-site-here.sh`).

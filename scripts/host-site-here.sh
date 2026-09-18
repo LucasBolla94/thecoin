@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Hosts the website (the-coin.cloud) and the explorer (explore.the-coin.cloud)
+# Hosts the website (the-coin.cloud), the explorer (explore.the-coin.cloud) and
+# the browser wallet (wallet.the-coin.cloud)
 # on THIS machine, which also runs a node. Use it when the site lives on the
 # same server as a seed node.
 #
@@ -14,6 +15,7 @@ cd "$(dirname "$0")/.."
 
 SITE=the-coin.cloud
 EXPLORER=explore.$SITE
+WALLET=wallet.$SITE
 WITH_TLS=0
 [ "${1:-}" = "--tls" ] && WITH_TLS=1
 
@@ -30,6 +32,9 @@ mkdir -p "/var/www/$SITE" /var/www/certbot /var/cache/nginx/thecoin_api
 scripts/deploy-site.sh "/var/www/$SITE" >/dev/null
 info "publishing the explorer to /var/www/$EXPLORER"
 scripts/deploy-explorer.sh "/var/www/$EXPLORER" >/dev/null
+info "publishing the wallet to /var/www/$WALLET"
+mkdir -p "/var/www/$WALLET"
+scripts/deploy-wallet.sh "/var/www/$WALLET" >/dev/null
 
 # ---- nginx ----------------------------------------------------------------
 install -m 0644 website/nginx/snippets/thecoin-proxy.conf /etc/nginx/snippets/thecoin-proxy.conf
@@ -63,12 +68,15 @@ if [ "$WITH_TLS" = 1 ] && [ -f "/etc/letsencrypt/live/$SITE/fullchain.pem" ]; th
   info "installing the HTTPS sites"
   install -m 0644 website/nginx/the-coin.cloud-selfhosted.conf "/etc/nginx/sites-available/$SITE"
   install -m 0644 explore/nginx/$EXPLORER.conf "/etc/nginx/sites-available/$EXPLORER"
+  install -m 0644 wallet/nginx/$WALLET.conf "/etc/nginx/sites-available/$WALLET"
   ln -sf "/etc/nginx/sites-available/$SITE" "/etc/nginx/sites-enabled/$SITE"
   ln -sf "/etc/nginx/sites-available/$EXPLORER" "/etc/nginx/sites-enabled/$EXPLORER"
+  ln -sf "/etc/nginx/sites-available/$WALLET" "/etc/nginx/sites-enabled/$WALLET"
 else
   info "installing the sites over HTTP"
   http_only "$SITE" "$SITE" "www.$SITE"
   http_only "$EXPLORER" "$EXPLORER"
+  http_only "$WALLET" "$WALLET"
 fi
 nginx -t && systemctl reload nginx
 
@@ -76,7 +84,7 @@ nginx -t && systemctl reload nginx
 if [ "$WITH_TLS" = 1 ] && [ ! -f "/etc/letsencrypt/live/$SITE/fullchain.pem" ]; then
   command -v certbot >/dev/null || die "certbot is not installed (apt install certbot)"
   myip=$(curl -s -4 --max-time 10 https://ifconfig.me || true)
-  for d in "$SITE" "www.$SITE" "$EXPLORER"; do
+  for d in "$SITE" "www.$SITE" "$EXPLORER" "$WALLET"; do
     got=$(getent ahostsv4 "$d" | awk '{print $1}' | head -1)
     [ "$got" = "$myip" ] || warn "$d points to ${got:-nothing} and this machine is $myip — the certificate for it will fail"
   done
@@ -85,6 +93,8 @@ if [ "$WITH_TLS" = 1 ] && [ ! -f "/etc/letsencrypt/live/$SITE/fullchain.pem" ]; 
     --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring || die "certbot failed for $SITE"
   certbot certonly --webroot -w /var/www/certbot -d "$EXPLORER" \
     --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring || die "certbot failed for $EXPLORER"
+  certbot certonly --webroot -w /var/www/certbot -d "$WALLET" \
+    --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring || die "certbot failed for $WALLET"
   exec "$0" --tls
 fi
 
@@ -92,3 +102,4 @@ echo
 info "published from commit $(git -c safe.directory="$PWD" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo "  https://$SITE      (or http:// until the certificates exist)"
 echo "  https://$EXPLORER"
+echo "  https://$WALLET"

@@ -622,8 +622,10 @@ thecoin/
 ├── installer/       install.sh · uninstall.sh · thecoin (comando auxiliar)
 ├── website/         the-coin.cloud (HTML/CSS/JS puro) + nginx
 ├── explore/         explorador de blocos multi-rede
+├── wallet/          carteira no navegador (wallet.the-coin.cloud) + testes contra os vetores
+├── tools/           ferramentas de desenvolvimento (empacotador e testes da carteira)
 ├── docs/            especificações, guias, estudo de escala, roteiro, tccl/ (cópias da versão 1) e whitepaper (Typst + PDF)
-├── scripts/         package.sh (releases) · publish-site.sh (bundle do site)
+├── scripts/         package.sh (releases) · publish-site.sh (bundle do site) · deploy-wallet.sh
 ├── .github/         CI (fmt, clippy, testes) e release multiplataforma
 ├── CHANGELOG.md · CONTRIBUTING.md · LICENSE-MIT · LICENSE-APACHE
 └── Cargo.toml       workspace

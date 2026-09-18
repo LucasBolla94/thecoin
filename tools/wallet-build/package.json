@@ -1,0 +1,21 @@
+{
+  "name": "thecoin-wallet-build",
+  "private": true,
+  "type": "module",
+  "description": "Builds the vendored crypto bundle for wallet.the-coin.cloud and runs the wallet's unit tests.",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test ../../wallet/tests/*.test.js"
+  },
+  "dependencies": {
+    "@noble/curves": "1.9.1",
+    "@noble/hashes": "1.8.0",
+    "@scure/base": "1.2.4",
+    "@scure/bip39": "1.6.0",
+    "qrcode-generator": "1.5.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.5",
+    "prettier": "^3.6.2"
+  }
+}

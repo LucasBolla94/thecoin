@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>The Coin Wallet</title>
+    <meta
+      name="description"
+      content="The Coin wallet: hold, send and receive TCN in your browser. Your recovery phrase never leaves this device."
+    />
+    <link rel="icon" href="assets/favicon.svg" />
+    <link rel="stylesheet" href="assets/style.css?v=1" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <span class="brand"><span class="mark">tc</span>wallet</span>
+        <span class="grow"></span>
+        <span class="chip" id="network-chip" title="Network and node status"
+          >connecting…</span
+        >
+        <button
+          class="icon-btn"
+          id="lock-btn"
+          type="button"
+          title="Lock the wallet"
+          hidden
+        >
+          🔒
+        </button>
+      </header>
+
+      <main id="view">
+        <noscript>
+          <p class="notice bad">
+            This wallet needs JavaScript to sign transactions in your browser.
+          </p>
+        </noscript>
+        <p class="muted" id="boot">Loading…</p>
+      </main>
+
+      <footer class="tabs" id="tabs" hidden>
+        <button type="button" data-tab="home">
+          <span class="glyph">🏠</span>Home
+        </button>
+        <button type="button" data-tab="send">
+          <span class="glyph">↗</span>Send
+        </button>
+        <button type="button" data-tab="receive">
+          <span class="glyph">↙</span>Receive
+        </button>
+        <button type="button" data-tab="settings">
+          <span class="glyph">⚙</span>Settings
+        </button>
+      </footer>
+    </div>
+    <script type="module" src="assets/app.js?v=1"></script>
+  </body>
+</html>
